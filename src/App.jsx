@@ -91,7 +91,7 @@ const AuthenticatedApp = () => {
         <Route element={<PortalLayout />}>
           <Route path="/student/dashboard" element={<StudentDashboard />} />
           <Route path="/student/schedule" element={<Schedule />} />
-          <Route path="/student/progress" element={<Progress />} />
+          <Route path="/student/progress" element={<StudentProgress />} />
           <Route path="/student/attendance" element={<Attendance />} />
           <Route path="/student/messages" element={<Messages />} />
           <Route path="/student/resources" element={<Resources />} />
@@ -103,7 +103,7 @@ const AuthenticatedApp = () => {
           <Route path="/parent/dashboard" element={<ParentDashboard />} />
           <Route path="/parent/checkout" element={<ParentCheckout />} />
           <Route path="/parent/schedule" element={<Schedule />} />
-          <Route path="/parent/progress" element={<Progress />} />
+          <Route path="/parent/progress" element={<ParentStudentProgress />} />
           <Route path="/parent/attendance" element={<Attendance />} />
           <Route path="/parent/messages" element={<Messages />} />
           <Route path="/parent/resources" element={<Resources />} />
