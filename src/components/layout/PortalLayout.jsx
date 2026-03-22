@@ -1,7 +1,7 @@
 import { Outlet, Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
 import { base44 } from "@/api/base44Client";
-import { GraduationCap, LogOut, Menu, X } from "lucide-react";
+import { GraduationCap, LogOut, Menu, X, ArrowLeft } from "lucide-react";
 import { useState } from "react";
 import { ROLE_LABELS } from "@/lib/rbac";
 

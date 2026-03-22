@@ -2,7 +2,7 @@ import { useAuth } from "@/lib/AuthContext";
 import { useQuery } from "@tanstack/react-query";
 import { base44 } from "@/api/base44Client";
 import { Link } from "react-router-dom";
-import { Users, DollarSign, ShieldCheck, FileText, BookOpen, Activity, Star, MessageCircle, TrendingUp, GraduationCap, Home, Trophy } from "lucide-react";
+import { Users, DollarSign, ShieldCheck, FileText, BookOpen, Activity, Star, MessageCircle, TrendingUp, GraduationCap, Home, Trophy, ChevronRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const QUICK_LINKS = [
