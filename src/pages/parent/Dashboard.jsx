@@ -4,6 +4,7 @@ import { base44 } from "@/api/base44Client";
 import { useSearchParams, Link } from "react-router-dom";
 import { CreditCard, BookOpen, Star, Calendar, MessageCircle, FileText, ChevronRight, TrendingUp, Users, PlusCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import EnrollmentStatusCard from "@/components/parent/EnrollmentStatusCard";
 import PaymentSuccessBanner from "@/components/parent/PaymentSuccessBanner";
 import StudentGradebook from "@/components/parent/StudentGradebook";
