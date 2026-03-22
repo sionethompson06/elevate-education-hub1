@@ -36,6 +36,7 @@ const ROLE_NAV = {
   ],
   admin: [
     { label: "Dashboard", href: "/admin/dashboard" },
+    { label: "Admissions", href: "/admin/admissions" },
     { label: "Users", href: "/admin/users" },
     { label: "Enrollments", href: "/admin/enrollments" },
     { label: "Payments", href: "/admin/payments" },

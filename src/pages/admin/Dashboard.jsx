@@ -7,6 +7,7 @@ export default function AdminDashboard() {
   const { user } = useAuth();
 
   const quickLinks = [
+    { label: "Admissions", href: "/admin/admissions", description: "Review and process applications" },
     { label: "User Management", href: "/admin/users", description: "Manage all users and roles" },
     { label: "Enrollments", href: "/admin/enrollments", description: "View and manage enrollments" },
     { label: "Payment Overrides", href: "/admin/payment-overrides", description: "Override payments with audit trail" },
