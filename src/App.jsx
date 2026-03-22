@@ -24,6 +24,7 @@ import PerformanceCoachDashboard from "./pages/performance-coach/Dashboard";
 import AdminDashboard from "./pages/admin/Dashboard";
 import AccessLogs from "./pages/admin/AccessLogs";
 import CmsEditor from "./pages/admin/CmsEditor";
+import Admissions from "./pages/admin/Admissions";
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -90,6 +91,7 @@ const AuthenticatedApp = () => {
           <Route path="/admin/dashboard" element={<AdminDashboard />} />
           <Route path="/admin/access-logs" element={<AccessLogs />} />
           <Route path="/admin/cms" element={<CmsEditor />} />
+          <Route path="/admin/admissions" element={<Admissions />} />
         </Route>
 
         <Route path="*" element={<PageNotFound />} />
