@@ -9,7 +9,6 @@ import RBACGuard from "@/lib/RBACGuard";
 
 // Public pages
 import Home from "./pages/Home";
-import Apply from "./pages/Apply";
 import Unauthorized from "./pages/Unauthorized";
 
 // Role dashboards
@@ -45,7 +44,6 @@ const AuthenticatedApp = () => {
       <Routes>
         {/* Public routes */}
         <Route path="/" element={<Home />} />
-        <Route path="/apply" element={<Apply />} />
         <Route path="/unauthorized" element={<Unauthorized />} />
 
 
@@ -72,17 +70,6 @@ const AuthenticatedApp = () => {
   );
 };
 
-// Temporary placeholder for Phase 3 public pages
-function PlaceholderPage({ title }) {
-  return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-      <div className="text-center">
-        <h1 className="text-2xl font-bold text-[#1a3c5e] mb-2">{title}</h1>
-        <p className="text-slate-400">Full page content coming in Phase 3 (Public Pages + CMS).</p>
-      </div>
-    </div>
-  );
-}
 
 function App() {
   return (
