@@ -19,6 +19,7 @@ import Unauthorized from "./pages/Unauthorized";
 // Role dashboards
 import StudentDashboard from "./pages/student/Dashboard";
 import ParentDashboard from "./pages/parent/Dashboard";
+import ParentCheckout from "./pages/parent/Checkout";
 import AcademicCoachDashboard from "./pages/academic-coach/Dashboard";
 import PerformanceCoachDashboard from "./pages/performance-coach/Dashboard";
 import AdminDashboard from "./pages/admin/Dashboard";
@@ -74,6 +75,7 @@ const AuthenticatedApp = () => {
         {/* Parent portal */}
         <Route element={<PortalLayout />}>
           <Route path="/parent/dashboard" element={<ParentDashboard />} />
+          <Route path="/parent/checkout" element={<ParentCheckout />} />
         </Route>
 
         {/* Academic Coach portal */}
