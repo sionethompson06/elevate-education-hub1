@@ -6,6 +6,7 @@ import EnrollmentStatusCard from "@/components/parent/EnrollmentStatusCard";
 import PaymentHistory from "@/components/parent/PaymentHistory";
 import PaymentSuccessBanner from "@/components/parent/PaymentSuccessBanner";
 import StudentGradebook from "@/components/parent/StudentGradebook";
+import ParentRewardsSummary from "@/components/parent/ParentRewardsSummary";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function ParentDashboard() {
@@ -72,7 +73,10 @@ export default function ParentDashboard() {
 
       {/* Student gradebook per student */}
       {parent?.student_ids?.map((sid, i) => (
-        <StudentGradebook key={sid} studentId={sid} studentName={`Student ${i + 1}`} />
+        <div key={sid} className="space-y-4">
+          <StudentGradebook studentId={sid} studentName={`Student ${i + 1}`} />
+          <ParentRewardsSummary studentId={sid} studentName={`Student ${i + 1}`} />
+        </div>
       ))}
     </div>
   );
