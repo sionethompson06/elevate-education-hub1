@@ -183,7 +183,7 @@ export default function StudentDashboard() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           { label: "Schedule", href: "/student/schedule", icon: Calendar, color: "text-purple-600", bg: "bg-purple-50" },
-          { label: "Progress", href: "/student/progress", icon: TrendingUp, color: "text-green-600", bg: "bg-green-50" },
+          { label: "My Lessons", href: "/student/progress", icon: TrendingUp, color: "text-green-600", bg: "bg-green-50" },
           { label: "Messages", href: "/student/messages", icon: MessageCircle, color: "text-blue-600", bg: "bg-blue-50" },
           { label: "Resources", href: "/student/resources", icon: BookOpen, color: "text-orange-600", bg: "bg-orange-50" },
         ].map(({ label, href, icon: Icon, color, bg }) => (
