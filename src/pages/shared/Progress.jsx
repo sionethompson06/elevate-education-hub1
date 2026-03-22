@@ -23,12 +23,33 @@ export default function Progress() {
   const { user } = useAuth();
 
   const { data: records = [], isLoading } = useQuery({
-    queryKey: ["progress", user?.id],
+    queryKey: ["progress", user?.id, user?.role],
     queryFn: async () => {
       if (user?.role === "student") {
         const students = await base44.entities.Student.filter({ user_id: user.id });
         if (!students[0]) return [];
-        return base44.entities.ProgressRecord.filter({ student_id: students[0].id }, "-period_start", 20);
+        return base44.entities.ProgressRecord.filter({ student_id: students[0].id }, "-period_start", 30);
+      }
+      if (user?.role === "parent") {
+        const parents = await base44.entities.Parent.filter({ user_email: user.email });
+        const parent = parents[0];
+        if (!parent?.student_ids?.length) return [];
+        const all = await Promise.all(parent.student_ids.map(sid =>
+          base44.entities.ProgressRecord.filter({ student_id: sid }, "-period_start", 20)
+        ));
+        return all.flat();
+      }
+      if (["academic_coach", "performance_coach"].includes(user?.role)) {
+        const type = user.role === "academic_coach" ? "academic_coach" : "performance_coach";
+        const assignments = await base44.entities.CoachAssignment.filter({ coach_user_id: user.id, coach_type: type, is_active: true });
+        if (!assignments.length) return [];
+        const all = await Promise.all(assignments.map(a =>
+          base44.entities.ProgressRecord.filter({ student_id: a.student_id }, "-period_start", 10)
+        ));
+        return all.flat();
+      }
+      if (user?.role === "admin") {
+        return base44.entities.ProgressRecord.list("-period_start", 50);
       }
       return [];
     },

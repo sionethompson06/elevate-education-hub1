@@ -39,14 +39,27 @@ export default function Schedule() {
   const { data: sessions = [], isLoading } = useQuery({
     queryKey: ["sessions", user?.id],
     queryFn: async () => {
-      const filters = {};
       if (user?.role === "student") {
         const students = await base44.entities.Student.filter({ user_id: user.id });
-        if (students[0]) filters.student_id = students[0].id;
-      } else if (["academic_coach", "performance_coach"].includes(user?.role)) {
-        filters.coach_user_id = user.id;
+        if (!students[0]) return [];
+        return base44.entities.Session.filter({ student_id: students[0].id }, "scheduled_at", 50);
       }
-      return base44.entities.Session.filter(filters, "scheduled_at", 50);
+      if (user?.role === "parent") {
+        const parents = await base44.entities.Parent.filter({ user_email: user.email });
+        const parent = parents[0];
+        if (!parent?.student_ids?.length) return [];
+        const all = await Promise.all(parent.student_ids.map(sid =>
+          base44.entities.Session.filter({ student_id: sid }, "scheduled_at", 20)
+        ));
+        return all.flat().sort((a, b) => (a.scheduled_at || "").localeCompare(b.scheduled_at || ""));
+      }
+      if (["academic_coach", "performance_coach"].includes(user?.role)) {
+        return base44.entities.Session.filter({ coach_user_id: user.id }, "scheduled_at", 50);
+      }
+      if (user?.role === "admin") {
+        return base44.entities.Session.list("scheduled_at", 100);
+      }
+      return [];
     },
     enabled: !!user,
   });
