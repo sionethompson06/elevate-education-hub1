@@ -168,18 +168,23 @@ export default function PortalLayout() {
       {mobileOpen && (
         <div className="md:hidden fixed inset-0 z-40 bg-[#1a3c5e] text-white pt-16 px-6 pb-6 overflow-y-auto">
           <nav className="space-y-1">
-            {navItems.map(({ label, href }) => (
-              <Link
-                key={href}
-                to={href}
-                onClick={() => setMobileOpen(false)}
-                className={`block px-4 py-3 rounded-lg text-sm ${
-                  isActive(href) ? "bg-white/20 font-semibold" : "text-slate-300"
-                }`}
-              >
-                {label}
-              </Link>
-            ))}
+            {navItems.map(({ label, href, divider }) => {
+              if (divider) return (
+                <p key={label} className="text-xs text-slate-500 px-4 pt-3 pb-1 font-semibold tracking-wide">{label}</p>
+              );
+              return (
+                <Link
+                  key={href}
+                  to={href}
+                  onClick={() => setMobileOpen(false)}
+                  className={`block px-4 py-3 rounded-lg text-sm ${
+                    isActive(href) ? "bg-white/20 font-semibold" : "text-slate-300"
+                  }`}
+                >
+                  {label}
+                </Link>
+              );
+            })}
             {isAdminViewingOtherHub && (
               <Link
                 to="/admin/dashboard"
