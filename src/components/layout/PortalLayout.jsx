@@ -15,31 +15,44 @@ const ROLE_COLORS = {
 
 const ROLE_NAV = {
   student: [
-    { label: "Dashboard", href: "/student/dashboard" },
-    { label: "My Rewards", href: "/student/rewards" },
+    { label: "My Dashboard", href: "/student/dashboard" },
+    { label: "Schedule", href: "/student/schedule" },
+    { label: "Progress", href: "/student/progress" },
+    { label: "Messages", href: "/student/messages" },
+    { label: "Resources", href: "/student/resources" },
+    { label: "Rewards", href: "/student/rewards" },
   ],
   parent: [
-    { label: "Dashboard", href: "/parent/dashboard" },
-    { label: "My Students", href: "/parent/students" },
+    { label: "My Dashboard", href: "/parent/dashboard" },
+    { label: "Schedule", href: "/parent/schedule" },
+    { label: "Progress", href: "/parent/progress" },
+    { label: "Messages", href: "/parent/messages" },
+    { label: "Resources", href: "/parent/resources" },
     { label: "Billing", href: "/parent/billing" },
   ],
   academic_coach: [
-    { label: "Dashboard", href: "/academic-coach/dashboard" },
+    { label: "My Dashboard", href: "/academic-coach/dashboard" },
+    { label: "Schedule", href: "/academic-coach/schedule" },
+    { label: "Messages", href: "/academic-coach/messages" },
+    { label: "Resources", href: "/academic-coach/resources" },
     { label: "Rewards", href: "/academic-coach/rewards" },
   ],
   performance_coach: [
-    { label: "Dashboard", href: "/performance-coach/dashboard" },
+    { label: "My Dashboard", href: "/performance-coach/dashboard" },
+    { label: "Schedule", href: "/performance-coach/schedule" },
+    { label: "Messages", href: "/performance-coach/messages" },
+    { label: "Resources", href: "/performance-coach/resources" },
     { label: "Rewards", href: "/performance-coach/rewards" },
   ],
   admin: [
     { label: "Dashboard", href: "/admin/dashboard" },
     { label: "Admissions", href: "/admin/admissions" },
-    { label: "Users", href: "/admin/users" },
     { label: "Enrollments", href: "/admin/enrollments" },
     { label: "Rewards", href: "/admin/rewards" },
+    { label: "Messages", href: "/admin/messages" },
+    { label: "Resources", href: "/admin/resources" },
     { label: "CMS Editor", href: "/admin/cms" },
     { label: "Access Logs", href: "/admin/access-logs" },
-    { label: "Audit Logs", href: "/admin/audit-logs" },
   ],
 };
 

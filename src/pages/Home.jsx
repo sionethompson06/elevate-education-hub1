@@ -1,65 +1,88 @@
 import { Link } from "react-router-dom";
-import { GraduationCap, ArrowRight, BookOpen, Activity, Globe, Trophy } from "lucide-react";
+import { GraduationCap, ArrowRight, BookOpen, Activity, Home as HomeIcon, Trophy, Users, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/AuthContext";
 import { getDashboardForRole } from "@/lib/rbac";
 
+const PROGRAMS = [
+  {
+    icon: BookOpen,
+    title: "Academic Program",
+    description: "Personalized academic coaching, tutoring, and structured learning plans for every student.",
+    href: "/academics",
+    accent: "border-t-4 border-t-blue-500",
+    iconBg: "bg-blue-50 text-blue-600",
+    tag: "Core Program",
+  },
+  {
+    icon: HomeIcon,
+    title: "Homeschool Support",
+    description: "Flexible, accredited curriculum with coach-guided learning for home-educated students.",
+    href: "/virtual-homeschool",
+    accent: "border-t-4 border-t-purple-500",
+    iconBg: "bg-purple-50 text-purple-600",
+    tag: "Core Program",
+  },
+  {
+    icon: Activity,
+    title: "Athletic Performance",
+    description: "Elite strength, conditioning, and sport-specific training tailored to each athlete.",
+    href: "/athletics",
+    accent: "border-t-4 border-t-orange-500",
+    iconBg: "bg-orange-50 text-orange-600",
+    tag: "Core Program",
+  },
+  {
+    icon: Trophy,
+    title: "Recruitment & College Readiness",
+    description: "College placement strategy, NIL navigation, and recruiting profile development.",
+    href: "/college-nil",
+    accent: "border-t-4 border-t-emerald-500",
+    iconBg: "bg-emerald-50 text-emerald-600",
+    tag: "Core Program",
+  },
+  {
+    icon: Users,
+    title: "Family Resource Center",
+    description: "Parent education, family support resources, workshops, and community events.",
+    href: "/resources",
+    accent: "border-t-4 border-t-pink-500",
+    iconBg: "bg-pink-50 text-pink-600",
+    tag: "Support Hub",
+  },
+];
+
+const PROMISES = [
+  "One login — academic plan, training plan, schedule, attendance, progress, messages, billing, all in one place.",
+  "Academic coaches and performance coaches aligned on every student.",
+  "Transparent progress reporting across every program area.",
+  "Flexible enrollment paths: academic-only, athletic-only, or the full student-athlete experience.",
+];
+
 export default function Home() {
   const { user } = useAuth();
-
-  const programs = [
-    {
-      icon: BookOpen,
-      title: "Academics",
-      description: "Personalized academic coaching and tutoring for student excellence.",
-      href: "/academics",
-      color: "bg-blue-50 text-blue-600",
-    },
-    {
-      icon: Activity,
-      title: "Athletics",
-      description: "Elite performance training tailored to each athlete's goals.",
-      href: "/athletics",
-      color: "bg-green-50 text-green-600",
-    },
-    {
-      icon: Globe,
-      title: "Virtual Homeschool",
-      description: "Flexible, accredited curriculum delivered online.",
-      href: "/virtual-homeschool",
-      color: "bg-purple-50 text-purple-600",
-    },
-    {
-      icon: Trophy,
-      title: "College & NIL",
-      description: "Preparing student-athletes for college recruitment and NIL opportunities.",
-      href: "/college-nil",
-      color: "bg-yellow-50 text-yellow-600",
-    },
-  ];
 
   return (
     <div className="min-h-screen bg-white">
       {/* Nav */}
-      <nav className="bg-[#1a3c5e] text-white px-6 py-4 flex items-center justify-between">
-        <Link to="/" className="flex items-center gap-2 font-bold text-lg">
-          <GraduationCap className="w-6 h-6" />
+      <nav className="bg-[#1a3c5e] text-white px-6 py-4 flex items-center justify-between sticky top-0 z-40 shadow-md">
+        <Link to="/" className="flex items-center gap-2 font-bold text-lg tracking-tight">
+          <GraduationCap className="w-6 h-6 text-yellow-400" />
           Elevate Education Hub
         </Link>
-        <div className="flex items-center gap-4 text-sm">
-          <Link to="/academics" className="hover:text-slate-300 hidden md:block">Academics</Link>
-          <Link to="/athletics" className="hover:text-slate-300 hidden md:block">Athletics</Link>
-          <Link to="/admissions" className="hover:text-slate-300 hidden md:block">Admissions</Link>
-          <Link to="/faq" className="hover:text-slate-300 hidden md:block">FAQ</Link>
+        <div className="flex items-center gap-5 text-sm">
+          <Link to="/academics" className="hover:text-yellow-300 hidden md:block transition-colors">Programs</Link>
+          <Link to="/admissions" className="hover:text-yellow-300 hidden md:block transition-colors">Admissions</Link>
+          <Link to="/faq" className="hover:text-yellow-300 hidden md:block transition-colors">FAQ</Link>
           {user ? (
             <Link to={getDashboardForRole(user.role)}>
-              <Button size="sm" className="bg-white text-[#1a3c5e] hover:bg-slate-100">
-                My Portal
+              <Button size="sm" className="bg-yellow-400 text-[#1a3c5e] hover:bg-yellow-300 font-semibold">
+                My Dashboard
               </Button>
             </Link>
           ) : (
             <Link to="/apply">
-              <Button size="sm" className="bg-white text-[#1a3c5e] hover:bg-slate-100">
+              <Button size="sm" className="bg-yellow-400 text-[#1a3c5e] hover:bg-yellow-300 font-semibold">
                 Apply Now
               </Button>
             </Link>
@@ -68,43 +91,76 @@ export default function Home() {
       </nav>
 
       {/* Hero */}
-      <section className="bg-gradient-to-br from-[#1a3c5e] to-[#0d2540] text-white py-20 px-6">
-        <div className="max-w-4xl mx-auto text-center">
-          <h1 className="text-4xl md:text-5xl font-bold mb-4 leading-tight">
-            Elevate Your Potential.<br />
-            <span className="text-yellow-400">Academic + Athletic Excellence.</span>
+      <section className="bg-gradient-to-br from-[#0d2540] via-[#1a3c5e] to-[#1a4f7a] text-white py-24 px-6 relative overflow-hidden">
+        <div className="absolute inset-0 opacity-5" style={{ backgroundImage: "repeating-linear-gradient(45deg, #fff 0, #fff 1px, transparent 0, transparent 50%)", backgroundSize: "20px 20px" }} />
+        <div className="max-w-4xl mx-auto text-center relative z-10">
+          <div className="inline-flex items-center gap-2 bg-yellow-400/20 border border-yellow-400/40 rounded-full px-4 py-1.5 text-yellow-300 text-xs font-semibold tracking-wide uppercase mb-6">
+            High-Performance Education Operating System
+          </div>
+          <h1 className="text-4xl md:text-6xl font-bold mb-5 leading-tight tracking-tight">
+            Built for Student-Athletes.<br />
+            <span className="text-yellow-400">Designed for Families.</span>
           </h1>
-          <p className="text-slate-300 text-lg mb-8 max-w-2xl mx-auto">
-            A centralized hub for students, parents, coaches, and administrators at Elevate Performance Academy.
+          <p className="text-slate-300 text-lg mb-10 max-w-2xl mx-auto leading-relaxed">
+            Elevate unifies academics, athletics, scheduling, progress, and communication — one platform, one login, every student.
           </p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <Link to="/apply">
-              <Button size="lg" className="bg-yellow-400 text-[#1a3c5e] hover:bg-yellow-300 font-bold">
-                Apply Now <ArrowRight className="ml-2 w-4 h-4" />
+              <Button size="lg" className="bg-yellow-400 text-[#1a3c5e] hover:bg-yellow-300 font-bold shadow-lg">
+                Start Your Application <ArrowRight className="ml-2 w-4 h-4" />
               </Button>
             </Link>
-            <Link to="/admissions">
-              <Button size="lg" variant="outline" className="border-white text-white hover:bg-white/10">
-                Learn More
-              </Button>
-            </Link>
+            {user && (
+              <Link to={getDashboardForRole(user.role)}>
+                <Button size="lg" variant="outline" className="border-white/40 text-white hover:bg-white/10">
+                  Go to My Dashboard
+                </Button>
+              </Link>
+            )}
           </div>
         </div>
       </section>
 
-      {/* Programs */}
-      <section className="py-16 px-6 bg-slate-50">
-        <div className="max-w-5xl mx-auto">
-          <h2 className="text-2xl font-bold text-[#1a3c5e] text-center mb-10">Our Programs</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {programs.map(({ icon: Icon, title, description, href, color }) => (
+      {/* One-login promise */}
+      <section className="py-14 px-6 bg-slate-900 text-white">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-8">
+            <h2 className="text-xl font-bold text-yellow-400 mb-2">The One-Login Family Promise</h2>
+            <p className="text-slate-400 text-sm">Everything your family needs — in one secure portal.</p>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-4">
+            {PROMISES.map((p, i) => (
+              <div key={i} className="flex items-start gap-3 bg-white/5 rounded-xl px-4 py-3 border border-white/10">
+                <ChevronRight className="w-4 h-4 text-yellow-400 mt-0.5 shrink-0" />
+                <p className="text-sm text-slate-300">{p}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* 5 Program Hubs */}
+      <section className="py-20 px-6 bg-slate-50">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold text-[#1a3c5e] mb-3">5 Core Program Hubs</h2>
+            <p className="text-slate-500 max-w-xl mx-auto">Every program is purpose-built — academically rigorous, athletically elite, and family-centered.</p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {PROGRAMS.map(({ icon: Icon, title, description, href, accent, iconBg, tag }) => (
               <Link to={href} key={title}>
-                <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100 hover:shadow-md hover:border-[#1a3c5e] transition-all h-full">
-                  <div className={`w-10 h-10 rounded-lg ${color} flex items-center justify-center mb-4`}>
-                    <Icon className="w-5 h-5" />
+                <div className={`bg-white rounded-2xl p-6 shadow-sm border border-slate-100 hover:shadow-md transition-all h-full ${accent}`}>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className={`w-11 h-11 rounded-xl ${iconBg} flex items-center justify-center`}>
+                      <Icon className="w-5 h-5" />
+                    </div>
+                    <span className="text-xs font-medium text-slate-400 bg-slate-50 px-2 py-1 rounded-full border border-slate-100">{tag}</span>
                   </div>
-                  <h3 className="font-semibold text-slate-800 mb-2">{title}</h3>
-                  <p className="text-sm text-slate-500">{description}</p>
+                  <h3 className="font-bold text-slate-800 mb-2 text-base">{title}</h3>
+                  <p className="text-sm text-slate-500 leading-relaxed">{description}</p>
+                  <div className="mt-4 flex items-center text-xs font-semibold text-[#1a3c5e] gap-1">
+                    Learn more <ArrowRight className="w-3 h-3" />
+                  </div>
                 </div>
               </Link>
             ))}
@@ -113,23 +169,30 @@ export default function Home() {
       </section>
 
       {/* CTA */}
-      <section className="py-16 px-6 bg-[#1a3c5e] text-white text-center">
-        <h2 className="text-2xl font-bold mb-3">Ready to Elevate?</h2>
-        <p className="text-slate-300 mb-6">Start your application today and join the Elevate community.</p>
-        <Link to="/apply">
-          <Button size="lg" className="bg-yellow-400 text-[#1a3c5e] hover:bg-yellow-300 font-bold">
-            Start Your Application
-          </Button>
-        </Link>
+      <section className="py-16 px-6 bg-gradient-to-r from-[#1a3c5e] to-[#0d2540] text-white text-center">
+        <div className="max-w-2xl mx-auto">
+          <h2 className="text-2xl font-bold mb-3">Ready to Elevate?</h2>
+          <p className="text-slate-300 mb-7 text-sm leading-relaxed">Join a community of student-athletes and families who demand more from their education and training.</p>
+          <Link to="/apply">
+            <Button size="lg" className="bg-yellow-400 text-[#1a3c5e] hover:bg-yellow-300 font-bold shadow-lg">
+              Start Your Application <ArrowRight className="ml-2 w-4 h-4" />
+            </Button>
+          </Link>
+        </div>
       </section>
 
       {/* Footer */}
-      <footer className="bg-slate-900 text-slate-400 py-8 px-6 text-center text-sm">
-        <p>© 2026 Elevate Performance Academy. All rights reserved.</p>
-        <div className="flex justify-center gap-6 mt-3">
-          <Link to="/cancellation-policy" className="hover:text-white">Cancellation Policy</Link>
-          <Link to="/contact" className="hover:text-white">Contact</Link>
-          <Link to="/faq" className="hover:text-white">FAQ</Link>
+      <footer className="bg-slate-950 text-slate-500 py-10 px-6 text-center text-sm">
+        <div className="flex items-center justify-center gap-2 text-white font-semibold mb-4">
+          <GraduationCap className="w-5 h-5 text-yellow-400" />
+          Elevate Education Hub
+        </div>
+        <p className="mb-3">© 2026 Elevate Performance Academy. All rights reserved.</p>
+        <div className="flex justify-center gap-6 flex-wrap">
+          <Link to="/cancellation-policy" className="hover:text-white transition-colors">Cancellation Policy</Link>
+          <Link to="/contact" className="hover:text-white transition-colors">Contact</Link>
+          <Link to="/faq" className="hover:text-white transition-colors">FAQ</Link>
+          <Link to="/apply" className="hover:text-white transition-colors">Apply</Link>
         </div>
       </footer>
     </div>
