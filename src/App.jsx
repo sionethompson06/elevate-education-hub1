@@ -35,6 +35,8 @@ import PerformanceCoachRewards from "./pages/performance-coach/Rewards";
 // Shared module pages
 import Schedule from "./pages/shared/Schedule";
 import Progress from "./pages/shared/Progress";
+import StudentProgress from "./pages/student/Progress";
+import ParentStudentProgress from "./pages/parent/StudentProgress";
 import Messages from "./pages/shared/Messages";
 import Resources from "./pages/shared/Resources";
 import Attendance from "./pages/shared/Attendance";
