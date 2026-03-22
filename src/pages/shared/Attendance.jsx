@@ -103,10 +103,32 @@ export default function Attendance() {
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
-      <div>
-        <p className="text-sm text-slate-500 mb-1">Attendance</p>
-        <h1 className="text-3xl font-bold text-[#1a3c5e]">Attendance Tracking</h1>
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <div>
+          <p className="text-sm text-slate-500 mb-1">Attendance</p>
+          <h1 className="text-3xl font-bold text-[#1a3c5e]">Attendance Tracking</h1>
+        </div>
+        {isCoachOrAdmin && (
+          <Button onClick={() => setShowCreateSession(true)} className="bg-[#1a3c5e] hover:bg-[#0d2540]">
+            <Plus className="w-4 h-4 mr-2" /> Log Session
+          </Button>
+        )}
       </div>
+
+      {/* Parent student switcher */}
+      {user?.role === "parent" && parentStudents.length > 1 && (
+        <div className="flex gap-2 flex-wrap">
+          {parentStudents.map(s => (
+            <button
+              key={s.id}
+              onClick={() => { setSelectedParentStudent(s.id); qc.invalidateQueries({ queryKey: ["attendance-sessions"] }); }}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium border-2 transition-all ${selectedParentStudent === s.id ? "border-[#1a3c5e] bg-[#1a3c5e] text-white" : "border-slate-200 text-slate-700 hover:border-[#1a3c5e]"}`}
+            >
+              <Users className="w-3.5 h-3.5" /> {s.full_name}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Stats */}
       {completed.length > 0 && (
