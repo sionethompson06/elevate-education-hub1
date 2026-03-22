@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useAuth } from "@/lib/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { base44 } from "@/api/base44Client";
-import { CheckCircle, XCircle, Clock, Calendar, Filter } from "lucide-react";
+import { CheckCircle, XCircle, Clock, Calendar, Filter, Plus, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { format, parseISO } from "date-fns";
@@ -23,6 +23,10 @@ export default function Attendance() {
   const [markingSession, setMarkingSession] = useState(null);
   const [attendanceStatus, setAttendanceStatus] = useState("present");
   const [saving, setSaving] = useState(false);
+  const [showCreateSession, setShowCreateSession] = useState(false);
+  const [sessionForm, setSessionForm] = useState({ title: "", program_type: "academic", scheduled_at: "", duration_minutes: 60, location: "", student_id: "" });
+  const [selectedParentStudent, setSelectedParentStudent] = useState(null);
+  const [parentStudents, setParentStudents] = useState([]);
 
   const isCoachOrAdmin = ["academic_coach", "performance_coach", "admin"].includes(user?.role);
 
@@ -43,8 +47,11 @@ export default function Attendance() {
         const parents = await base44.entities.Parent.filter({ user_email: user.email });
         const parent = parents[0];
         if (!parent?.student_ids?.length) return [];
-        // Get sessions for first student
-        filters.student_id = parent.student_ids[0];
+        const studs = await Promise.all(parent.student_ids.map(sid => base44.entities.Student.filter({ id: sid })));
+        setParentStudents(studs.flat());
+        const activeSid = selectedParentStudent || parent.student_ids[0];
+        if (!selectedParentStudent) setSelectedParentStudent(activeSid);
+        filters.student_id = activeSid;
       }
       return base44.entities.Session.filter(filters, "-scheduled_at", 100);
     },
