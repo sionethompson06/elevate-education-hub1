@@ -1,51 +1,40 @@
 import { useState } from "react";
-import { useAuth } from "@/lib/AuthContext";
 import { useQuery } from "@tanstack/react-query";
 import { base44 } from "@/api/base44Client";
-import { BookOpen, AlertCircle } from "lucide-react";
+import { BookOpen, AlertTriangle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import KPIBar from "@/components/gradebook/KPIBar";
 import LessonRow from "@/components/gradebook/LessonRow";
 import LessonDetailPanel from "@/components/gradebook/LessonDetailPanel";
 
-const TABS = ["all", "incomplete", "complete"];
-
-export default function StudentDashboard() {
-  const { user } = useAuth();
-  const [tab, setTab] = useState("incomplete");
+export default function StudentGradebook({ studentId, studentName }) {
   const [selected, setSelected] = useState(null);
+  const [tab, setTab] = useState("incomplete");
 
-  const { data, isLoading, refetch } = useQuery({
-    queryKey: ["student-lessons", user?.id],
-    queryFn: () => base44.functions.invoke("gradebook", { action: "get_lessons" }).then(r => r.data),
-    enabled: !!user,
+  const { data, isLoading } = useQuery({
+    queryKey: ["parent-gradebook", studentId],
+    queryFn: () => base44.functions.invoke("gradebook", {
+      action: "get_lessons",
+      student_id: studentId,
+    }).then(r => r.data),
+    enabled: !!studentId,
   });
 
-  const allLessons = data?.lessons || [];
+  const lessons = data?.lessons || [];
   const kpis = data?.kpis;
 
-  const filtered = tab === "all" ? allLessons : allLessons.filter(l => l.status === tab);
+  const filtered = tab === "all" ? lessons : lessons.filter(l => l.status === tab);
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6">
-      <div>
-        <p className="text-sm text-slate-500 mb-1">Student Portal</p>
-        <h1 className="text-3xl font-bold text-[#1a3c5e]">
-          Welcome back, {user?.full_name?.split(" ")[0] || "Student"}!
-        </h1>
-      </div>
+    <div className="space-y-4">
+      <h2 className="text-lg font-semibold text-slate-700">{studentName}'s Gradebook</h2>
 
-      {kpis && (
-        <div>
-          <h2 className="text-sm font-semibold text-slate-600 mb-3">My Progress</h2>
-          <KPIBar kpis={kpis} showIntervention={false} />
-        </div>
-      )}
+      {kpis && <KPIBar kpis={kpis} showIntervention={false} />}
 
       {kpis?.intervention && (
         <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-700 text-sm">
-          <AlertCircle className="w-4 h-4 shrink-0" />
-          You have overdue or incomplete lessons that need attention. Please reach out to your coach.
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          Attention needed: {studentName} has overdue or incomplete lessons. Consider contacting their coach.
         </div>
       )}
 
@@ -53,10 +42,10 @@ export default function StudentDashboard() {
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <CardTitle className="text-base text-slate-700 flex items-center gap-2">
-              <BookOpen className="w-4 h-4" /> My Lessons
+              <BookOpen className="w-4 h-4" /> Lessons
             </CardTitle>
             <div className="flex gap-1">
-              {TABS.map(t => (
+              {["all", "incomplete", "complete"].map(t => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
@@ -70,9 +59,9 @@ export default function StudentDashboard() {
         </CardHeader>
         <CardContent className="p-0">
           {isLoading ? (
-            <div className="flex justify-center py-8"><div className="w-5 h-5 border-4 border-slate-200 border-t-[#1a3c5e] rounded-full animate-spin" /></div>
+            <div className="flex justify-center py-6"><div className="w-5 h-5 border-4 border-slate-200 border-t-[#1a3c5e] rounded-full animate-spin" /></div>
           ) : filtered.length === 0 ? (
-            <p className="text-sm text-slate-400 text-center py-8">No lessons found.</p>
+            <p className="text-sm text-slate-400 text-center py-6">No lessons found.</p>
           ) : (
             <div>
               {filtered.map(l => (
@@ -88,7 +77,7 @@ export default function StudentDashboard() {
           lesson={selected}
           readOnly={true}
           onClose={() => setSelected(null)}
-          onUpdated={() => { refetch(); setSelected(null); }}
+          onUpdated={() => setSelected(null)}
         />
       )}
     </div>
