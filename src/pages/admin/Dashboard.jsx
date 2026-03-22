@@ -10,7 +10,7 @@ export default function AdminDashboard() {
     { label: "Admissions", href: "/admin/admissions", description: "Review and process applications" },
     { label: "User Management", href: "/admin/users", description: "Manage all users and roles" },
     { label: "Enrollments", href: "/admin/enrollments", description: "View and manage enrollments" },
-    { label: "Payment Overrides", href: "/admin/payment-overrides", description: "Override payments with audit trail" },
+    { label: "Payment Overrides", href: "/admin/enrollments", description: "Override payments with audit trail" },
     { label: "Access Logs", href: "/admin/access-logs", description: "Review denied access attempts" },
     { label: "CMS", href: "/admin/cms", description: "Edit public site content" },
     { label: "Reports", href: "/admin/reports", description: "KPI and performance reports" },
