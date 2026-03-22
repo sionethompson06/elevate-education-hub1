@@ -10,10 +10,10 @@ export const ROLES = {
 
 // Route permission matrix — which roles can access which route prefixes
 export const ROUTE_PERMISSIONS = {
-  "/student": [ROLES.STUDENT],
-  "/parent": [ROLES.PARENT],
-  "/academic-coach": [ROLES.ACADEMIC_COACH],
-  "/performance-coach": [ROLES.PERFORMANCE_COACH],
+  "/student": [ROLES.STUDENT, ROLES.ADMIN],
+  "/parent": [ROLES.PARENT, ROLES.ADMIN],
+  "/academic-coach": [ROLES.ACADEMIC_COACH, ROLES.ADMIN],
+  "/performance-coach": [ROLES.PERFORMANCE_COACH, ROLES.ADMIN],
   "/admin": [ROLES.ADMIN],
 };
 
