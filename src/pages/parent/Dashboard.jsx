@@ -70,21 +70,10 @@ export default function ParentDashboard() {
       {/* Payment history */}
       <PaymentHistory />
 
-      {/* Placeholder sections */}
-      <div className="grid md:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader><CardTitle className="text-base text-slate-700">Student Progress</CardTitle></CardHeader>
-          <CardContent>
-            <p className="text-sm text-slate-400">Student progress will appear here. (Phase 6+)</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader><CardTitle className="text-base text-slate-700">Upcoming Sessions</CardTitle></CardHeader>
-          <CardContent>
-            <p className="text-sm text-slate-400">Upcoming sessions will appear here. (Phase 7)</p>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Student gradebook per student */}
+      {parent?.student_ids?.map((sid, i) => (
+        <StudentGradebook key={sid} studentId={sid} studentName={`Student ${i + 1}`} />
+      ))}
     </div>
   );
 }
