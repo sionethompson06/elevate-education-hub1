@@ -4,7 +4,7 @@ import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { isInIframe } from "@/lib/utils";
+const isInIframe = () => { try { return window.self !== window.top; } catch { return true; } };
 import BillingCycleSelector from "@/components/parent/BillingCycleSelector";
 import TuitionSummary from "@/components/parent/TuitionSummary";
 import TermsCheckbox from "@/components/parent/TermsCheckbox";
