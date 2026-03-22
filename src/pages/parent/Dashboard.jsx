@@ -24,6 +24,16 @@ export default function ParentDashboard() {
   const parent = parents[0];
   const studentIds = parent?.student_ids || [];
 
+  const { data: students = [] } = useQuery({
+    queryKey: ["parent-students-dash", studentIds],
+    queryFn: async () => {
+      if (!studentIds.length) return [];
+      const all = await Promise.all(studentIds.map(sid => base44.entities.Student.filter({ id: sid })));
+      return all.flat();
+    },
+    enabled: studentIds.length > 0,
+  });
+
   const { data: enrollments = [], isLoading: enrollLoading } = useQuery({
     queryKey: ["all-enrollments", studentIds],
     queryFn: async () => {
@@ -117,17 +127,23 @@ export default function ParentDashboard() {
       )}
 
       {/* Student snapshots */}
-      {studentIds.map((sid, i) => (
-        <div key={sid} className="space-y-4">
-          <h2 className="text-sm font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-2">
-            <Users className="w-4 h-4" /> Student {i + 1} Overview
-          </h2>
-          <div className="grid md:grid-cols-2 gap-4">
-            <StudentGradebook studentId={sid} studentName={`Student ${i + 1}`} />
-            <ParentRewardsSummary studentId={sid} studentName={`Student ${i + 1}`} />
+      {studentIds.map((sid, i) => {
+        const student = students.find(s => s.id === sid);
+        const studentName = student?.full_name || `Student ${i + 1}`;
+        return (
+          <div key={sid} className="space-y-4">
+            <h2 className="text-sm font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-2">
+              <Users className="w-4 h-4" /> {studentName}
+              {student?.grade_level && <span className="font-normal text-slate-400">· Grade {student.grade_level}</span>}
+              {student?.sport && <span className="font-normal text-slate-400">· {student.sport}</span>}
+            </h2>
+            <div className="grid md:grid-cols-2 gap-4">
+              <StudentGradebook studentId={sid} studentName={studentName} />
+              <ParentRewardsSummary studentId={sid} studentName={studentName} />
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
 
       {/* All enrollments if none active */}
       {activeEnrollments.length === 0 && (
