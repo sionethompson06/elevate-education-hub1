@@ -16,8 +16,8 @@ const ROLE_COLORS = {
 const ROLE_NAV = {
   student: [
     { label: "My Dashboard", href: "/student/dashboard" },
+    { label: "My Lessons", href: "/student/progress" },
     { label: "Schedule", href: "/student/schedule" },
-    { label: "Progress", href: "/student/progress" },
     { label: "Attendance", href: "/student/attendance" },
     { label: "Messages", href: "/student/messages" },
     { label: "Resources", href: "/student/resources" },
@@ -26,8 +26,8 @@ const ROLE_NAV = {
   parent: [
     { label: "My Dashboard", href: "/parent/dashboard" },
     { label: "Programs & Enroll", href: "/parent/programs" },
+    { label: "Student Progress", href: "/parent/progress" },
     { label: "Schedule", href: "/parent/schedule" },
-    { label: "Progress", href: "/parent/progress" },
     { label: "Attendance", href: "/parent/attendance" },
     { label: "Messages", href: "/parent/messages" },
     { label: "Resources", href: "/parent/resources" },
