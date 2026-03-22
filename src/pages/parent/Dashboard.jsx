@@ -2,7 +2,7 @@ import { useAuth } from "@/lib/AuthContext";
 import { useQuery } from "@tanstack/react-query";
 import { base44 } from "@/api/base44Client";
 import { useSearchParams, Link } from "react-router-dom";
-import { CreditCard, BookOpen, Star, Calendar, MessageCircle, FileText, ChevronRight, TrendingUp, Users } from "lucide-react";
+import { CreditCard, BookOpen, Star, Calendar, MessageCircle, FileText, ChevronRight, TrendingUp, Users, PlusCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import EnrollmentStatusCard from "@/components/parent/EnrollmentStatusCard";
 import PaymentSuccessBanner from "@/components/parent/PaymentSuccessBanner";
@@ -69,9 +69,25 @@ export default function ParentDashboard() {
         </div>
       )}
 
+      {/* Enroll CTA if no active enrollments */}
+      {!enrollLoading && enrollments.filter(e => ["active","active_override"].includes(e.status)).length === 0 && (
+        <div className="bg-gradient-to-r from-[#1a3c5e] to-[#1a4f7a] rounded-2xl p-6 text-white flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <p className="font-bold text-lg mb-1">Get Started — Enroll in a Program</p>
+            <p className="text-slate-300 text-sm">Browse our 5 core programs and enroll your student today.</p>
+          </div>
+          <Link to="/parent/programs">
+            <Button className="bg-yellow-400 text-[#1a3c5e] hover:bg-yellow-300 font-bold shrink-0">
+              <PlusCircle className="w-4 h-4 mr-2" /> Browse Programs
+            </Button>
+          </Link>
+        </div>
+      )}
+
       {/* Quick nav */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
         {[
+          { label: "Programs", href: "/parent/programs", icon: PlusCircle, color: "text-[#1a3c5e]", bg: "bg-slate-100" },
           { label: "Schedule", href: "/parent/schedule", icon: Calendar, color: "text-purple-600", bg: "bg-purple-50" },
           { label: "Progress", href: "/parent/progress", icon: TrendingUp, color: "text-green-600", bg: "bg-green-50" },
           { label: "Messages", href: "/parent/messages", icon: MessageCircle, color: "text-blue-600", bg: "bg-blue-50" },
