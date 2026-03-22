@@ -27,6 +27,10 @@ import AccessLogs from "./pages/admin/AccessLogs";
 import CmsEditor from "./pages/admin/CmsEditor";
 import Admissions from "./pages/admin/Admissions";
 import Enrollments from "./pages/admin/Enrollments";
+import AdminRewards from "./pages/admin/Rewards";
+import StudentRewards from "./pages/student/Rewards";
+import AcademicCoachRewards from "./pages/academic-coach/Rewards";
+import PerformanceCoachRewards from "./pages/performance-coach/Rewards";
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -71,6 +75,7 @@ const AuthenticatedApp = () => {
         {/* Student portal */}
         <Route element={<PortalLayout />}>
           <Route path="/student/dashboard" element={<StudentDashboard />} />
+          <Route path="/student/rewards" element={<StudentRewards />} />
         </Route>
 
         {/* Parent portal */}
@@ -82,11 +87,13 @@ const AuthenticatedApp = () => {
         {/* Academic Coach portal */}
         <Route element={<PortalLayout />}>
           <Route path="/academic-coach/dashboard" element={<AcademicCoachDashboard />} />
+          <Route path="/academic-coach/rewards" element={<AcademicCoachRewards />} />
         </Route>
 
         {/* Performance Coach portal */}
         <Route element={<PortalLayout />}>
           <Route path="/performance-coach/dashboard" element={<PerformanceCoachDashboard />} />
+          <Route path="/performance-coach/rewards" element={<PerformanceCoachRewards />} />
         </Route>
 
         {/* Admin portal */}
@@ -96,6 +103,7 @@ const AuthenticatedApp = () => {
           <Route path="/admin/cms" element={<CmsEditor />} />
           <Route path="/admin/admissions" element={<Admissions />} />
           <Route path="/admin/enrollments" element={<Enrollments />} />
+          <Route path="/admin/rewards" element={<AdminRewards />} />
         </Route>
 
         <Route path="*" element={<PageNotFound />} />
