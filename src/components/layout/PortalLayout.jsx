@@ -16,7 +16,6 @@ const ROLE_COLORS = {
 const ROLE_NAV = {
   student: [
     { label: "Dashboard", href: "/student/dashboard" },
-    { label: "My Lessons", href: "/student/lessons" },
     { label: "My Rewards", href: "/student/rewards" },
   ],
   parent: [
@@ -26,20 +25,18 @@ const ROLE_NAV = {
   ],
   academic_coach: [
     { label: "Dashboard", href: "/academic-coach/dashboard" },
-    { label: "My Students", href: "/academic-coach/students" },
-    { label: "Lessons", href: "/academic-coach/lessons" },
+    { label: "Rewards", href: "/academic-coach/rewards" },
   ],
   performance_coach: [
     { label: "Dashboard", href: "/performance-coach/dashboard" },
-    { label: "My Athletes", href: "/performance-coach/students" },
-    { label: "Training Plans", href: "/performance-coach/lessons" },
+    { label: "Rewards", href: "/performance-coach/rewards" },
   ],
   admin: [
     { label: "Dashboard", href: "/admin/dashboard" },
     { label: "Admissions", href: "/admin/admissions" },
     { label: "Users", href: "/admin/users" },
     { label: "Enrollments", href: "/admin/enrollments" },
-    { label: "Payments", href: "/admin/payments" },
+    { label: "Rewards", href: "/admin/rewards" },
     { label: "CMS Editor", href: "/admin/cms" },
     { label: "Access Logs", href: "/admin/access-logs" },
     { label: "Audit Logs", href: "/admin/audit-logs" },
