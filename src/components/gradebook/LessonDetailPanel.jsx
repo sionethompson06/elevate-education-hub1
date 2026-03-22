@@ -33,6 +33,8 @@ export default function LessonDetailPanel({ lesson, onClose, onUpdated, readOnly
   };
 
   const isAdmin = user?.role === 'admin';
+  const isStudent = user?.role === 'student';
+  const isCoach = ['academic_coach'].includes(user?.role);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -66,15 +68,17 @@ export default function LessonDetailPanel({ lesson, onClose, onUpdated, readOnly
 
           {!readOnly && (
             <div className="space-y-3">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Points Earned</label>
-                <input
-                  type="number" min="0" max={lesson.points_possible}
-                  className="w-32 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30"
-                  value={pointsEarned}
-                  onChange={e => setPointsEarned(e.target.value)}
-                />
-              </div>
+              {(isAdmin || isCoach) && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">Points Earned</label>
+                  <input
+                    type="number" min="0" max={lesson.points_possible}
+                    className="w-32 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30"
+                    value={pointsEarned}
+                    onChange={e => setPointsEarned(e.target.value)}
+                  />
+                </div>
+              )}
               {isAdmin && (
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">Admin Correction Comment *</label>
@@ -85,6 +89,9 @@ export default function LessonDetailPanel({ lesson, onClose, onUpdated, readOnly
                     placeholder="Required for admin corrections…"
                   />
                 </div>
+              )}
+              {isStudent && (
+                <p className="text-xs text-slate-400">Click below to mark this lesson complete when you've finished it.</p>
               )}
               <div className="flex gap-3">
                 {lesson.status !== 'complete' && (
@@ -98,7 +105,7 @@ export default function LessonDetailPanel({ lesson, onClose, onUpdated, readOnly
                     Mark Complete
                   </Button>
                 )}
-                {lesson.status !== 'incomplete' && (
+                {lesson.status !== 'incomplete' && !isStudent && (
                   <Button
                     size="sm"
                     variant="outline"
