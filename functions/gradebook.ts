@@ -171,6 +171,54 @@ Deno.serve(async (req) => {
 
       await db.entities.LessonAssignment.update(lesson_id, updates);
 
+      // ── Reward trigger: incomplete → complete ──────────────────────────────
+      if (new_status === 'complete' && old_status !== 'complete') {
+        const rules = await db.entities.RewardRule.filter({ trigger: 'lesson_complete', is_active: true });
+        for (const rule of rules) {
+          if (rule.subject_filter && rule.subject_filter !== lesson.subject) continue;
+          const ikey = `lesson:${lesson_id}:rule:${rule.id}`;
+          const dup = await db.entities.RewardTransaction.filter({ idempotency_key: ikey });
+          if (dup.length > 0) continue; // idempotency guard
+          await db.entities.RewardTransaction.create({
+            student_id: lesson.student_id,
+            track: rule.track,
+            points: rule.points_awarded,
+            reason: `Lesson completed: ${lesson.title}`,
+            source_type: 'lesson_complete',
+            source_id: lesson_id,
+            idempotency_key: ikey,
+            awarded_by: user.email,
+            awarded_at: new Date().toISOString(),
+          });
+          // Update balance inline (mirrors rewards.js upsertBalance logic)
+          const balArr = await db.entities.StudentRewardBalance.filter({ student_id: lesson.student_id });
+          const bal = balArr[0];
+          const now = new Date().toISOString();
+          if (!bal) {
+            await db.entities.StudentRewardBalance.create({
+              student_id: lesson.student_id,
+              academic_points: rule.track === 'academic' ? rule.points_awarded : 0,
+              performance_points: rule.track === 'performance' ? rule.points_awarded : 0,
+              total_points: rule.points_awarded,
+              total_earned: rule.points_awarded,
+              total_redeemed: 0,
+              last_updated: now,
+            });
+          } else {
+            const ap = (bal.academic_points || 0) + (rule.track === 'academic' ? rule.points_awarded : 0);
+            const pp = (bal.performance_points || 0) + (rule.track === 'performance' ? rule.points_awarded : 0);
+            await db.entities.StudentRewardBalance.update(bal.id, {
+              academic_points: ap,
+              performance_points: pp,
+              total_points: (bal.total_points || 0) + rule.points_awarded,
+              total_earned: (bal.total_earned || 0) + rule.points_awarded,
+              last_updated: now,
+            });
+          }
+          console.log(`Reward triggered: ${rule.points_awarded} ${rule.track} pts for lesson ${lesson_id}`);
+        }
+      }
+
       // Write history
       await db.entities.LessonStatusHistory.create({
         lesson_id,
