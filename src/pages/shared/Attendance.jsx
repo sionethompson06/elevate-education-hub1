@@ -220,6 +220,72 @@ export default function Attendance() {
         ))
       )}
 
+      {/* Create Session modal */}
+      {showCreateSession && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+            <h3 className="font-bold text-[#1a3c5e] text-lg">Log New Session</h3>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Title *</label>
+              <input
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30"
+                value={sessionForm.title}
+                onChange={e => setSessionForm(f => ({ ...f, title: e.target.value }))}
+                placeholder="Session title…"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Program Type</label>
+                <select
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+                  value={sessionForm.program_type}
+                  onChange={e => setSessionForm(f => ({ ...f, program_type: e.target.value }))}
+                >
+                  <option value="academic">Academic</option>
+                  <option value="athletic">Athletic</option>
+                  <option value="homeschool">Homeschool</option>
+                  <option value="special_event">Special Event</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Duration (min)</label>
+                <input
+                  type="number" min="15"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+                  value={sessionForm.duration_minutes}
+                  onChange={e => setSessionForm(f => ({ ...f, duration_minutes: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Scheduled At *</label>
+              <input
+                type="datetime-local"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+                value={sessionForm.scheduled_at}
+                onChange={e => setSessionForm(f => ({ ...f, scheduled_at: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Location</label>
+              <input
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+                value={sessionForm.location}
+                onChange={e => setSessionForm(f => ({ ...f, location: e.target.value }))}
+                placeholder="e.g. Room 101 / Zoom"
+              />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <button onClick={() => setShowCreateSession(false)} className="flex-1 py-2 rounded-lg border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
+              <Button onClick={createSession} disabled={saving || !sessionForm.title || !sessionForm.scheduled_at} className="flex-1 bg-[#1a3c5e] hover:bg-[#0d2540]">
+                {saving ? "Saving..." : "Create Session"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Mark attendance modal */}
       {markingSession && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
