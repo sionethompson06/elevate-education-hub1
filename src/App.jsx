@@ -48,15 +48,7 @@ const AuthenticatedApp = () => {
         <Route path="/apply" element={<Apply />} />
         <Route path="/unauthorized" element={<Unauthorized />} />
 
-        {/* Placeholder public pages — content coming Phase 3 */}
-        <Route path="/academics" element={<PlaceholderPage title="Academics" />} />
-        <Route path="/athletics" element={<PlaceholderPage title="Athletics" />} />
-        <Route path="/virtual-homeschool" element={<PlaceholderPage title="Virtual Homeschool" />} />
-        <Route path="/college-nil" element={<PlaceholderPage title="College & NIL" />} />
-        <Route path="/admissions" element={<PlaceholderPage title="Admissions" />} />
-        <Route path="/faq" element={<PlaceholderPage title="FAQ" />} />
-        <Route path="/contact" element={<PlaceholderPage title="Contact" />} />
-        <Route path="/cancellation-policy" element={<PlaceholderPage title="Cancellation Policy" />} />
+
 
         {/* Student portal */}
         <Route path="/student/dashboard" element={<StudentDashboard />} />
