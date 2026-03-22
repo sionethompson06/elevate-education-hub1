@@ -201,7 +201,7 @@ export default function StudentDashboard() {
       {selected && (
         <LessonDetailPanel
           lesson={selected}
-          readOnly={true}
+          readOnly={false}
           onClose={() => setSelected(null)}
           onUpdated={() => { refetch(); setSelected(null); }}
         />
