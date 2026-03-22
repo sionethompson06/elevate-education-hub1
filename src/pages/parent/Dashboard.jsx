@@ -5,6 +5,7 @@ import { useSearchParams } from "react-router-dom";
 import EnrollmentStatusCard from "@/components/parent/EnrollmentStatusCard";
 import PaymentHistory from "@/components/parent/PaymentHistory";
 import PaymentSuccessBanner from "@/components/parent/PaymentSuccessBanner";
+import StudentGradebook from "@/components/parent/StudentGradebook";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function ParentDashboard() {
