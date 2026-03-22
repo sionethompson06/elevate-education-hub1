@@ -1,13 +1,13 @@
 import { useAuth } from "@/lib/AuthContext";
 import { useQuery } from "@tanstack/react-query";
 import { base44 } from "@/api/base44Client";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, Link } from "react-router-dom";
+import { CreditCard, BookOpen, Star, Calendar, MessageCircle, FileText, ChevronRight, TrendingUp, Users } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import EnrollmentStatusCard from "@/components/parent/EnrollmentStatusCard";
-import PaymentHistory from "@/components/parent/PaymentHistory";
 import PaymentSuccessBanner from "@/components/parent/PaymentSuccessBanner";
 import StudentGradebook from "@/components/parent/StudentGradebook";
 import ParentRewardsSummary from "@/components/parent/ParentRewardsSummary";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function ParentDashboard() {
   const { user } = useAuth();
@@ -23,61 +23,115 @@ export default function ParentDashboard() {
   const parent = parents[0];
   const studentIds = parent?.student_ids || [];
 
-  const { data: enrollments = [], isLoading } = useQuery({
+  const { data: enrollments = [], isLoading: enrollLoading } = useQuery({
     queryKey: ["all-enrollments", studentIds],
     queryFn: async () => {
       if (!studentIds.length) return [];
-      const all = await Promise.all(
-        studentIds.map((sid) => base44.entities.Enrollment.filter({ student_id: sid }))
-      );
+      const all = await Promise.all(studentIds.map(sid => base44.entities.Enrollment.filter({ student_id: sid })));
       return all.flat();
     },
     enabled: studentIds.length > 0,
   });
 
+  const pendingPayment = enrollments.filter(e => ["pending_payment", "payment_failed"].includes(e.status));
+  const activeEnrollments = enrollments.filter(e => ["active", "active_override"].includes(e.status));
+
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6">
+    <div className="p-6 max-w-6xl mx-auto space-y-6">
+      {/* Header */}
       <div>
         <p className="text-sm text-slate-500 mb-1">Parent Portal</p>
         <h1 className="text-3xl font-bold text-[#1a3c5e]">
           Welcome, {user?.full_name?.split(" ")[0] || "Parent"}!
         </h1>
+        <p className="text-sm text-slate-400 mt-1">Your family's complete Elevate overview.</p>
       </div>
 
       {paymentStatus === "success" && <PaymentSuccessBanner enrollmentId={enrollmentId} />}
 
-      {/* Enrollments section */}
-      <div>
-        <h2 className="text-lg font-semibold text-slate-700 mb-3">Enrollments</h2>
-        {isLoading ? (
-          <div className="flex justify-center py-8">
-            <div className="w-5 h-5 border-4 border-slate-200 border-t-[#1a3c5e] rounded-full animate-spin" />
+      {/* Payment action required */}
+      {pendingPayment.length > 0 && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-5 py-4">
+          <div className="flex items-center gap-2 mb-2">
+            <CreditCard className="w-4 h-4 text-yellow-600" />
+            <p className="text-sm font-semibold text-yellow-800">Payment Required</p>
           </div>
-        ) : enrollments.length === 0 ? (
-          <Card>
-            <CardContent className="py-8 text-center">
-              <p className="text-sm text-slate-400">No enrollments found. Contact admissions to get started.</p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-3">
-            {enrollments.map((e) => (
-              <EnrollmentStatusCard key={e.id} enrollment={e} />
+          <p className="text-sm text-yellow-700 mb-3">{pendingPayment.length} enrollment{pendingPayment.length > 1 ? "s" : ""} awaiting payment.</p>
+          <div className="flex flex-wrap gap-2">
+            {pendingPayment.map(e => (
+              <Link key={e.id} to={`/parent/checkout?enrollment_id=${e.id}`}>
+                <button className="text-xs bg-[#1a3c5e] text-white px-3 py-1.5 rounded-lg hover:bg-[#0d2540] transition-colors">
+                  Pay for {e.program_name}
+                </button>
+              </Link>
             ))}
           </div>
-        )}
+        </div>
+      )}
+
+      {/* Quick nav */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        {[
+          { label: "Schedule", href: "/parent/schedule", icon: Calendar, color: "text-purple-600", bg: "bg-purple-50" },
+          { label: "Progress", href: "/parent/progress", icon: TrendingUp, color: "text-green-600", bg: "bg-green-50" },
+          { label: "Messages", href: "/parent/messages", icon: MessageCircle, color: "text-blue-600", bg: "bg-blue-50" },
+          { label: "Resources", href: "/parent/resources", icon: FileText, color: "text-orange-600", bg: "bg-orange-50" },
+          { label: "Billing", href: "/parent/billing", icon: CreditCard, color: "text-red-600", bg: "bg-red-50" },
+        ].map(({ label, href, icon: Icon, color, bg }) => (
+          <Link key={href} to={href}>
+            <div className="bg-white rounded-xl border border-slate-100 p-4 hover:shadow-sm hover:border-[#1a3c5e] transition-all text-center">
+              <div className={`w-9 h-9 rounded-xl ${bg} flex items-center justify-center mx-auto mb-2`}>
+                <Icon className={`w-4 h-4 ${color}`} />
+              </div>
+              <p className="text-xs font-semibold text-slate-700">{label}</p>
+            </div>
+          </Link>
+        ))}
       </div>
 
-      {/* Payment history */}
-      <PaymentHistory />
+      {/* Active enrollments summary */}
+      {activeEnrollments.length > 0 && (
+        <div>
+          <h2 className="text-sm font-semibold text-slate-600 uppercase tracking-wide mb-3">Active Programs</h2>
+          <div className="space-y-2">
+            {activeEnrollments.map(e => <EnrollmentStatusCard key={e.id} enrollment={e} />)}
+          </div>
+        </div>
+      )}
 
-      {/* Student gradebook per student */}
-      {parent?.student_ids?.map((sid, i) => (
+      {/* Student snapshots */}
+      {studentIds.map((sid, i) => (
         <div key={sid} className="space-y-4">
-          <StudentGradebook studentId={sid} studentName={`Student ${i + 1}`} />
-          <ParentRewardsSummary studentId={sid} studentName={`Student ${i + 1}`} />
+          <h2 className="text-sm font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-2">
+            <Users className="w-4 h-4" /> Student {i + 1} Overview
+          </h2>
+          <div className="grid md:grid-cols-2 gap-4">
+            <StudentGradebook studentId={sid} studentName={`Student ${i + 1}`} />
+            <ParentRewardsSummary studentId={sid} studentName={`Student ${i + 1}`} />
+          </div>
         </div>
       ))}
+
+      {/* All enrollments if none active */}
+      {activeEnrollments.length === 0 && (
+        <div>
+          <h2 className="text-sm font-semibold text-slate-600 uppercase tracking-wide mb-3">All Enrollments</h2>
+          {enrollLoading ? (
+            <div className="flex justify-center py-8"><div className="w-5 h-5 border-4 border-slate-200 border-t-[#1a3c5e] rounded-full animate-spin" /></div>
+          ) : enrollments.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center">
+                <p className="text-sm text-slate-400">No enrollments found.</p>
+                <Link to="/apply" className="text-xs text-[#1a3c5e] hover:underline mt-2 block">Apply to a program →</Link>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {enrollments.map(e => <EnrollmentStatusCard key={e.id} enrollment={e} />)}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
