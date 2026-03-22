@@ -32,6 +32,13 @@ import StudentRewards from "./pages/student/Rewards";
 import AcademicCoachRewards from "./pages/academic-coach/Rewards";
 import PerformanceCoachRewards from "./pages/performance-coach/Rewards";
 
+// Shared module pages
+import Schedule from "./pages/shared/Schedule";
+import Progress from "./pages/shared/Progress";
+import Messages from "./pages/shared/Messages";
+import Resources from "./pages/shared/Resources";
+import ParentBilling from "./pages/parent/Billing";
+
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
 
@@ -75,6 +82,10 @@ const AuthenticatedApp = () => {
         {/* Student portal */}
         <Route element={<PortalLayout />}>
           <Route path="/student/dashboard" element={<StudentDashboard />} />
+          <Route path="/student/schedule" element={<Schedule />} />
+          <Route path="/student/progress" element={<Progress />} />
+          <Route path="/student/messages" element={<Messages />} />
+          <Route path="/student/resources" element={<Resources />} />
           <Route path="/student/rewards" element={<StudentRewards />} />
         </Route>
 
@@ -82,17 +93,28 @@ const AuthenticatedApp = () => {
         <Route element={<PortalLayout />}>
           <Route path="/parent/dashboard" element={<ParentDashboard />} />
           <Route path="/parent/checkout" element={<ParentCheckout />} />
+          <Route path="/parent/schedule" element={<Schedule />} />
+          <Route path="/parent/progress" element={<Progress />} />
+          <Route path="/parent/messages" element={<Messages />} />
+          <Route path="/parent/resources" element={<Resources />} />
+          <Route path="/parent/billing" element={<ParentBilling />} />
         </Route>
 
         {/* Academic Coach portal */}
         <Route element={<PortalLayout />}>
           <Route path="/academic-coach/dashboard" element={<AcademicCoachDashboard />} />
+          <Route path="/academic-coach/schedule" element={<Schedule />} />
+          <Route path="/academic-coach/messages" element={<Messages />} />
+          <Route path="/academic-coach/resources" element={<Resources />} />
           <Route path="/academic-coach/rewards" element={<AcademicCoachRewards />} />
         </Route>
 
         {/* Performance Coach portal */}
         <Route element={<PortalLayout />}>
           <Route path="/performance-coach/dashboard" element={<PerformanceCoachDashboard />} />
+          <Route path="/performance-coach/schedule" element={<Schedule />} />
+          <Route path="/performance-coach/messages" element={<Messages />} />
+          <Route path="/performance-coach/resources" element={<Resources />} />
           <Route path="/performance-coach/rewards" element={<PerformanceCoachRewards />} />
         </Route>
 
@@ -104,6 +126,8 @@ const AuthenticatedApp = () => {
           <Route path="/admin/admissions" element={<Admissions />} />
           <Route path="/admin/enrollments" element={<Enrollments />} />
           <Route path="/admin/rewards" element={<AdminRewards />} />
+          <Route path="/admin/messages" element={<Messages />} />
+          <Route path="/admin/resources" element={<Resources />} />
         </Route>
 
         <Route path="*" element={<PageNotFound />} />
