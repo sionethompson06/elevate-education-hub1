@@ -1,28 +1,110 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import { GraduationCap, ArrowLeft } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { base44 } from "@/api/base44Client";
+import { useAuth } from "@/lib/AuthContext";
+import StepIndicator from "@/components/apply/StepIndicator";
+import StepParent from "@/components/apply/StepParent";
+import StepStudent from "@/components/apply/StepStudent";
+import StepProgram from "@/components/apply/StepProgram";
+import StepReview from "@/components/apply/StepReview";
+import ConfirmationPage from "@/components/apply/ConfirmationPage";
+import PublicNav from "@/components/layout/PublicNav";
+import PublicFooter from "@/components/layout/PublicFooter";
+
+const STEPS = ["Parent Info", "Student Info", "Program", "Review"];
+
+const EMPTY_FORM = {
+  parent_first_name: "",
+  parent_last_name: "",
+  email: "",
+  phone: "",
+  student_first_name: "",
+  student_last_name: "",
+  student_birth_date: "",
+  student_age: "",
+  student_grade: "",
+  program_interest: "",
+  notes: "",
+};
 
 export default function Apply() {
+  const { user } = useAuth();
+  const [step, setStep] = useState(0);
+  const [form, setForm] = useState({
+    ...EMPTY_FORM,
+    email: user?.email || "",
+  });
+  const [submitted, setSubmitted] = useState(false);
+  const [submittedApp, setSubmittedApp] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  const update = (fields) => setForm((f) => ({ ...f, ...fields }));
+
+  const handleSaveDraft = async () => {
+    setSaving(true);
+    setError(null);
+    const data = {
+      ...form,
+      student_age: Number(form.student_age) || 0,
+      status: "draft",
+      applicant_user_id: user?.id || "",
+      applicant_email: user?.email || form.email,
+    };
+    await base44.entities.Application.create(data);
+    setSaving(false);
+    alert("Draft saved! You can return to complete your application later.");
+  };
+
+  const handleSubmit = async () => {
+    setSaving(true);
+    setError(null);
+    const data = {
+      ...form,
+      student_age: Number(form.student_age) || 0,
+      status: "submitted",
+      submitted_at: new Date().toISOString(),
+      applicant_user_id: user?.id || "",
+      applicant_email: user?.email || form.email,
+    };
+    const app = await base44.entities.Application.create(data);
+    setSubmittedApp(app);
+    setSubmitted(true);
+    setSaving(false);
+  };
+
+  if (submitted) return <ConfirmationPage application={submittedApp} />;
+
   return (
-    <div className="min-h-screen bg-slate-50">
-      <nav className="bg-[#1a3c5e] text-white px-6 py-4 flex items-center justify-between">
-        <Link to="/" className="flex items-center gap-2 font-bold text-lg">
-          <GraduationCap className="w-6 h-6" />
-          Elevate Education Hub
-        </Link>
-      </nav>
-      <div className="max-w-2xl mx-auto py-16 px-6 text-center">
-        <h1 className="text-3xl font-bold text-[#1a3c5e] mb-4">Apply to Elevate</h1>
-        <p className="text-slate-500 mb-8">
-          The full multi-step application form will be built in Phase 4 (Admissions Workflow).
-        </p>
-        <div className="bg-white rounded-xl border border-slate-200 p-8">
-          <p className="text-slate-400">Application form coming in Phase 4.</p>
+    <div className="min-h-screen flex flex-col bg-slate-50">
+      <PublicNav />
+      <main className="flex-1 py-10 px-4">
+        <div className="max-w-2xl mx-auto">
+          <div className="text-center mb-8">
+            <h1 className="text-3xl font-bold text-[#1a3c5e]">Apply to Elevate</h1>
+            <p className="text-slate-500 mt-2">Complete the form below to begin your enrollment journey.</p>
+          </div>
+
+          <StepIndicator steps={STEPS} current={step} />
+
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-8 mt-6">
+            {step === 0 && <StepParent form={form} update={update} onNext={() => setStep(1)} />}
+            {step === 1 && <StepStudent form={form} update={update} onNext={() => setStep(2)} onBack={() => setStep(0)} />}
+            {step === 2 && <StepProgram form={form} update={update} onNext={() => setStep(3)} onBack={() => setStep(1)} />}
+            {step === 3 && (
+              <StepReview
+                form={form}
+                onBack={() => setStep(2)}
+                onSaveDraft={handleSaveDraft}
+                onSubmit={handleSubmit}
+                saving={saving}
+                error={error}
+              />
+            )}
+          </div>
         </div>
-        <Link to="/" className="inline-flex items-center gap-2 mt-6 text-[#1a3c5e] hover:underline text-sm">
-          <ArrowLeft className="w-4 h-4" /> Back to Home
-        </Link>
-      </div>
+      </main>
+      <PublicFooter />
     </div>
   );
 }
