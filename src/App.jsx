@@ -37,7 +37,12 @@ import Schedule from "./pages/shared/Schedule";
 import Progress from "./pages/shared/Progress";
 import Messages from "./pages/shared/Messages";
 import Resources from "./pages/shared/Resources";
+import Attendance from "./pages/shared/Attendance";
 import ParentBilling from "./pages/parent/Billing";
+
+// Admin extended pages
+import AdminStudents from "./pages/admin/Students";
+import AdminAnalytics from "./pages/admin/Analytics";
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -84,6 +89,7 @@ const AuthenticatedApp = () => {
           <Route path="/student/dashboard" element={<StudentDashboard />} />
           <Route path="/student/schedule" element={<Schedule />} />
           <Route path="/student/progress" element={<Progress />} />
+          <Route path="/student/attendance" element={<Attendance />} />
           <Route path="/student/messages" element={<Messages />} />
           <Route path="/student/resources" element={<Resources />} />
           <Route path="/student/rewards" element={<StudentRewards />} />
@@ -95,6 +101,7 @@ const AuthenticatedApp = () => {
           <Route path="/parent/checkout" element={<ParentCheckout />} />
           <Route path="/parent/schedule" element={<Schedule />} />
           <Route path="/parent/progress" element={<Progress />} />
+          <Route path="/parent/attendance" element={<Attendance />} />
           <Route path="/parent/messages" element={<Messages />} />
           <Route path="/parent/resources" element={<Resources />} />
           <Route path="/parent/billing" element={<ParentBilling />} />
@@ -104,6 +111,7 @@ const AuthenticatedApp = () => {
         <Route element={<PortalLayout />}>
           <Route path="/academic-coach/dashboard" element={<AcademicCoachDashboard />} />
           <Route path="/academic-coach/schedule" element={<Schedule />} />
+          <Route path="/academic-coach/attendance" element={<Attendance />} />
           <Route path="/academic-coach/messages" element={<Messages />} />
           <Route path="/academic-coach/resources" element={<Resources />} />
           <Route path="/academic-coach/rewards" element={<AcademicCoachRewards />} />
@@ -113,6 +121,7 @@ const AuthenticatedApp = () => {
         <Route element={<PortalLayout />}>
           <Route path="/performance-coach/dashboard" element={<PerformanceCoachDashboard />} />
           <Route path="/performance-coach/schedule" element={<Schedule />} />
+          <Route path="/performance-coach/attendance" element={<Attendance />} />
           <Route path="/performance-coach/messages" element={<Messages />} />
           <Route path="/performance-coach/resources" element={<Resources />} />
           <Route path="/performance-coach/rewards" element={<PerformanceCoachRewards />} />
@@ -121,6 +130,7 @@ const AuthenticatedApp = () => {
         {/* Admin portal */}
         <Route element={<PortalLayout />}>
           <Route path="/admin/dashboard" element={<AdminDashboard />} />
+          <Route path="/admin/students" element={<AdminStudents />} />
           <Route path="/admin/access-logs" element={<AccessLogs />} />
           <Route path="/admin/cms" element={<CmsEditor />} />
           <Route path="/admin/admissions" element={<Admissions />} />
@@ -128,6 +138,8 @@ const AuthenticatedApp = () => {
           <Route path="/admin/rewards" element={<AdminRewards />} />
           <Route path="/admin/messages" element={<Messages />} />
           <Route path="/admin/resources" element={<Resources />} />
+          <Route path="/admin/attendance" element={<Attendance />} />
+          <Route path="/admin/analytics" element={<AdminAnalytics />} />
         </Route>
 
         <Route path="*" element={<PageNotFound />} />
