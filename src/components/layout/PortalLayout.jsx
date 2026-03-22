@@ -156,7 +156,7 @@ export default function PortalLayout() {
 
       {/* Mobile nav drawer */}
       {mobileOpen && (
-        <div className="md:hidden fixed inset-0 z-40 bg-[#1a3c5e] text-white pt-16 px-6 pb-6">
+        <div className="md:hidden fixed inset-0 z-40 bg-[#1a3c5e] text-white pt-16 px-6 pb-6 overflow-y-auto">
           <nav className="space-y-1">
             {navItems.map(({ label, href }) => (
               <Link
@@ -170,6 +170,15 @@ export default function PortalLayout() {
                 {label}
               </Link>
             ))}
+            {isAdminViewingOtherHub && (
+              <Link
+                to="/admin/dashboard"
+                onClick={() => setMobileOpen(false)}
+                className="flex items-center gap-2 px-4 py-3 rounded-lg text-sm text-yellow-300 font-semibold mt-4 border-t border-white/10 pt-4"
+              >
+                <ArrowLeft className="w-4 h-4" /> Back to Admin Hub
+              </Link>
+            )}
           </nav>
         </div>
       )}
