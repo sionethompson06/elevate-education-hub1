@@ -70,6 +70,23 @@ export default function Attendance() {
     refetch();
   };
 
+  const createSession = async () => {
+    if (!sessionForm.title || !sessionForm.scheduled_at) return;
+    setSaving(true);
+    await base44.entities.Session.create({
+      ...sessionForm,
+      coach_user_id: user.id,
+      coach_email: user.email,
+      scheduled_at: new Date(sessionForm.scheduled_at).toISOString(),
+      status: "scheduled",
+      duration_minutes: Number(sessionForm.duration_minutes) || 60,
+    });
+    setSaving(false);
+    setShowCreateSession(false);
+    setSessionForm({ title: "", program_type: "academic", scheduled_at: "", duration_minutes: 60, location: "", student_id: "" });
+    refetch();
+  };
+
   // Attendance stats
   const completed = sessions.filter(s => s.status === "completed");
   const present = completed.filter(s => s.attendance_status === "present").length;
