@@ -25,6 +25,7 @@ const ROLE_NAV = {
   ],
   parent: [
     { label: "My Dashboard", href: "/parent/dashboard" },
+    { label: "Programs & Enroll", href: "/parent/programs" },
     { label: "Schedule", href: "/parent/schedule" },
     { label: "Progress", href: "/parent/progress" },
     { label: "Attendance", href: "/parent/attendance" },

@@ -39,6 +39,7 @@ import Messages from "./pages/shared/Messages";
 import Resources from "./pages/shared/Resources";
 import Attendance from "./pages/shared/Attendance";
 import ParentBilling from "./pages/parent/Billing";
+import ParentPrograms from "./pages/parent/Programs";
 
 // Admin extended pages
 import AdminStudents from "./pages/admin/Students";
@@ -105,6 +106,7 @@ const AuthenticatedApp = () => {
           <Route path="/parent/messages" element={<Messages />} />
           <Route path="/parent/resources" element={<Resources />} />
           <Route path="/parent/billing" element={<ParentBilling />} />
+          <Route path="/parent/programs" element={<ParentPrograms />} />
         </Route>
 
         {/* Academic Coach portal */}
