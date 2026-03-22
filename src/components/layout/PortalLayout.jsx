@@ -61,6 +61,10 @@ const ROLE_NAV = {
     { label: "Analytics", href: "/admin/analytics" },
     { label: "CMS Editor", href: "/admin/cms" },
     { label: "Access Logs", href: "/admin/access-logs" },
+    { label: "── View as Hub ──", href: null, divider: true },
+    { label: "👨‍🎓 Student Hub", href: "/student/dashboard" },
+    { label: "👨‍👩‍👧 Parent Hub", href: "/parent/dashboard" },
+    { label: "🏫 Coach Hub", href: "/academic-coach/dashboard" },
   ],
 };
 
