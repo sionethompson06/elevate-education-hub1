@@ -152,8 +152,15 @@ Deno.serve(async (req) => {
       if (user.role === 'academic_coach' && lesson.academic_coach_user_id !== user.id) {
         return Response.json({ error: 'Not your assigned student' }, { status: 403 });
       }
-      if (user.role === 'student' || user.role === 'parent') {
+      if (user.role === 'parent') {
         return Response.json({ error: 'Read-only access' }, { status: 403 });
+      }
+      // Students can mark their own lessons complete
+      if (user.role === 'student') {
+        const students = await db.entities.Student.filter({ user_id: user.id });
+        const sid = students[0]?.id;
+        if (lesson.student_id !== sid) return Response.json({ error: 'Not your lesson' }, { status: 403 });
+        if (!['complete', 'incomplete'].includes(new_status)) return Response.json({ error: 'Invalid status' }, { status: 400 });
       }
       if (user.role === 'performance_coach') {
         return Response.json({ error: 'Forbidden' }, { status: 403 });
