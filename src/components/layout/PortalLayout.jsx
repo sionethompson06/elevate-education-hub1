@@ -70,9 +70,22 @@ export default function PortalLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const role = user?.role || "student";
-  const navItems = ROLE_NAV[role] || [];
-  const roleColor = ROLE_COLORS[role] || "bg-[#1a3c5e]";
-  const roleLabel = ROLE_LABELS[role] || role;
+
+  // If admin is browsing a non-admin hub, show that hub's nav + a back button
+  const path = location.pathname;
+  const isAdminViewingOtherHub = role === "admin" && !path.startsWith("/admin");
+  const viewingHubRole = isAdminViewingOtherHub
+    ? path.startsWith("/student") ? "student"
+    : path.startsWith("/parent") ? "parent"
+    : path.startsWith("/academic-coach") ? "academic_coach"
+    : path.startsWith("/performance-coach") ? "performance_coach"
+    : null
+    : null;
+
+  const effectiveRole = viewingHubRole || role;
+  const navItems = ROLE_NAV[effectiveRole] || [];
+  const roleColor = ROLE_COLORS[effectiveRole] || "bg-[#1a3c5e]";
+  const roleLabel = ROLE_LABELS[effectiveRole] || effectiveRole;
 
   const isActive = (href) => location.pathname === href;
 
@@ -107,10 +120,18 @@ export default function PortalLayout() {
           ))}
         </nav>
 
-        <div className="p-4 border-t border-white/10">
+        <div className="p-4 border-t border-white/10 space-y-1">
+          {isAdminViewingOtherHub && (
+            <Link
+              to="/admin/dashboard"
+              className="flex items-center gap-2 text-yellow-300 hover:text-yellow-200 text-sm w-full px-4 py-2 rounded-lg hover:bg-white/10 transition-colors font-semibold"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back to Admin Hub
+            </Link>
+          )}
           <button
             onClick={() => base44.auth.logout("/")}
-
             className="flex items-center gap-2 text-slate-400 hover:text-white text-sm w-full px-4 py-2 rounded-lg hover:bg-white/10 transition-colors"
           >
             <LogOut className="w-4 h-4" />

@@ -87,6 +87,37 @@ export default function AdminDashboard() {
         </div>
       </div>
 
+      {/* Portal Hub access */}
+      <div>
+        <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">View Portal Hubs</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {[
+            { label: "Student Hub", desc: "View the student portal experience", href: "/student/dashboard", icon: BookOpen, color: "text-blue-600", bg: "bg-blue-50", badge: "bg-blue-100 text-blue-700" },
+            { label: "Parent Hub", desc: "View the parent portal experience", href: "/parent/dashboard", icon: Users, color: "text-purple-600", bg: "bg-purple-50", badge: "bg-purple-100 text-purple-700" },
+            { label: "Coach Hub", desc: "View the academic coach experience", href: "/academic-coach/dashboard", icon: GraduationCap, color: "text-emerald-600", bg: "bg-emerald-50", badge: "bg-emerald-100 text-emerald-700" },
+          ].map(({ label, desc, href, icon: Icon, color, bg, badge }) => (
+            <Link key={href} to={href}>
+              <Card className="hover:shadow-md hover:border-[#1a3c5e] transition-all cursor-pointer h-full">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-9 h-9 rounded-xl ${bg} flex items-center justify-center shrink-0`}>
+                        <Icon className={`w-4 h-4 ${color}`} />
+                      </div>
+                      <CardTitle className="text-sm text-[#1a3c5e]">{label}</CardTitle>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-slate-400" />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-xs text-slate-500">{desc}</p>
+                </CardContent>
+              </Card>
+            </Link>
+          ))}
+        </div>
+      </div>
+
       {/* Quick links */}
       <div>
         <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">Quick Actions</h2>
