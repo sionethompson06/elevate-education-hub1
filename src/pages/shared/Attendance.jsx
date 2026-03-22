@@ -31,7 +31,7 @@ export default function Attendance() {
   const isCoachOrAdmin = ["academic_coach", "performance_coach", "admin"].includes(user?.role);
 
   const { data: sessions = [], isLoading, refetch } = useQuery({
-    queryKey: ["attendance-sessions", user?.id, programFilter],
+    queryKey: ["attendance-sessions", user?.id, programFilter, selectedParentStudent],
     queryFn: async () => {
       const filters = {};
       if (programFilter !== "all") filters.program_type = programFilter;
