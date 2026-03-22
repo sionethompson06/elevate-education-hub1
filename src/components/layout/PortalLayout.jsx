@@ -1,5 +1,6 @@
 import { Outlet, Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
+import { base44 } from "@/api/base44Client";
 import { GraduationCap, LogOut, Menu, X } from "lucide-react";
 import { useState } from "react";
 import { ROLE_LABELS } from "@/lib/rbac";
@@ -89,7 +90,8 @@ export default function PortalLayout() {
 
         <div className="p-4 border-t border-white/10">
           <button
-            onClick={() => base44?.auth?.logout("/") }
+            onClick={() => base44.auth.logout("/")}
+
             className="flex items-center gap-2 text-slate-400 hover:text-white text-sm w-full px-4 py-2 rounded-lg hover:bg-white/10 transition-colors"
           >
             <LogOut className="w-4 h-4" />

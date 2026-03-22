@@ -7,6 +7,10 @@ import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import UserNotRegisteredError from "@/components/UserNotRegisteredError";
 import RBACGuard from "@/lib/RBACGuard";
 
+// Layouts
+import PublicLayout from "@/components/layout/PublicLayout";
+import PortalLayout from "@/components/layout/PortalLayout";
+
 // Public pages
 import Home from "./pages/Home";
 import Apply from "./pages/Apply";
@@ -19,6 +23,7 @@ import AcademicCoachDashboard from "./pages/academic-coach/Dashboard";
 import PerformanceCoachDashboard from "./pages/performance-coach/Dashboard";
 import AdminDashboard from "./pages/admin/Dashboard";
 import AccessLogs from "./pages/admin/AccessLogs";
+import CmsEditor from "./pages/admin/CmsEditor";
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -43,36 +48,49 @@ const AuthenticatedApp = () => {
   return (
     <RBACGuard>
       <Routes>
-        {/* Public routes */}
-        <Route path="/" element={<Home />} />
-        <Route path="/apply" element={<Apply />} />
+        {/* Public routes with shared nav/footer layout */}
+        <Route element={<PublicLayout />}>
+          <Route path="/" element={<Home />} />
+          <Route path="/apply" element={<Apply />} />
+          <Route path="/academics" element={<PlaceholderPage title="Academics" />} />
+          <Route path="/athletics" element={<PlaceholderPage title="Athletics" />} />
+          <Route path="/virtual-homeschool" element={<PlaceholderPage title="Virtual Homeschool" />} />
+          <Route path="/college-nil" element={<PlaceholderPage title="College & NIL" />} />
+          <Route path="/admissions" element={<PlaceholderPage title="Admissions" />} />
+          <Route path="/faq" element={<PlaceholderPage title="FAQ" />} />
+          <Route path="/contact" element={<PlaceholderPage title="Contact" />} />
+          <Route path="/cancellation-policy" element={<PlaceholderPage title="Cancellation Policy" />} />
+        </Route>
+
+        {/* Standalone pages (no nav/footer) */}
         <Route path="/unauthorized" element={<Unauthorized />} />
 
-        {/* Placeholder public pages — content coming Phase 3 */}
-        <Route path="/academics" element={<PlaceholderPage title="Academics" />} />
-        <Route path="/athletics" element={<PlaceholderPage title="Athletics" />} />
-        <Route path="/virtual-homeschool" element={<PlaceholderPage title="Virtual Homeschool" />} />
-        <Route path="/college-nil" element={<PlaceholderPage title="College & NIL" />} />
-        <Route path="/admissions" element={<PlaceholderPage title="Admissions" />} />
-        <Route path="/faq" element={<PlaceholderPage title="FAQ" />} />
-        <Route path="/contact" element={<PlaceholderPage title="Contact" />} />
-        <Route path="/cancellation-policy" element={<PlaceholderPage title="Cancellation Policy" />} />
-
         {/* Student portal */}
-        <Route path="/student/dashboard" element={<StudentDashboard />} />
+        <Route element={<PortalLayout />}>
+          <Route path="/student/dashboard" element={<StudentDashboard />} />
+        </Route>
 
         {/* Parent portal */}
-        <Route path="/parent/dashboard" element={<ParentDashboard />} />
+        <Route element={<PortalLayout />}>
+          <Route path="/parent/dashboard" element={<ParentDashboard />} />
+        </Route>
 
         {/* Academic Coach portal */}
-        <Route path="/academic-coach/dashboard" element={<AcademicCoachDashboard />} />
+        <Route element={<PortalLayout />}>
+          <Route path="/academic-coach/dashboard" element={<AcademicCoachDashboard />} />
+        </Route>
 
         {/* Performance Coach portal */}
-        <Route path="/performance-coach/dashboard" element={<PerformanceCoachDashboard />} />
+        <Route element={<PortalLayout />}>
+          <Route path="/performance-coach/dashboard" element={<PerformanceCoachDashboard />} />
+        </Route>
 
         {/* Admin portal */}
-        <Route path="/admin/dashboard" element={<AdminDashboard />} />
-        <Route path="/admin/access-logs" element={<AccessLogs />} />
+        <Route element={<PortalLayout />}>
+          <Route path="/admin/dashboard" element={<AdminDashboard />} />
+          <Route path="/admin/access-logs" element={<AccessLogs />} />
+          <Route path="/admin/cms" element={<CmsEditor />} />
+        </Route>
 
         <Route path="*" element={<PageNotFound />} />
       </Routes>
@@ -80,10 +98,9 @@ const AuthenticatedApp = () => {
   );
 };
 
-// Temporary placeholder for Phase 3 public pages
 function PlaceholderPage({ title }) {
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+    <div className="min-h-[60vh] flex items-center justify-center">
       <div className="text-center">
         <h1 className="text-2xl font-bold text-[#1a3c5e] mb-2">{title}</h1>
         <p className="text-slate-400">Full page content coming in Phase 3 (Public Pages + CMS).</p>
