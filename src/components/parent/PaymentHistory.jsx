@@ -16,10 +16,10 @@ export default function PaymentHistory() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    base44.functions.invoke("getPaymentHistory").then((res) => {
-      setData(res.data);
-      setLoading(false);
-    });
+    base44.functions.invoke("getPaymentHistory")
+      .then((res) => setData(res.data))
+      .catch(() => setData(null))
+      .finally(() => setLoading(false));
   }, []);
 
   if (loading) return (
