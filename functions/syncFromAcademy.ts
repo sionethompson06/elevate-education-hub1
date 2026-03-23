@@ -24,6 +24,7 @@ Deno.serve(async (req) => {
 
     const { applications: perfApps = [] } = JSON.parse(responseText);
     console.log(`Got ${perfApps.length} applications from Academy`);
+    console.log("Academy apps:", JSON.stringify(perfApps, null, 2));
 
     // 2. Read existing Hub applications for dedup
     const hubApps = await base44.asServiceRole.entities.Application.list("-created_date", 500);
@@ -31,12 +32,14 @@ Deno.serve(async (req) => {
     const existingKeys = new Set(
       hubApps.map(a => `${a.email}|${a.student_first_name}|${a.student_last_name}`)
     );
+    console.log("Existing keys in Hub:", Array.from(existingKeys));
 
     // 3. Filter to only new ones
     const seen = new Set();
     const toCreate = [];
     for (const a of perfApps) {
       const key = `${a.email}|${a.student_first_name}|${a.student_last_name}`;
+      console.log(`Checking Academy app: ${key} - exists? ${existingKeys.has(key)}`);
       if (existingKeys.has(key) || seen.has(key)) continue;
       seen.add(key);
       toCreate.push(a);
