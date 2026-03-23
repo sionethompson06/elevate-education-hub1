@@ -392,7 +392,7 @@ export default function ProgramsEnroll() {
               </button>
               <Button
                 className="flex-1 bg-[#1a3c5e] hover:bg-[#0d2540]"
-                disabled={enrolling || isInIframe()}
+                disabled={enrolling || isInIframe() || !policyAcknowledged}
                 onClick={handleConfirmEnroll}
               >
                 {enrolling ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Processing…</> : "Confirm & Pay"}
