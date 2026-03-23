@@ -22,6 +22,13 @@ export default function ApplicationDetailModal({ application: app, statusColors,
   const [saving, setSaving] = useState(false);
   const [inviting, setInviting] = useState(false);
 
+  // Invalidate cached parent data when modal opens so we always show latest email
+  useState(() => {
+    if (app.created_parent_id) {
+      qc.invalidateQueries({ queryKey: ["app-parent", app.created_parent_id] });
+    }
+  });
+
   const sc = statusColors[app.status] || "bg-slate-100 text-slate-500";
 
   // Always fetch fresh parent data when modal opens
