@@ -2,9 +2,8 @@ import { useState } from "react";
 import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 import { useToast } from "@/components/ui/use-toast";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { X, CheckCircle, XCircle, Clock, Loader2, Mail } from "lucide-react";
+import { X, CheckCircle, XCircle, Clock, Loader2, Mail, Pencil, Save } from "lucide-react";
 import { format } from "date-fns";
 
 const Row = ({ label, value }) => (
@@ -17,44 +16,68 @@ const Row = ({ label, value }) => (
 export default function ApplicationDetailModal({ application: initialApp, statusColors, onClose, onUpdated }) {
   const { user } = useAuth();
   const { toast } = useToast();
-  const qc = useQueryClient();
+
+  const [app, setApp] = useState(initialApp);
   const [decisionNotes, setDecisionNotes] = useState(initialApp.decision_notes || "");
   const [saving, setSaving] = useState(false);
   const [inviting, setInviting] = useState(false);
 
-  // Always fetch the live application record so we have the latest created_parent_id etc.
-  const { data: liveApp } = useQuery({
-    queryKey: ["app-detail", initialApp.id],
-    queryFn: () => base44.entities.Application.filter({ id: initialApp.id }).then(r => r[0]),
-    staleTime: 0,
-    refetchOnMount: "always",
+  // Editable parent contact state — seeded from app record
+  const [editingContact, setEditingContact] = useState(false);
+  const [contactForm, setContactForm] = useState({
+    full_name: `${initialApp.parent_first_name} ${initialApp.parent_last_name}`,
+    email: initialApp.email || "",
+    phone: initialApp.phone || "",
   });
-  const app = liveApp || initialApp;
+  const [savingContact, setSavingContact] = useState(false);
 
   const sc = statusColors[app.status] || "bg-slate-100 text-slate-500";
 
-  // Fetch live parent record using the (possibly freshly loaded) created_parent_id
-  const { data: liveParents = [] } = useQuery({
-    queryKey: ["app-parent", app.created_parent_id],
-    queryFn: () => base44.entities.Parent.filter({ id: app.created_parent_id }),
-    enabled: !!app.created_parent_id,
-    staleTime: 0,
-    refetchOnMount: "always",
-  });
-  const liveParent = liveParents[0];
-  const parentEmail = liveParent?.user_email || app.email;
-  const parentPhone = liveParent?.phone || app.phone;
-  const parentName = liveParent
-    ? liveParent.full_name
-    : `${app.parent_first_name} ${app.parent_last_name}`;
+  const saveContact = async () => {
+    setSavingContact(true);
+    const nameParts = contactForm.full_name.trim().split(" ");
+    const firstName = nameParts[0] || "";
+    const lastName = nameParts.slice(1).join(" ") || "";
+
+    // Update the Application record
+    await base44.entities.Application.update(app.id, {
+      parent_first_name: firstName,
+      parent_last_name: lastName,
+      email: contactForm.email,
+      phone: contactForm.phone,
+      applicant_email: contactForm.email,
+    });
+
+    // If a Parent record was already created on approval, update it too
+    if (app.created_parent_id) {
+      await base44.entities.Parent.update(app.created_parent_id, {
+        full_name: contactForm.full_name.trim(),
+        user_email: contactForm.email,
+        phone: contactForm.phone,
+        billing_email: contactForm.email,
+      });
+    }
+
+    setApp(prev => ({
+      ...prev,
+      parent_first_name: firstName,
+      parent_last_name: lastName,
+      email: contactForm.email,
+      phone: contactForm.phone,
+    }));
+
+    setEditingContact(false);
+    setSavingContact(false);
+    toast({ title: "Contact info updated" });
+  };
 
   const sendInvite = async () => {
     setInviting(true);
     try {
-      await base44.users.inviteUser(parentEmail, "user");
+      await base44.users.inviteUser(contactForm.email, "user");
       toast({
         title: "Invitation sent!",
-        description: `Login invite emailed to ${parentEmail} with parent access.`,
+        description: `Login invite emailed to ${contactForm.email} with parent access.`,
       });
     } catch (err) {
       toast({
@@ -98,22 +121,25 @@ export default function ApplicationDetailModal({ application: initialApp, status
 
   const handleApproval = async () => {
     const placeholderUserId = `pending_${app.id}`;
+    const emailToUse = contactForm.email;
+    const nameToUse = contactForm.full_name.trim();
+    const nameParts = nameToUse.split(" ");
 
     // 1. Create Parent record
     const parent = await base44.entities.Parent.create({
       user_id: placeholderUserId,
-      user_email: app.email,
-      full_name: `${app.parent_first_name} ${app.parent_last_name}`,
-      phone: app.phone,
+      user_email: emailToUse,
+      full_name: nameToUse,
+      phone: contactForm.phone,
       student_ids: [],
       is_primary_contact: true,
-      billing_email: app.email,
+      billing_email: emailToUse,
     });
 
     // 2. Create Student record
     const student = await base44.entities.Student.create({
       user_id: placeholderUserId,
-      user_email: app.email,
+      user_email: emailToUse,
       full_name: `${app.student_first_name} ${app.student_last_name}`,
       date_of_birth: app.student_birth_date,
       grade_level: app.student_grade,
@@ -125,7 +151,7 @@ export default function ApplicationDetailModal({ application: initialApp, status
     // 3. Link parent -> student
     await base44.entities.Parent.update(parent.id, { student_ids: [student.id] });
 
-    // 4. Try to find a matching Program by name to get program_id
+    // 4. Try to find a matching Program
     const allPrograms = await base44.entities.Program.list("name", 100);
     const matchedProgram = allPrograms.find(p =>
       p.name?.toLowerCase().includes(app.program_interest?.toLowerCase()) ||
@@ -135,7 +161,7 @@ export default function ApplicationDetailModal({ application: initialApp, status
     // 5. Create Enrollment
     const enrollment = await base44.entities.Enrollment.create({
       student_id: student.id,
-      student_email: app.email,
+      student_email: emailToUse,
       program_id: matchedProgram?.id || "pending",
       program_name: matchedProgram?.name || app.program_interest,
       status: "pending_payment",
@@ -151,12 +177,12 @@ export default function ApplicationDetailModal({ application: initialApp, status
       created_enrollment_id: enrollment.id,
     });
 
-    // 7. Invite parent to the platform
+    // 7. Invite parent
     try {
-      await base44.users.inviteUser(app.email, "user");
+      await base44.users.inviteUser(emailToUse, "user");
       toast({
         title: "Invitation sent",
-        description: `An invitation email was sent to ${app.email} with parent access.`,
+        description: `An invitation email was sent to ${emailToUse} with parent access.`,
       });
     } catch (inviteErr) {
       console.warn("Invite skipped (user may already exist):", inviteErr.message);
@@ -200,11 +226,63 @@ export default function ApplicationDetailModal({ application: initialApp, status
         </div>
 
         <div className="overflow-y-auto flex-1 px-6 py-4 space-y-5">
+
+          {/* Parent / Guardian — editable */}
           <div className="bg-slate-50 rounded-xl p-4">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Parent / Guardian</p>
-            <Row label="Name" value={parentName} />
-            <Row label="Email" value={parentEmail} />
-            <Row label="Phone" value={parentPhone} />
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Parent / Guardian</p>
+              {!editingContact && (
+                <button
+                  onClick={() => setEditingContact(true)}
+                  className="text-xs text-[#1a3c5e] flex items-center gap-1 hover:underline"
+                >
+                  <Pencil className="w-3 h-3" /> Edit
+                </button>
+              )}
+            </div>
+
+            {editingContact ? (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">Full Name</label>
+                  <input
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30"
+                    value={contactForm.full_name}
+                    onChange={e => setContactForm(f => ({ ...f, full_name: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">Email</label>
+                  <input
+                    type="email"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30"
+                    value={contactForm.email}
+                    onChange={e => setContactForm(f => ({ ...f, email: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">Phone</label>
+                  <input
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30"
+                    value={contactForm.phone}
+                    onChange={e => setContactForm(f => ({ ...f, phone: e.target.value }))}
+                  />
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button onClick={() => setEditingContact(false)} className="text-xs text-slate-500 hover:text-slate-700">Cancel</button>
+                  <Button size="sm" onClick={saveContact} disabled={savingContact} className="bg-[#1a3c5e] hover:bg-[#0d2540]">
+                    {savingContact ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Save className="w-3 h-3 mr-1" />}
+                    Save
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <Row label="Name" value={contactForm.full_name} />
+                <Row label="Email" value={contactForm.email} />
+                <Row label="Phone" value={contactForm.phone} />
+              </>
+            )}
           </div>
 
           <div className="bg-slate-50 rounded-xl p-4">
@@ -234,13 +312,13 @@ export default function ApplicationDetailModal({ application: initialApp, status
             </div>
           )}
 
-          {/* Manual invite button — visible for approved applications */}
+          {/* Manual invite — uses contactForm.email so it's always up to date */}
           {app.status === "approved" && (
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center justify-between gap-4">
               <div>
                 <p className="text-sm font-semibold text-blue-800">Send Login Invitation</p>
                 <p className="text-xs text-blue-600 mt-0.5">
-                  Email <strong>{parentEmail}</strong> a link to create their password and access the Parent Portal.
+                  Email <strong>{contactForm.email}</strong> a link to create their password and access the Parent Portal.
                 </p>
               </div>
               <Button
