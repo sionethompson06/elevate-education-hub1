@@ -17,17 +17,20 @@ const Row = ({ label, value }) => (
 export default function ApplicationDetailModal({ application: app, statusColors, onClose, onUpdated }) {
   const { user } = useAuth();
   const { toast } = useToast();
+  const qc = useQueryClient();
   const [decisionNotes, setDecisionNotes] = useState(app.decision_notes || "");
   const [saving, setSaving] = useState(false);
   const [inviting, setInviting] = useState(false);
 
   const sc = statusColors[app.status] || "bg-slate-100 text-slate-500";
 
-  // Load live parent record if one was created on approval
+  // Always fetch fresh parent data when modal opens
   const { data: liveParents = [] } = useQuery({
     queryKey: ["app-parent", app.created_parent_id],
     queryFn: () => base44.entities.Parent.filter({ id: app.created_parent_id }),
     enabled: !!app.created_parent_id,
+    staleTime: 0,
+    refetchOnMount: "always",
   });
   const liveParent = liveParents[0];
   const parentEmail = liveParent?.user_email || app.email;
