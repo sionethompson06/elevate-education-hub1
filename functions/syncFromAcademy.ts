@@ -1,26 +1,29 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.21';
 
-// Replace with your actual Performance Academy functions URL
-// (Performance Academy app → Code → Functions → getAllApplications → copy the URL, remove the function name at the end)
-const PERF_ACADEMY_GET_URL = "elevate-performance-academy-copy-a6b1fa01.base44.app/functions/getAllApplications";
+const PERF_ACADEMY_URL = "https://genius-84fd149d.base44.app/functions/getAllApplications";
 
 Deno.serve(async (req) => {
   try {
     const base44 = createClientFromRequest(req);
 
-    // 1. Fetch all apps from Performance Academy
-    const perfResponse = await fetch(PERF_ACADEMY_GET_URL, {
+    console.log("Calling Performance Academy:", PERF_ACADEMY_URL);
+
+    const perfResponse = await fetch(PERF_ACADEMY_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),
     });
 
+    const responseText = await perfResponse.text();
+    console.log("Performance Academy response status:", perfResponse.status);
+    console.log("Performance Academy response body:", responseText);
+
     if (!perfResponse.ok) {
-      const err = await perfResponse.text();
-      return Response.json({ success: false, error: `Could not reach Performance Academy: ${err}` }, { status: 502 });
+      return Response.json({ success: false, error: `Academy returned ${perfResponse.status}: ${responseText}` }, { status: 500 });
     }
 
-    const { applications: perfApps = [] } = await perfResponse.json();
+    const { applications: perfApps = [] } = JSON.parse(responseText);
+    console.log(`Got ${perfApps.length} applications from Academy`);
 
     // 2. Read existing Hub applications for dedup
     const hubApps = await base44.asServiceRole.entities.Application.list("-created_date", 500);
@@ -75,7 +78,7 @@ Deno.serve(async (req) => {
     });
 
   } catch (err) {
-    console.error("syncFromAcademy error:", err.message);
+    console.error("syncFromAcademy crashed:", err.message);
     return Response.json({ success: false, error: err.message }, { status: 500 });
   }
 });
