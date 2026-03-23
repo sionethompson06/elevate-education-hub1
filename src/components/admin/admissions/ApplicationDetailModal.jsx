@@ -23,6 +23,19 @@ export default function ApplicationDetailModal({ application: app, statusColors,
 
   const sc = statusColors[app.status] || "bg-slate-100 text-slate-500";
 
+  // Load live parent record if one was created on approval
+  const { data: liveParents = [] } = useQuery({
+    queryKey: ["app-parent", app.created_parent_id],
+    queryFn: () => base44.entities.Parent.filter({ id: app.created_parent_id }),
+    enabled: !!app.created_parent_id,
+  });
+  const liveParent = liveParents[0];
+  const parentEmail = liveParent?.user_email || app.email;
+  const parentPhone = liveParent?.phone || app.phone;
+  const parentName = liveParent
+    ? liveParent.full_name
+    : `${app.parent_first_name} ${app.parent_last_name}`;
+
   const sendInvite = async () => {
     setInviting(true);
     try {
