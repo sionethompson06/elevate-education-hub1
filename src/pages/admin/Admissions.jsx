@@ -23,7 +23,7 @@ export default function Admissions() {
   const [selected, setSelected] = useState(null);
   const qc = useQueryClient();
 
-  const { data: applications = [], isLoading } = useQuery({
+  const { data: applications = [], isLoading, refetch, isFetching } = useQuery({
     queryKey: ["applications", statusFilter],
     queryFn: () =>
       statusFilter === "all"
