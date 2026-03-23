@@ -2,7 +2,7 @@ import { createClientFromRequest } from 'npm:@base44/sdk@0.8.21';
 
 // Replace with your actual Performance Academy functions URL
 // (Performance Academy app → Code → Functions → getAllApplications → copy the URL, remove the function name at the end)
-const PERF_ACADEMY_GET_URL = "https://genius-84fd149d.base44.app/functions/receiveApplication";
+const PERF_ACADEMY_GET_URL = "elevate-performance-academy-copy-a6b1fa01.base44.app/functions/getAllApplications";
 
 Deno.serve(async (req) => {
   try {
