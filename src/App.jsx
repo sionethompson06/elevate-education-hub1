@@ -42,6 +42,8 @@ import Resources from "./pages/shared/Resources";
 import Attendance from "./pages/shared/Attendance";
 import ParentBilling from "./pages/parent/Billing";
 import ParentPrograms from "./pages/parent/Programs";
+import ProgramsEnroll from "./pages/parent/ProgramsEnroll";
+import PaymentsBilling from "./pages/parent/PaymentsBilling";
 
 // Admin extended pages
 import AdminStudents from "./pages/admin/Students";
