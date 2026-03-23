@@ -28,6 +28,8 @@ Deno.serve(async (req) => {
     return Response.json({ url: session.url });
   } catch (error) {
     console.error('stripePortal error:', error.message);
-    return Response.json({ error: error.message }, { status: 500 });
+    // Return 400 for Stripe API errors (e.g. portal not configured) so frontend can handle gracefully
+    const status = error.type?.startsWith('Stripe') || error.statusCode ? 400 : 500;
+    return Response.json({ error: error.message }, { status });
   }
 });
