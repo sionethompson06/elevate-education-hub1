@@ -3,7 +3,7 @@ import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
-import { X, CheckCircle, XCircle, Clock, Loader2 } from "lucide-react";
+import { X, CheckCircle, XCircle, Clock, Loader2, Mail } from "lucide-react";
 import { format } from "date-fns";
 
 const Row = ({ label, value }) => (
@@ -18,8 +18,27 @@ export default function ApplicationDetailModal({ application: app, statusColors,
   const { toast } = useToast();
   const [decisionNotes, setDecisionNotes] = useState(app.decision_notes || "");
   const [saving, setSaving] = useState(false);
+  const [inviting, setInviting] = useState(false);
 
   const sc = statusColors[app.status] || "bg-slate-100 text-slate-500";
+
+  const sendInvite = async () => {
+    setInviting(true);
+    try {
+      await base44.users.inviteUser(app.email, "parent");
+      toast({
+        title: "Invitation sent!",
+        description: `Login invite emailed to ${app.email} with parent access.`,
+      });
+    } catch (err) {
+      toast({
+        title: "Invite failed",
+        description: err.message || "Could not send invite. The user may already have an account.",
+        variant: "destructive",
+      });
+    }
+    setInviting(false);
+  };
 
   const makeDecision = async (newStatus) => {
     setSaving(true);
@@ -49,7 +68,6 @@ export default function ApplicationDetailModal({ application: app, statusColors,
       setSaving(false);
       onUpdated();
     }
-
   };
 
   const handleApproval = async () => {
@@ -115,7 +133,6 @@ export default function ApplicationDetailModal({ application: app, statusColors,
         description: `An invitation email was sent to ${app.email} with parent access.`,
       });
     } catch (inviteErr) {
-      // User may already exist — not a blocking error
       console.warn("Invite skipped (user may already exist):", inviteErr.message);
     }
 
@@ -188,6 +205,30 @@ export default function ApplicationDetailModal({ application: app, statusColors,
           {app.created_enrollment_id && (
             <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-sm text-green-700">
               ✓ Enrollment created (ID: {app.created_enrollment_id}) — status: <strong>pending_payment</strong>
+            </div>
+          )}
+
+          {/* Manual invite button — visible for approved applications */}
+          {app.status === "approved" && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-semibold text-blue-800">Send Login Invitation</p>
+                <p className="text-xs text-blue-600 mt-0.5">
+                  Email <strong>{app.email}</strong> a link to create their password and access the Parent Portal.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-blue-300 text-blue-700 hover:bg-blue-100 shrink-0"
+                onClick={sendInvite}
+                disabled={inviting}
+              >
+                {inviting
+                  ? <Loader2 className="w-4 h-4 animate-spin" />
+                  : <><Mail className="w-4 h-4 mr-1.5" /> Send Invite</>
+                }
+              </Button>
             </div>
           )}
 
