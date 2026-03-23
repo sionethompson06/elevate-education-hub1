@@ -271,29 +271,63 @@ export default function ProgramsEnroll() {
               </button>
             </div>
 
-            {/* Multi-student selector */}
-            {students.length > 1 && (
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  <Users className="w-4 h-4 inline mr-1" /> Enrolling for
-                </label>
-                <div className="flex gap-2 flex-wrap">
+            {/* Student selector — always visible */}
+            <div className="mb-5">
+              <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-1.5">
+                <Users className="w-4 h-4" /> Enrolling for
+              </label>
+              {students.length === 0 ? (
+                <p className="text-sm text-slate-400 italic">No students found on your account.</p>
+              ) : students.length === 1 ? (
+                <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+                  <div className="w-8 h-8 rounded-full bg-[#1a3c5e] flex items-center justify-center text-white text-sm font-bold shrink-0">
+                    {students[0].full_name?.charAt(0)}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">{students[0].full_name}</p>
+                    {students[0].grade_level && <p className="text-xs text-slate-400">Grade {students[0].grade_level}{students[0].sport ? ` · ${students[0].sport}` : ""}</p>}
+                  </div>
+                  <div className="ml-auto">
+                    <span className="text-xs bg-[#1a3c5e] text-white px-2 py-0.5 rounded-full font-medium">Selected</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
                   {students.map(s => (
                     <button
                       key={s.id}
                       onClick={() => setSelectedStudentId(s.id)}
-                      className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all text-left ${
                         selectedStudentId === s.id
-                          ? "bg-[#1a3c5e] text-white border-[#1a3c5e]"
-                          : "border-slate-200 text-slate-700 hover:border-slate-400"
+                          ? "border-[#1a3c5e] bg-[#1a3c5e]/5"
+                          : "border-slate-200 hover:border-slate-300 bg-white"
                       }`}
                     >
-                      {s.full_name}
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${
+                        selectedStudentId === s.id ? "bg-[#1a3c5e] text-white" : "bg-slate-100 text-slate-600"
+                      }`}>
+                        {s.full_name?.charAt(0)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-semibold ${selectedStudentId === s.id ? "text-[#1a3c5e]" : "text-slate-800"}`}>{s.full_name}</p>
+                        {(s.grade_level || s.sport) && (
+                          <p className="text-xs text-slate-400">
+                            {s.grade_level ? `Grade ${s.grade_level}` : ""}
+                            {s.grade_level && s.sport ? " · " : ""}
+                            {s.sport || ""}
+                          </p>
+                        )}
+                      </div>
+                      <div className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${
+                        selectedStudentId === s.id ? "border-[#1a3c5e] bg-[#1a3c5e]" : "border-slate-300"
+                      }`}>
+                        {selectedStudentId === s.id && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                      </div>
                     </button>
                   ))}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
 
             {/* Billing toggle */}
             <div className="mb-5">
