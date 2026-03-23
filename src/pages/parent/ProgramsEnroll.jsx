@@ -66,7 +66,7 @@ export default function ProgramsEnroll() {
 
   const PROGRAM_ORDER = [
     "hybrid microschool",
-    "virtual homeschool",
+    "virtual homeschool support",
     "performance training",
     "combination",
   ];
