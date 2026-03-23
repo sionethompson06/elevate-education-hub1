@@ -345,6 +345,34 @@ export default function ProgramsEnroll() {
               )}
             </div>
 
+            {/* Policy acknowledgment */}
+            <div className="mb-4">
+              <p className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-2">Monthly Enrollment & Cancellation Policy</p>
+              <div className="border border-slate-200 rounded-xl p-3 h-40 overflow-y-auto text-xs text-slate-600 leading-relaxed bg-slate-50 space-y-2">
+                <p><strong>Monthly Billing</strong></p>
+                <p>Enrollment in our education support programs, tutoring services, coaching sessions, and homeschool support programs operates on a one-time charge or a monthly recurring billing structure. Tuition is charged in advance of each upcoming service month. Payments are processed automatically using the payment method on file. Monthly tuition reserves the student's instructional time, instructor availability, and program resources.</p>
+                <p><strong>30-Day Written Cancellation Notice</strong></p>
+                <p>To cancel enrollment, a 30-day written notice is required. Cancellation requests must be submitted in writing via email to the business. The 30-day notice period begins on the date the written cancellation request is received. Tuition for the current billing cycle and any services scheduled within the notice period remains the responsibility of the parent or guardian. Because student spots are reserved and staffing is scheduled in advance, immediate cancellations are not permitted.</p>
+                <p><strong>Example</strong></p>
+                <p>If a cancellation request is received on April 10, services and billing may continue through May 10 to satisfy the required 30-day notice period.</p>
+                <p><strong>Non-Attendance</strong></p>
+                <p>Failure to attend scheduled sessions or discontinuing participation without submitting a written cancellation notice does not constitute cancellation, and tuition charges will continue until the 30-day notice requirement has been fulfilled.</p>
+                <p><strong>Exceptional Circumstances</strong></p>
+                <p>We understand that unforeseen situations can arise. Exceptions to this policy may be considered at the discretion of the business.</p>
+                <p><strong>Agreement to Terms</strong></p>
+                <p>By enrolling in services, parents or guardians acknowledge that they have read and agreed to the Monthly Enrollment and Cancellation Policy, including the 30-day written cancellation requirement.</p>
+              </div>
+              <label className="flex items-start gap-2 mt-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={policyAcknowledged}
+                  onChange={e => setPolicyAcknowledged(e.target.checked)}
+                  className="mt-0.5 accent-[#1a3c5e]"
+                />
+                <span className="text-xs text-slate-700">I have read and agree to the Monthly Enrollment & Cancellation Policy, including the 30-day written cancellation requirement.</span>
+              </label>
+            </div>
+
             {error && (
               <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-red-700 text-sm mb-4">
                 <AlertCircle className="w-4 h-4 shrink-0" /> {error}
