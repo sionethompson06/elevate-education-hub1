@@ -29,14 +29,8 @@ export default function Admissions() {
   const handleSync = async () => {
     setSyncing(true);
     try {
-      const response = await fetch("https://genius-84fd149d.base44.app/functions/syncApplicationsBulk", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-sync-secret": "elevate-sync-2026",
-        },
-      });
-      const result = await response.json();
+      const response = await base44.functions.invoke("syncFromAcademy", {});
+      const result = response.data;
       toast({ title: result.message || "Synced successfully" });
       qc.invalidateQueries({ queryKey: ["applications"] });
     } catch (err) {
