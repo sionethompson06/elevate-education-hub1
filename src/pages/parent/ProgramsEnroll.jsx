@@ -65,20 +65,29 @@ export default function ProgramsEnroll() {
   });
 
   const PROGRAM_ORDER = [
-    "hybrid microschool",
-    "virtual homeschool support",
-    "performance training",
-    "combination",
+    { key: "combination", match: (name) => name.startsWith("combination") },
+    { key: "hybrid microschool", match: (name) => name.startsWith("hybrid microschool") },
+    { key: "virtual homeschool", match: (name) => name.includes("virtual homeschool") },
+    { key: "performance training", match: (name) => name.includes("performance training") },
+  ];
+
+  // Desired display order (index = priority)
+  const DISPLAY_ORDER = [
+    (name) => name.startsWith("hybrid microschool"),
+    (name) => name.includes("virtual homeschool"),
+    (name) => name.includes("performance training"),
+    (name) => name.startsWith("combination"),
   ];
 
   const sortPrograms = (list) => {
     return [...list].sort((a, b) => {
-      const aIdx = PROGRAM_ORDER.findIndex(k => a.name.toLowerCase().includes(k));
-      const bIdx = PROGRAM_ORDER.findIndex(k => b.name.toLowerCase().includes(k));
+      const aName = a.name.toLowerCase();
+      const bName = b.name.toLowerCase();
+      const aIdx = DISPLAY_ORDER.findIndex(fn => fn(aName));
+      const bIdx = DISPLAY_ORDER.findIndex(fn => fn(bName));
       const ai = aIdx === -1 ? 99 : aIdx;
       const bi = bIdx === -1 ? 99 : bIdx;
       if (ai !== bi) return ai - bi;
-      // Within same group, sort by price ascending (e.g. virtual 1x before 2x)
       return (a.price_monthly || 0) - (b.price_monthly || 0);
     });
   };
