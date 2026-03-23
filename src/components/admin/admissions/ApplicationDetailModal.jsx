@@ -47,6 +47,7 @@ export default function ApplicationDetailModal({ application: app, statusColors,
       setSaving(false);
       onUpdated();
     }
+
   };
 
   const handleApproval = async () => {
