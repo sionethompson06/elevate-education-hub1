@@ -190,9 +190,9 @@ export default function ApplicationDetailModal({ application: app, statusColors,
         <div className="overflow-y-auto flex-1 px-6 py-4 space-y-5">
           <div className="bg-slate-50 rounded-xl p-4">
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Parent / Guardian</p>
-            <Row label="Name" value={`${app.parent_first_name} ${app.parent_last_name}`} />
-            <Row label="Email" value={app.email} />
-            <Row label="Phone" value={app.phone} />
+            <Row label="Name" value={parentName} />
+            <Row label="Email" value={parentEmail} />
+            <Row label="Phone" value={parentPhone} />
           </div>
 
           <div className="bg-slate-50 rounded-xl p-4">
