@@ -2,9 +2,8 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
-import { Search, Plus, Users, BookOpen, Activity, ChevronRight } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Search, Users, BookOpen, Activity } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
 import StudentDetailModal from "@/components/admin/students/StudentDetailModal";
 
 export default function AdminStudents() {
@@ -28,9 +27,6 @@ export default function AdminStudents() {
     queryFn: () => base44.entities.Enrollment.filter({ status: "active" }),
   });
 
-  const getAssignments = (studentId) => assignments.filter(a => a.student_id === studentId);
-  const getEnrollments = (studentId) => enrollments.filter(e => e.student_id === studentId);
-
   const filtered = students.filter(s =>
     !search || s.full_name?.toLowerCase().includes(search.toLowerCase()) ||
     s.user_email?.toLowerCase().includes(search.toLowerCase()) ||
@@ -39,11 +35,9 @@ export default function AdminStudents() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <p className="text-sm text-slate-500 mb-1">Admin</p>
-          <h1 className="text-3xl font-bold text-[#1a3c5e]">Students</h1>
-        </div>
+      <div>
+        <p className="text-sm text-slate-500 mb-1">Admin</p>
+        <h1 className="text-3xl font-bold text-[#1a3c5e]">Students</h1>
       </div>
 
       {/* Stats */}
@@ -95,42 +89,39 @@ export default function AdminStudents() {
         />
       </div>
 
-      {/* Student list */}
+      {/* Student name tabs */}
       {isLoading ? (
-        <div className="flex justify-center py-12"><div className="w-6 h-6 border-4 border-slate-200 border-t-[#1a3c5e] rounded-full animate-spin" /></div>
+        <div className="flex justify-center py-12">
+          <div className="w-6 h-6 border-4 border-slate-200 border-t-[#1a3c5e] rounded-full animate-spin" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <p className="text-center text-slate-400 py-8 text-sm">No students found.</p>
       ) : (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="flex flex-wrap gap-2">
           {filtered.map(s => {
-            const sa = getAssignments(s.id);
-            const se = getEnrollments(s.id);
+            const sa = assignments.filter(a => a.student_id === s.id);
+            const se = enrollments.filter(e => e.student_id === s.id);
             const hasAcademic = sa.some(a => a.coach_type === "academic_coach");
             const hasPerf = sa.some(a => a.coach_type === "performance_coach");
             return (
-              <Card
+              <button
                 key={s.id}
-                className="cursor-pointer hover:shadow-md hover:border-[#1a3c5e] transition-all"
                 onClick={() => setSelected(s)}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 border-slate-200 bg-white hover:border-[#1a3c5e] hover:bg-slate-50 transition-all text-left group"
               >
-                <CardContent className="py-4 px-5">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-slate-800 truncate">{s.full_name}</p>
-                      <p className="text-xs text-slate-400 mt-0.5 truncate">{s.user_email}</p>
-                      <div className="flex gap-1 mt-2 flex-wrap">
-                        {s.sport && <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">{s.sport}</span>}
-                        {s.grade_level && <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">Gr. {s.grade_level}</span>}
-                        {se.length > 0 && <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Enrolled</span>}
-                      </div>
-                      <div className="flex gap-1 mt-1 flex-wrap">
-                        {hasAcademic && <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Academic Coach</span>}
-                        {hasPerf && <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">Perf. Coach</span>}
-                        {!hasAcademic && !hasPerf && <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full">Unassigned</span>}
-                      </div>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-slate-400 shrink-0 mt-1" />
+                <div className="w-7 h-7 rounded-full bg-[#1a3c5e] flex items-center justify-center text-white text-xs font-bold shrink-0">
+                  {s.full_name?.charAt(0) || "?"}
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-800 group-hover:text-[#1a3c5e]">{s.full_name}</p>
+                  <div className="flex gap-1 mt-0.5 flex-wrap">
+                    {s.grade_level && <span className="text-xs text-slate-400">Gr. {s.grade_level}</span>}
+                    {s.sport && <span className="text-xs text-orange-600">· {s.sport}</span>}
+                    {se.length > 0 && <span className="text-xs text-green-600">· Enrolled</span>}
+                    {!hasAcademic && !hasPerf && <span className="text-xs text-red-500">· Unassigned</span>}
                   </div>
-                </CardContent>
-              </Card>
+                </div>
+              </button>
             );
           })}
         </div>
@@ -140,7 +131,10 @@ export default function AdminStudents() {
         <StudentDetailModal
           student={selected}
           onClose={() => setSelected(null)}
-          onUpdated={() => { qc.invalidateQueries({ queryKey: ["admin-students"] }); qc.invalidateQueries({ queryKey: ["all-assignments"] }); }}
+          onUpdated={() => {
+            qc.invalidateQueries({ queryKey: ["admin-students"] });
+            qc.invalidateQueries({ queryKey: ["all-assignments"] });
+          }}
         />
       )}
     </div>
