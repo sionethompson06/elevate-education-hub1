@@ -163,7 +163,7 @@ export default function StudentDetailModal({ student: initialStudent, onClose, o
         <div className="flex items-center justify-between px-6 py-4 border-b">
           <div>
             <h2 className="font-bold text-[#1a3c5e] text-lg">{student.full_name}</h2>
-            <p className="text-xs text-slate-400">{student.user_email}</p>
+            <p className="text-xs text-slate-400">{parent?.user_email || student.user_email}</p>
           </div>
           <button onClick={onClose} className="p-1 rounded hover:bg-slate-100"><X className="w-5 h-5 text-slate-500" /></button>
         </div>
