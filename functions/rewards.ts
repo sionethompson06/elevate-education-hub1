@@ -165,10 +165,14 @@ Deno.serve(async (req) => {
         const students = await db.entities.Student.filter({ user_id: user.id });
         sid = students[0]?.id;
         if (!sid) return Response.json({ balance: null, transactions: [], goals: [], badges: [] });
-      } else if (user.role === 'parent') {
+      } else if (user.role === 'parent' || user.role === 'user') {
         const parents = await db.entities.Parent.filter({ user_email: user.email });
         const parent = parents[0];
-        if (!parent?.student_ids?.includes(student_id)) {
+        if (!sid) {
+          // If no student_id provided, default to first linked student
+          sid = parent?.student_ids?.[0];
+          if (!sid) return Response.json({ balance: null, transactions: [], goals: [], badges: [] });
+        } else if (!parent?.student_ids?.includes(student_id)) {
           return Response.json({ error: 'Not your student' }, { status: 403 });
         }
       } else if (user.role === 'academic_coach' || user.role === 'performance_coach') {
