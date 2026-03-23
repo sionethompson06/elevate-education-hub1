@@ -228,7 +228,7 @@ export default function ApplicationDetailModal({ application: app, statusColors,
               <div>
                 <p className="text-sm font-semibold text-blue-800">Send Login Invitation</p>
                 <p className="text-xs text-blue-600 mt-0.5">
-                  Email <strong>{app.email}</strong> a link to create their password and access the Parent Portal.
+                  Email <strong>{parentEmail}</strong> a link to create their password and access the Parent Portal.
                 </p>
               </div>
               <Button
