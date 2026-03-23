@@ -15,6 +15,7 @@ const Row = ({ label, value }) => (
 
 export default function ApplicationDetailModal({ application: app, statusColors, onClose, onUpdated }) {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [decisionNotes, setDecisionNotes] = useState(app.decision_notes || "");
   const [saving, setSaving] = useState(false);
 
