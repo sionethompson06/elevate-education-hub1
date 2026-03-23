@@ -26,12 +26,12 @@ const ROLE_NAV = {
   parent: [
     { label: "My Dashboard", href: "/parent/dashboard" },
     { label: "Programs & Enroll", href: "/parent/programs" },
+    { label: "Payments & Billing", href: "/parent/payments" },
     { label: "Student Progress", href: "/parent/progress" },
     { label: "Schedule", href: "/parent/schedule" },
     { label: "Attendance", href: "/parent/attendance" },
     { label: "Messages", href: "/parent/messages" },
     { label: "Resources", href: "/parent/resources" },
-    { label: "Billing", href: "/parent/billing" },
   ],
   academic_coach: [
     { label: "My Dashboard", href: "/academic-coach/dashboard" },
