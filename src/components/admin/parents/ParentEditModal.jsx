@@ -59,19 +59,47 @@ export default function ParentEditModal({ parent, allStudents = [], onClose, onU
       } else {
         await base44.entities.Parent.update(parent.id, form);
 
-        // Sync student parent_ids for any newly linked/unlinked students
         const previousIds = parent.student_ids || [];
         const added = form.student_ids.filter(id => !previousIds.includes(id));
         const removed = previousIds.filter(id => !form.student_ids.includes(id));
 
-        for (const sid of added) {
+        const emailChanged = form.user_email !== parent.user_email;
+
+        // Sync all currently linked students
+        for (const sid of form.student_ids) {
           const student = allStudents.find(s => s.id === sid);
-          if (student) {
+          if (!student) continue;
+
+          const studentUpdate = {};
+
+          // Keep parent_ids in sync for newly added
+          if (added.includes(sid)) {
             const updatedParentIds = [...(student.parent_ids || [])];
             if (!updatedParentIds.includes(parent.id)) updatedParentIds.push(parent.id);
-            await base44.entities.Student.update(sid, { parent_ids: updatedParentIds });
+            studentUpdate.parent_ids = updatedParentIds;
+          }
+
+          // Propagate email change to student's user_email if it matched the old parent email
+          if (emailChanged && student.user_email === parent.user_email) {
+            studentUpdate.user_email = form.user_email;
+          }
+
+          if (Object.keys(studentUpdate).length > 0) {
+            await base44.entities.Student.update(sid, studentUpdate);
+          }
+
+          // Propagate email change to enrollments for this student
+          if (emailChanged) {
+            const enrollments = await base44.entities.Enrollment.filter({ student_id: sid });
+            for (const enr of enrollments) {
+              if (enr.student_email === parent.user_email) {
+                await base44.entities.Enrollment.update(enr.id, { student_email: form.user_email });
+              }
+            }
           }
         }
+
+        // Remove parent link from unlinked students
         for (const sid of removed) {
           const student = allStudents.find(s => s.id === sid);
           if (student) {
@@ -80,7 +108,15 @@ export default function ParentEditModal({ parent, allStudents = [], onClose, onU
           }
         }
 
-        toast({ title: "Parent profile updated" });
+        // Propagate email change to Application records
+        if (emailChanged) {
+          const apps = await base44.entities.Application.filter({ email: parent.user_email });
+          for (const app of apps) {
+            await base44.entities.Application.update(app.id, { email: form.user_email, applicant_email: form.user_email });
+          }
+        }
+
+        toast({ title: "Parent profile updated — all linked records synced." });
       }
       onUpdated();
     } catch (err) {
