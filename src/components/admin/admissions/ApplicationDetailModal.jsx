@@ -25,7 +25,7 @@ export default function ApplicationDetailModal({ application: app, statusColors,
   const sendInvite = async () => {
     setInviting(true);
     try {
-      await base44.users.inviteUser(app.email, "parent");
+      await base44.users.inviteUser(app.email, "user");
       toast({
         title: "Invitation sent!",
         description: `Login invite emailed to ${app.email} with parent access.`,
@@ -127,7 +127,7 @@ export default function ApplicationDetailModal({ application: app, statusColors,
 
     // 7. Invite parent to the platform
     try {
-      await base44.users.inviteUser(app.email, "parent");
+      await base44.users.inviteUser(app.email, "user");
       toast({
         title: "Invitation sent",
         description: `An invitation email was sent to ${app.email} with parent access.`,
