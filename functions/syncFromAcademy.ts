@@ -1,6 +1,6 @@
 import { createClientFromRequest } from 'npm:@base44/sdk@0.8.21';
 
-const PERF_ACADEMY_URL = "https://genius-84fd149d.base44.app/functions/getAllApplications";
+const PERF_ACADEMY_URL = "https://elevateperformance-academy.com";
 
 Deno.serve(async (req) => {
   try {
