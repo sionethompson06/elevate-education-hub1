@@ -43,7 +43,7 @@ export default function Admissions() {
           <ClipboardList className="w-8 h-8" /> Admissions
         </h1>
         <p className="text-slate-500 mt-1">Review and process student applications.</p>
-      </div>
+        </div>
       <button
         onClick={() => refetch()}
         disabled={isFetching}
