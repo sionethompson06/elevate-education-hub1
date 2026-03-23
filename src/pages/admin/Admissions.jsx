@@ -22,7 +22,29 @@ const STATUS_COLORS = {
 export default function Admissions() {
   const [statusFilter, setStatusFilter] = useState("submitted");
   const [selected, setSelected] = useState(null);
+  const [syncing, setSyncing] = useState(false);
   const qc = useQueryClient();
+  const { toast } = useToast();
+
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      const response = await fetch("https://genius-84fd149d.base44.app/functions/receiveApplication/bulk", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-sync-secret": "elevate-sync-2026",
+        },
+      });
+      const result = await response.json();
+      toast({ title: result.message || "Synced successfully" });
+      qc.invalidateQueries({ queryKey: ["applications"] });
+    } catch (err) {
+      toast({ title: "Sync failed", description: err.message, variant: "destructive" });
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const { data: applications = [], isLoading, refetch, isFetching } = useQuery({
     queryKey: ["applications", statusFilter],
