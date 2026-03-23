@@ -25,7 +25,7 @@ Deno.serve(async (req) => {
 
     // ── ENROLL ────────────────────────────────────────────────────────────────
     if (action === 'enroll') {
-      if (user.role !== 'parent' && user.role !== 'admin') {
+      if (user.role !== 'parent' && user.role !== 'user' && user.role !== 'admin') {
         return Response.json({ error: 'Only parents can enroll students' }, { status: 403 });
       }
 
@@ -114,7 +114,7 @@ Deno.serve(async (req) => {
 
     // ── GET MY ENROLLMENTS ────────────────────────────────────────────────────
     if (action === 'get_my_enrollments') {
-      if (!['parent', 'admin'].includes(user.role)) {
+      if (!['parent', 'user', 'admin'].includes(user.role)) {
         return Response.json({ error: 'Forbidden' }, { status: 403 });
       }
 
