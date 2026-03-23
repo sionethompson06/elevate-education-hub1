@@ -50,7 +50,6 @@ export default function ApplicationDetailModal({ application: app, statusColors,
   };
 
   const handleApproval = async () => {
-    // Use a placeholder user_id since applicants haven't created accounts yet
     const placeholderUserId = `pending_${app.id}`;
 
     // 1. Create Parent record
@@ -77,29 +76,35 @@ export default function ApplicationDetailModal({ application: app, statusColors,
     });
 
     // 3. Link parent -> student
-    await base44.entities.Parent.update(parent.id, {
-      student_ids: [student.id],
-    });
+    await base44.entities.Parent.update(parent.id, { student_ids: [student.id] });
 
-    // 4. Create Enrollment (pending_payment)
+    // 4. Try to find a matching Program by name to get program_id
+    const allPrograms = await base44.entities.Program.list("name", 100);
+    const matchedProgram = allPrograms.find(p =>
+      p.name?.toLowerCase().includes(app.program_interest?.toLowerCase()) ||
+      app.program_interest?.toLowerCase().includes(p.name?.toLowerCase())
+    );
+
+    // 5. Create Enrollment
     const enrollment = await base44.entities.Enrollment.create({
       student_id: student.id,
       student_email: app.email,
-      program_name: app.program_interest,
+      program_id: matchedProgram?.id || "pending",
+      program_name: matchedProgram?.name || app.program_interest,
       status: "pending_payment",
       payment_status: "unpaid",
       enrolled_date: new Date().toISOString().split("T")[0],
       notes: `Created from application ${app.id}`,
     });
 
-    // 5. Back-link IDs onto Application
+    // 6. Back-link IDs onto Application
     await base44.entities.Application.update(app.id, {
       created_parent_id: parent.id,
       created_student_id: student.id,
       created_enrollment_id: enrollment.id,
     });
 
-    // 6. Audit log
+    // 7. Audit log
     await base44.entities.AuditLog.create({
       actor_user_id: user?.id,
       actor_email: user?.email,
