@@ -43,6 +43,14 @@ export default function Admissions() {
         </h1>
         <p className="text-slate-500 mt-1">Review and process student applications.</p>
       </div>
+      <button
+        onClick={() => refetch()}
+        disabled={isFetching}
+        className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 text-sm text-slate-600 hover:border-[#1a3c5e] hover:text-[#1a3c5e] transition-colors disabled:opacity-50"
+      >
+        <RefreshCw className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`} />
+        Refresh
+      </button>
 
       {/* Status filter tabs */}
       <div className="flex gap-2 mb-6 flex-wrap">
