@@ -47,6 +47,7 @@ import PaymentsBilling from "./pages/parent/PaymentsBilling";
 
 // Admin extended pages
 import AdminStudents from "./pages/admin/Students";
+import UserManagement from "./pages/admin/UserManagement";
 import AdminAnalytics from "./pages/admin/Analytics";
 
 const AuthenticatedApp = () => {
@@ -147,6 +148,7 @@ const AuthenticatedApp = () => {
           <Route path="/admin/resources" element={<Resources />} />
           <Route path="/admin/attendance" element={<Attendance />} />
           <Route path="/admin/analytics" element={<AdminAnalytics />} />
+          <Route path="/admin/users" element={<UserManagement />} />
         </Route>
 
         <Route path="*" element={<PageNotFound />} />

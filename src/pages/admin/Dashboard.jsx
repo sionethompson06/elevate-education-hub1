@@ -6,6 +6,7 @@ import { Users, DollarSign, ShieldCheck, FileText, BookOpen, Activity, Star, Mes
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const QUICK_LINKS = [
+  { label: "Users & Roles", href: "/admin/users", description: "Manage user roles & coach profiles", icon: Users, color: "text-indigo-600", bg: "bg-indigo-50" },
   { label: "Admissions", href: "/admin/admissions", description: "Review and process applications", icon: FileText, color: "text-blue-600", bg: "bg-blue-50" },
   { label: "Enrollments", href: "/admin/enrollments", description: "Manage enrollments & payment overrides", icon: DollarSign, color: "text-green-600", bg: "bg-green-50" },
   { label: "Rewards", href: "/admin/rewards", description: "Redemption queue, catalog, transactions", icon: Star, color: "text-yellow-600", bg: "bg-yellow-50" },
