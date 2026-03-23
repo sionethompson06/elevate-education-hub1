@@ -1,18 +1,22 @@
+import { useState } from "react";
 import { useAuth } from "@/lib/AuthContext";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { base44 } from "@/api/base44Client";
 import { useSearchParams, Link } from "react-router-dom";
-import { CreditCard, BookOpen, Star, Calendar, MessageCircle, FileText, ChevronRight, TrendingUp, Users, PlusCircle } from "lucide-react";
+import { CreditCard, BookOpen, Star, Calendar, MessageCircle, FileText, ChevronRight, TrendingUp, Users, PlusCircle, UserPlus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import EnrollmentStatusCard from "@/components/parent/EnrollmentStatusCard";
 import PaymentSuccessBanner from "@/components/parent/PaymentSuccessBanner";
 import StudentGradebook from "@/components/parent/StudentGradebook";
 import ParentRewardsSummary from "@/components/parent/ParentRewardsSummary";
+import AddStudentModal from "@/components/parent/AddStudentModal";
 
 export default function ParentDashboard() {
   const { user } = useAuth();
+  const qc = useQueryClient();
   const [searchParams] = useSearchParams();
+  const [showAddStudent, setShowAddStudent] = useState(false);
   const paymentStatus = searchParams.get("payment");
   const enrollmentId = searchParams.get("enrollment");
 
@@ -47,15 +51,29 @@ export default function ParentDashboard() {
   const pendingPayment = enrollments.filter(e => ["pending_payment", "payment_failed"].includes(e.status));
   const activeEnrollments = enrollments.filter(e => ["active", "active_override"].includes(e.status));
 
+  const handleStudentAdded = () => {
+    setShowAddStudent(false);
+    qc.invalidateQueries({ queryKey: ["parent-record"] });
+    qc.invalidateQueries({ queryKey: ["parent-students-dash"] });
+  };
+
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       {/* Header */}
-      <div>
-        <p className="text-sm text-slate-500 mb-1">Parent Portal</p>
-        <h1 className="text-3xl font-bold text-[#1a3c5e]">
-          Welcome, {user?.full_name?.split(" ")[0] || "Parent"}!
-        </h1>
-        <p className="text-sm text-slate-400 mt-1">Your family's complete Elevate overview.</p>
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <div>
+          <p className="text-sm text-slate-500 mb-1">Parent Portal</p>
+          <h1 className="text-3xl font-bold text-[#1a3c5e]">
+            Welcome, {user?.full_name?.split(" ")[0] || "Parent"}!
+          </h1>
+          <p className="text-sm text-slate-400 mt-1">Your family's complete Elevate overview.</p>
+        </div>
+        <Button
+          onClick={() => setShowAddStudent(true)}
+          className="bg-[#1a3c5e] hover:bg-[#0d2540] shrink-0"
+        >
+          <UserPlus className="w-4 h-4 mr-2" /> Add Student
+        </Button>
       </div>
 
       {paymentStatus === "success" && <PaymentSuccessBanner enrollmentId={enrollmentId} />}
@@ -127,23 +145,38 @@ export default function ParentDashboard() {
       )}
 
       {/* Student snapshots */}
-      {studentIds.map((sid, i) => {
-        const student = students.find(s => s.id === sid);
-        const studentName = student?.full_name || `Student ${i + 1}`;
-        return (
-          <div key={sid} className="space-y-4">
+      {studentIds.length > 0 && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-2">
-              <Users className="w-4 h-4" /> {studentName}
-              {student?.grade_level && <span className="font-normal text-slate-400">· Grade {student.grade_level}</span>}
-              {student?.sport && <span className="font-normal text-slate-400">· {student.sport}</span>}
+              <Users className="w-4 h-4" /> My Students
             </h2>
-            <div className="grid md:grid-cols-2 gap-4">
-              <StudentGradebook studentId={sid} studentName={studentName} />
-              <ParentRewardsSummary studentId={sid} studentName={studentName} />
-            </div>
+            <button
+              onClick={() => setShowAddStudent(true)}
+              className="text-xs text-[#1a3c5e] hover:underline flex items-center gap-1"
+            >
+              <UserPlus className="w-3.5 h-3.5" /> Add another student
+            </button>
           </div>
-        );
-      })}
+          {studentIds.map((sid, i) => {
+            const student = students.find(s => s.id === sid);
+            const studentName = student?.full_name || `Student ${i + 1}`;
+            return (
+              <div key={sid} className="space-y-4">
+                <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                  {studentName}
+                  {student?.grade_level && <span className="font-normal text-slate-400">· Grade {student.grade_level}</span>}
+                  {student?.sport && <span className="font-normal text-slate-400">· {student.sport}</span>}
+                </h3>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <StudentGradebook studentId={sid} studentName={studentName} />
+                  <ParentRewardsSummary studentId={sid} studentName={studentName} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* All enrollments if none active */}
       {activeEnrollments.length === 0 && (
@@ -164,6 +197,14 @@ export default function ParentDashboard() {
             </div>
           )}
         </div>
+      )}
+
+      {showAddStudent && (
+        <AddStudentModal
+          parent={parent}
+          onClose={() => setShowAddStudent(false)}
+          onAdded={handleStudentAdded}
+        />
       )}
     </div>
   );
