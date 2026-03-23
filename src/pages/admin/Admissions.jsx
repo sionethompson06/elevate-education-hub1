@@ -68,12 +68,12 @@ export default function Admissions() {
         <p className="text-slate-500 mt-1">Review and process student applications.</p>
         </div>
       <button
-        onClick={() => refetch()}
-        disabled={isFetching}
+        onClick={handleSync}
+        disabled={syncing || isFetching}
         className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 text-sm text-slate-600 hover:border-[#1a3c5e] hover:text-[#1a3c5e] transition-colors disabled:opacity-50"
       >
-        <RefreshCw className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`} />
-        Refresh
+        <RefreshCw className={`w-4 h-4 ${syncing ? "animate-spin" : ""}`} />
+        {syncing ? "Syncing..." : "Sync from Performance Academy"}
       </button>
       </div>
 
