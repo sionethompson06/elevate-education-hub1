@@ -39,10 +39,10 @@ export default function ApplicationDetailModal({ application: app, statusColors,
   const sendInvite = async () => {
     setInviting(true);
     try {
-      await base44.users.inviteUser(app.email, "user");
+      await base44.users.inviteUser(parentEmail, "user");
       toast({
         title: "Invitation sent!",
-        description: `Login invite emailed to ${app.email} with parent access.`,
+        description: `Login invite emailed to ${parentEmail} with parent access.`,
       });
     } catch (err) {
       toast({
