@@ -29,7 +29,7 @@ export default function Admissions() {
   const handleSync = async () => {
     setSyncing(true);
     try {
-      const response = await fetch("https://genius-84fd149d.base44.app/functions/receiveApplication/bulk", {
+      const response = await fetch("https://genius-84fd149d.base44.app/functions/syncApplicationsBulk", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
