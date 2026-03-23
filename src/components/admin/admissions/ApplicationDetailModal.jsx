@@ -28,7 +28,6 @@ export default function ApplicationDetailModal({ application: app, statusColors,
       decision_notes: decisionNotes,
     });
 
-    // Write audit log
     await base44.entities.AuditLog.create({
       actor_user_id: user?.id,
       actor_email: user?.email,
@@ -39,7 +38,7 @@ export default function ApplicationDetailModal({ application: app, statusColors,
       description: `Application for ${app.student_first_name} ${app.student_last_name} marked as ${newStatus}`,
       metadata: JSON.stringify({ decision_notes: decisionNotes, program: app.program_interest }),
       timestamp: new Date().toISOString(),
-      severity: newStatus === "approved" ? "info" : newStatus === "denied" ? "warning" : "info",
+      severity: newStatus === "denied" ? "warning" : "info",
     });
 
     if (newStatus === "approved") {
@@ -51,8 +50,12 @@ export default function ApplicationDetailModal({ application: app, statusColors,
   };
 
   const handleApproval = async () => {
+    // Use a placeholder user_id since applicants haven't created accounts yet
+    const placeholderUserId = `pending_${app.id}`;
+
     // 1. Create Parent record
     const parent = await base44.entities.Parent.create({
+      user_id: placeholderUserId,
       user_email: app.email,
       full_name: `${app.parent_first_name} ${app.parent_last_name}`,
       phone: app.phone,
@@ -63,6 +66,7 @@ export default function ApplicationDetailModal({ application: app, statusColors,
 
     // 2. Create Student record
     const student = await base44.entities.Student.create({
+      user_id: placeholderUserId,
       user_email: app.email,
       full_name: `${app.student_first_name} ${app.student_last_name}`,
       date_of_birth: app.student_birth_date,
@@ -95,7 +99,7 @@ export default function ApplicationDetailModal({ application: app, statusColors,
       created_enrollment_id: enrollment.id,
     });
 
-    // 6. Audit log for approval creation
+    // 6. Audit log
     await base44.entities.AuditLog.create({
       actor_user_id: user?.id,
       actor_email: user?.email,
