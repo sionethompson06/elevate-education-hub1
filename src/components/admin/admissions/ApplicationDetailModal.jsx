@@ -107,7 +107,19 @@ export default function ApplicationDetailModal({ application: app, statusColors,
       created_enrollment_id: enrollment.id,
     });
 
-    // 7. Audit log
+    // 7. Invite parent to the platform
+    try {
+      await base44.users.inviteUser(app.email, "parent");
+      toast({
+        title: "Invitation sent",
+        description: `An invitation email was sent to ${app.email} with parent access.`,
+      });
+    } catch (inviteErr) {
+      // User may already exist — not a blocking error
+      console.warn("Invite skipped (user may already exist):", inviteErr.message);
+    }
+
+    // 8. Audit log
     await base44.entities.AuditLog.create({
       actor_user_id: user?.id,
       actor_email: user?.email,
