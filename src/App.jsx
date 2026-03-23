@@ -110,7 +110,8 @@ const AuthenticatedApp = () => {
           <Route path="/parent/messages" element={<Messages />} />
           <Route path="/parent/resources" element={<Resources />} />
           <Route path="/parent/billing" element={<ParentBilling />} />
-          <Route path="/parent/programs" element={<ParentPrograms />} />
+          <Route path="/parent/programs" element={<ProgramsEnroll />} />
+          <Route path="/parent/payments" element={<PaymentsBilling />} />
         </Route>
 
         {/* Academic Coach portal */}
