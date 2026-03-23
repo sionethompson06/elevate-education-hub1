@@ -52,6 +52,7 @@ export default function Admissions() {
         <RefreshCw className={`w-4 h-4 ${isFetching ? "animate-spin" : ""}`} />
         Refresh
       </button>
+      </div>
 
       {/* Status filter tabs */}
       <div className="flex gap-2 mb-6 flex-wrap">
