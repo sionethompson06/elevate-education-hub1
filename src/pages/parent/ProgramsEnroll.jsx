@@ -107,6 +107,7 @@ export default function ProgramsEnroll() {
     setBillingCycle("monthly");
     setSelectedStudentId(students[0]?.id || null);
     setError(null);
+    setPolicyAcknowledged(false);
     setEnrollModal(program);
   };
 
