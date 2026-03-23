@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { base44 } from "@/api/base44Client";
-import { X, Loader2, Save, UserPlus, Trash2 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { X, Loader2, Save, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -19,6 +20,7 @@ const Field = ({ label, value, onChange, type = "text", placeholder = "" }) => (
 
 export default function ParentEditModal({ parent, allStudents = [], onClose, onUpdated }) {
   const { toast } = useToast();
+  const qc = useQueryClient();
   const isNew = !parent;
 
   const [form, setForm] = useState({
@@ -62,7 +64,6 @@ export default function ParentEditModal({ parent, allStudents = [], onClose, onU
         const previousIds = parent.student_ids || [];
         const added = form.student_ids.filter(id => !previousIds.includes(id));
         const removed = previousIds.filter(id => !form.student_ids.includes(id));
-
         const emailChanged = form.user_email !== parent.user_email;
 
         // Sync all currently linked students
@@ -79,7 +80,7 @@ export default function ParentEditModal({ parent, allStudents = [], onClose, onU
             studentUpdate.parent_ids = updatedParentIds;
           }
 
-          // Propagate email change to student's user_email if it matched the old parent email
+          // Propagate email change to student's user_email
           if (emailChanged && student.user_email === parent.user_email) {
             studentUpdate.user_email = form.user_email;
           }
@@ -97,6 +98,9 @@ export default function ParentEditModal({ parent, allStudents = [], onClose, onU
               }
             }
           }
+
+          // Invalidate student detail cache so modal header email refreshes
+          qc.invalidateQueries({ queryKey: ["student-detail", sid] });
         }
 
         // Remove parent link from unlinked students
@@ -106,6 +110,7 @@ export default function ParentEditModal({ parent, allStudents = [], onClose, onU
             const updatedParentIds = (student.parent_ids || []).filter(id => id !== parent.id);
             await base44.entities.Student.update(sid, { parent_ids: updatedParentIds });
           }
+          qc.invalidateQueries({ queryKey: ["student-detail", sid] });
         }
 
         // Propagate email change to Application records
@@ -118,6 +123,12 @@ export default function ParentEditModal({ parent, allStudents = [], onClose, onU
 
         toast({ title: "Parent profile updated — all linked records synced." });
       }
+
+      // Invalidate parent + student list caches
+      qc.invalidateQueries({ queryKey: ["admin-parents"] });
+      qc.invalidateQueries({ queryKey: ["admin-students-lookup"] });
+      qc.invalidateQueries({ queryKey: ["admin-students"] });
+
       onUpdated();
     } catch (err) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -128,7 +139,6 @@ export default function ParentEditModal({ parent, allStudents = [], onClose, onU
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-full bg-purple-100 flex items-center justify-center text-purple-700 font-bold text-sm">
@@ -144,7 +154,6 @@ export default function ParentEditModal({ parent, allStudents = [], onClose, onU
         </div>
 
         <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
-          {/* Contact info */}
           <div>
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Contact Information</p>
             <div className="space-y-3">
@@ -166,7 +175,6 @@ export default function ParentEditModal({ parent, allStudents = [], onClose, onU
             </div>
           </div>
 
-          {/* Link students */}
           <div>
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Linked Students</p>
             {allStudents.length === 0 ? (
@@ -209,7 +217,6 @@ export default function ParentEditModal({ parent, allStudents = [], onClose, onU
             )}
           </div>
 
-          {/* Notes */}
           <div>
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Admin Notes</p>
             <textarea
