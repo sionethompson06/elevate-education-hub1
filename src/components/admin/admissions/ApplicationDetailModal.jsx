@@ -14,24 +14,26 @@ const Row = ({ label, value }) => (
   </div>
 );
 
-export default function ApplicationDetailModal({ application: app, statusColors, onClose, onUpdated }) {
+export default function ApplicationDetailModal({ application: initialApp, statusColors, onClose, onUpdated }) {
   const { user } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
-  const [decisionNotes, setDecisionNotes] = useState(app.decision_notes || "");
+  const [decisionNotes, setDecisionNotes] = useState(initialApp.decision_notes || "");
   const [saving, setSaving] = useState(false);
   const [inviting, setInviting] = useState(false);
 
-  // Invalidate cached parent data when modal opens so we always show latest email
-  useState(() => {
-    if (app.created_parent_id) {
-      qc.invalidateQueries({ queryKey: ["app-parent", app.created_parent_id] });
-    }
+  // Always fetch the live application record so we have the latest created_parent_id etc.
+  const { data: liveApp } = useQuery({
+    queryKey: ["app-detail", initialApp.id],
+    queryFn: () => base44.entities.Application.filter({ id: initialApp.id }).then(r => r[0]),
+    staleTime: 0,
+    refetchOnMount: "always",
   });
+  const app = liveApp || initialApp;
 
   const sc = statusColors[app.status] || "bg-slate-100 text-slate-500";
 
-  // Always fetch fresh parent data when modal opens
+  // Fetch live parent record using the (possibly freshly loaded) created_parent_id
   const { data: liveParents = [] } = useQuery({
     queryKey: ["app-parent", app.created_parent_id],
     queryFn: () => base44.entities.Parent.filter({ id: app.created_parent_id }),
