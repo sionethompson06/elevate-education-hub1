@@ -64,10 +64,31 @@ export default function ProgramsEnroll() {
     enabled: !!parent?.student_ids?.length,
   });
 
+  const PROGRAM_ORDER = [
+    "hybrid microschool",
+    "virtual homeschool",
+    "performance training",
+    "combination",
+  ];
+
+  const sortPrograms = (list) => {
+    return [...list].sort((a, b) => {
+      const aIdx = PROGRAM_ORDER.findIndex(k => a.name.toLowerCase().includes(k));
+      const bIdx = PROGRAM_ORDER.findIndex(k => b.name.toLowerCase().includes(k));
+      const ai = aIdx === -1 ? 99 : aIdx;
+      const bi = bIdx === -1 ? 99 : bIdx;
+      if (ai !== bi) return ai - bi;
+      // Within same group, sort by price ascending (e.g. virtual 1x before 2x)
+      return (a.price_monthly || 0) - (b.price_monthly || 0);
+    });
+  };
+
   const programs = programData?.programs || [];
   const myEnrollments = enrollmentData?.enrollments || [];
 
-  const filtered = categoryFilter === "all" ? programs : programs.filter(p => p.category === categoryFilter);
+  const filtered = sortPrograms(
+    categoryFilter === "all" ? programs : programs.filter(p => p.category === categoryFilter)
+  );
 
   const getEnrolled = (programId) =>
     myEnrollments.find(e => e.program_id === programId && ["active", "active_override", "pending_payment"].includes(e.status));
