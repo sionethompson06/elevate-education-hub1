@@ -36,7 +36,8 @@ export default function Admissions() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <div className="mb-6">
+      <div className="mb-6 flex items-start justify-between gap-4 flex-wrap">
+        <div>
         <div className="inline-block px-3 py-1 bg-red-100 text-red-700 rounded-full text-xs font-semibold mb-2">Admin</div>
         <h1 className="text-3xl font-bold text-[#1a3c5e] flex items-center gap-3">
           <ClipboardList className="w-8 h-8" /> Admissions
