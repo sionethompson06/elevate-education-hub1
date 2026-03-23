@@ -4,6 +4,7 @@ import { base44 } from "@/api/base44Client";
 import { ClipboardList, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/use-toast";
 import ApplicationRow from "@/components/admin/admissions/ApplicationRow";
 import ApplicationDetailModal from "@/components/admin/admissions/ApplicationDetailModal";
 
