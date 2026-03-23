@@ -281,7 +281,7 @@ Deno.serve(async (req) => {
         const sid = students[0]?.id;
         if (!sid) return Response.json({ lessons: [], kpis: computeKPIs([]) });
         lessons = await db.entities.LessonAssignment.filter({ student_id: sid }, '-due_at', limit);
-      } else if (user.role === 'parent') {
+      } else if (user.role === 'parent' || user.role === 'user') {
         const parents = await db.entities.Parent.filter({ user_email: user.email });
         const parent = parents[0];
         if (!parent?.student_ids?.length) return Response.json({ lessons: [], kpis: computeKPIs([]) });
