@@ -34,6 +34,7 @@ export default function ProgramsEnroll() {
   const [selectedStudentId, setSelectedStudentId] = useState(null);
   const [enrolling, setEnrolling] = useState(false);
   const [error, setError] = useState(null);
+  const [policyAcknowledged, setPolicyAcknowledged] = useState(false);
 
   const { data: programData, isLoading: programsLoading } = useQuery({
     queryKey: ["parent-programs"],
