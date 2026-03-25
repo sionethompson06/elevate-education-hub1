@@ -23,14 +23,28 @@ export default function InviteUserModal({ onClose, onInvited }) {
     if (!email.trim()) return;
     setSending(true);
     try {
-      // Base44 only supports "user" and "admin" for invite roles
-      // We invite as "user" then immediately update the role if different
-      const inviteRole = ["admin"].includes(role) ? "admin" : "user";
+      // Invite as "admin" if admin role, otherwise "user" (platform constraint)
+      const inviteRole = role === "admin" ? "admin" : "user";
       await base44.users.inviteUser(email.trim(), inviteRole);
+
+      // If a non-default role was selected, find the user and update their role
+      if (role !== "user" && role !== "admin") {
+        // Poll briefly to find the newly created user record
+        let targetUser = null;
+        for (let i = 0; i < 5; i++) {
+          await new Promise(r => setTimeout(r, 1000));
+          const users = await base44.entities.User.list("-created_date", 100);
+          targetUser = users.find(u => u.email?.toLowerCase() === email.trim().toLowerCase());
+          if (targetUser) break;
+        }
+        if (targetUser) {
+          await base44.entities.User.update(targetUser.id, { role });
+        }
+      }
 
       toast({
         title: "Invitation sent!",
-        description: `Invite emailed to ${email}. Role: ${role}.`,
+        description: `Invite emailed to ${email}. Role set to: ${role}.`,
       });
       onInvited();
     } catch (err) {
