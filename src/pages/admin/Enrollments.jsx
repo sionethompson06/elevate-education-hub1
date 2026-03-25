@@ -30,6 +30,13 @@ export default function Enrollments() {
         : base44.entities.Enrollment.filter({ status: statusFilter }, "-enrolled_date", 100),
   });
 
+  const { data: students = [] } = useQuery({
+    queryKey: ["admin-all-students-enroll"],
+    queryFn: () => base44.entities.Student.list("-created_date", 500),
+  });
+
+  const studentMap = Object.fromEntries(students.map(s => [s.id, s]));
+
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="mb-6">
@@ -68,6 +75,8 @@ export default function Enrollments() {
             <div className="divide-y">
               {enrollments.map((e) => {
                 const sc = STATUS_COLORS[e.status] || "bg-slate-100 text-slate-500";
+                const student = studentMap[e.student_id];
+                const studentName = student?.full_name || e.student_email || e.student_id;
                 return (
                   <button
                     key={e.id}
@@ -75,22 +84,23 @@ export default function Enrollments() {
                     className="w-full flex items-center justify-between px-6 py-4 hover:bg-slate-50 text-left gap-4 transition-colors"
                   >
                     <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <p className="font-bold text-slate-900">{studentName}</p>
+                        {e.enrolled_date && (
+                          <p className="text-xs text-slate-400">· Enrolled {format(new Date(e.enrolled_date), "MMM d, yyyy")}</p>
+                        )}
+                      </div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <p className="font-semibold text-slate-800">{e.program_name}</p>
+                        <p className="text-sm text-slate-600">{e.program_name}</p>
                         <span className={`px-2 py-0.5 rounded-full text-xs font-semibold capitalize ${sc}`}>
                           {e.status?.replace(/_/g, " ")}
                         </span>
                         {e.payment_status && (
                           <span className="px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-500">
-                            Payment: {e.payment_status}
+                            {e.payment_status}
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-slate-400 mt-1">
-                        Student: {e.student_id}
-                        {e.enrolled_date ? ` · Enrolled ${format(new Date(e.enrolled_date), "MMM d, yyyy")}` : ""}
-                        {e.billing_cycle ? ` · ${e.billing_cycle.replace("_", " ")}` : ""}
-                      </p>
                     </div>
                     <div className="text-sm font-semibold text-slate-700 shrink-0">
                       {e.amount_due != null ? `$${e.amount_due.toLocaleString()} due` : ""}
