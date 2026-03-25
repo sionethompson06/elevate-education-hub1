@@ -74,11 +74,16 @@ export default function ApplicationDetailModal({ application: initialApp, status
   const sendInvite = async () => {
     setInviting(true);
     try {
-      await base44.users.inviteUser(contactForm.email, "user");
-      toast({
-        title: "Invitation sent!",
-        description: `Login invite emailed to ${contactForm.email} with parent access.`,
-      });
+      const res = await base44.functions.invoke("inviteAndSetRole", { email: contactForm.email, role: "parent" });
+      const result = res.data;
+      if (result.warning) {
+        toast({ title: "Invitation sent", description: result.warning });
+      } else {
+        toast({
+          title: "Invitation sent!",
+          description: `Login invite emailed to ${contactForm.email} with parent access.`,
+        });
+      }
     } catch (err) {
       toast({
         title: "Invite failed",
@@ -177,9 +182,9 @@ export default function ApplicationDetailModal({ application: initialApp, status
       created_enrollment_id: enrollment.id,
     });
 
-    // 7. Invite parent
+    // 7. Invite parent with correct role
     try {
-      await base44.users.inviteUser(emailToUse, "user");
+      await base44.functions.invoke("inviteAndSetRole", { email: emailToUse, role: "parent" });
       toast({
         title: "Invitation sent",
         description: `An invitation email was sent to ${emailToUse} with parent access.`,
