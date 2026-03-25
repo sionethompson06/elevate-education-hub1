@@ -48,7 +48,7 @@ import PaymentsBilling from "./pages/parent/PaymentsBilling";
 // Admin extended pages
 import AdminStudents from "./pages/admin/Students";
 import AdminParents from "./pages/admin/Parents";
-import UserManagement from "./pages/admin/UserManagement";
+import UserManagement from "./pages/admin/UserManagement.jsx";
 import AdminAnalytics from "./pages/admin/Analytics";
 
 const AuthenticatedApp = () => {
