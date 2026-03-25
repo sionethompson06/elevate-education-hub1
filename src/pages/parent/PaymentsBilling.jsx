@@ -100,14 +100,19 @@ export default function PaymentsBilling() {
 
   const openStripePortal = async () => {
     setPortalLoading(true);
-    const res = await base44.functions.invoke("stripePortal", {
-      return_url: window.location.href,
-    });
-    setPortalLoading(false);
-    if (res.data?.url) {
-      window.location.href = res.data.url;
-    } else {
-      alert(res.data?.error || "Could not open billing portal.");
+    try {
+      const res = await base44.functions.invoke("stripePortal", {
+        return_url: window.location.href,
+      });
+      if (res.data?.url) {
+        window.location.href = res.data.url;
+      } else {
+        alert(res.data?.error || "Could not open billing portal.");
+      }
+    } catch (err) {
+      alert("Billing portal is not available yet. Please complete a payment first.");
+    } finally {
+      setPortalLoading(false);
     }
   };
 
@@ -118,15 +123,17 @@ export default function PaymentsBilling() {
           <h1 className="text-3xl font-bold text-[#1a3c5e]">Payments & Billing</h1>
           <p className="text-slate-500 text-sm mt-0.5">Manage your enrollments and payment history</p>
         </div>
-        <Button
-          variant="outline"
-          className="gap-2"
-          onClick={openStripePortal}
-          disabled={portalLoading}
-        >
-          {portalLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ExternalLink className="w-4 h-4" />}
-          Manage Subscription
-        </Button>
+        {parent?.stripe_customer_id && (
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={openStripePortal}
+            disabled={portalLoading}
+          >
+            {portalLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ExternalLink className="w-4 h-4" />}
+            Manage Subscription
+          </Button>
+        )}
       </div>
 
       {/* Success banner */}
