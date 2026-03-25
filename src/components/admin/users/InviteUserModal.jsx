@@ -23,29 +23,14 @@ export default function InviteUserModal({ onClose, onInvited }) {
     if (!email.trim()) return;
     setSending(true);
     try {
-      // Invite as "admin" if admin role, otherwise "user" (platform constraint)
-      const inviteRole = role === "admin" ? "admin" : "user";
-      await base44.users.inviteUser(email.trim(), inviteRole);
+      const res = await base44.functions.invoke("inviteAndSetRole", { email: email.trim(), role });
+      const result = res.data;
 
-      // If a non-default role was selected, find the user and update their role
-      if (role !== "user" && role !== "admin") {
-        // Poll briefly to find the newly created user record
-        let targetUser = null;
-        for (let i = 0; i < 5; i++) {
-          await new Promise(r => setTimeout(r, 1000));
-          const users = await base44.entities.User.list("-created_date", 100);
-          targetUser = users.find(u => u.email?.toLowerCase() === email.trim().toLowerCase());
-          if (targetUser) break;
-        }
-        if (targetUser) {
-          await base44.entities.User.update(targetUser.id, { role });
-        }
+      if (result.warning) {
+        toast({ title: "Invitation sent", description: result.warning });
+      } else {
+        toast({ title: "Invitation sent!", description: `Invite emailed to ${email}. Role: ${role}.` });
       }
-
-      toast({
-        title: "Invitation sent!",
-        description: `Invite emailed to ${email}. Role set to: ${role}.`,
-      });
       onInvited();
     } catch (err) {
       toast({ title: "Invite failed", description: err.message, variant: "destructive" });
