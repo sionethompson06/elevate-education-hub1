@@ -25,8 +25,8 @@ export default function Login() {
       setUser(user);
       setIsAuthenticated(true);
       const from = searchParams.get("from");
-      if (from) {
-        window.location.href = from;
+      if (from && from.startsWith("/") && !from.startsWith("//")) {
+        navigate(from, { replace: true });
       } else {
         // Redirect based on role
         const roleRoutes = {

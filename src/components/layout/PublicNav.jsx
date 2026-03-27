@@ -55,11 +55,16 @@ export default function PublicNav() {
               </Button>
             </Link>
           ) : (
-            <Link to="/apply">
-              <Button size="sm" className="bg-yellow-400 text-[#1a3c5e] hover:bg-yellow-300 font-semibold">
-                Apply Now
-              </Button>
-            </Link>
+            <>
+              <Link to="/login" className="text-sm text-slate-300 hover:text-white transition-colors">
+                Sign In
+              </Link>
+              <Link to="/apply">
+                <Button size="sm" className="bg-yellow-400 text-[#1a3c5e] hover:bg-yellow-300 font-semibold">
+                  Apply Now
+                </Button>
+              </Link>
+            </>
           )}
           <button
             className="lg:hidden p-2 rounded-md hover:bg-white/10"
