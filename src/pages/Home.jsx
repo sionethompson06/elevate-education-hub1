@@ -64,32 +64,6 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-white">
-      {/* Nav */}
-      <nav className="bg-[#1a3c5e] text-white px-6 py-4 flex items-center justify-between sticky top-0 z-40 shadow-md">
-        <Link to="/" className="flex items-center gap-2 font-bold text-lg tracking-tight">
-          <GraduationCap className="w-6 h-6 text-yellow-400" />
-          Elevate Education Hub
-        </Link>
-        <div className="flex items-center gap-5 text-sm">
-          <Link to="/academics" className="hover:text-yellow-300 hidden md:block transition-colors">Programs</Link>
-          <Link to="/admissions" className="hover:text-yellow-300 hidden md:block transition-colors">Admissions</Link>
-          <Link to="/faq" className="hover:text-yellow-300 hidden md:block transition-colors">FAQ</Link>
-          {user ? (
-            <Link to={getDashboardForRole(user.role)}>
-              <Button size="sm" className="bg-yellow-400 text-[#1a3c5e] hover:bg-yellow-300 font-semibold">
-                My Dashboard
-              </Button>
-            </Link>
-          ) : (
-            <Link to="/apply">
-              <Button size="sm" className="bg-yellow-400 text-[#1a3c5e] hover:bg-yellow-300 font-semibold">
-                Apply Now
-              </Button>
-            </Link>
-          )}
-        </div>
-      </nav>
-
       {/* Hero */}
       <section className="bg-gradient-to-br from-[#0d2540] via-[#1a3c5e] to-[#1a4f7a] text-white py-24 px-6 relative overflow-hidden">
         <div className="absolute inset-0 opacity-5" style={{ backgroundImage: "repeating-linear-gradient(45deg, #fff 0, #fff 1px, transparent 0, transparent 50%)", backgroundSize: "20px 20px" }} />

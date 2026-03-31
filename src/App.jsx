@@ -15,6 +15,7 @@ import PortalLayout from "@/components/layout/PortalLayout";
 import Home from "./pages/Home";
 import Apply from "./pages/Apply";
 import Unauthorized from "./pages/Unauthorized";
+import Login from "./pages/Login";
 
 // Role dashboards
 import StudentDashboard from "./pages/student/Dashboard";
@@ -89,6 +90,7 @@ const AuthenticatedApp = () => {
         </Route>
 
         {/* Standalone pages (no nav/footer) */}
+        <Route path="/login" element={<Login />} />
         <Route path="/unauthorized" element={<Unauthorized />} />
 
         {/* Student portal */}

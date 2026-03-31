@@ -21,7 +21,7 @@ export default function RBACGuard({ children }) {
     const { allowed, reason } = checkRouteAccess(role, pathname);
 
     if (!allowed) {
-      // Log the denied access attempt
+      // Log the denied access attempt (silent fail)
       base44.entities.AccessLog.create({
         user_id: user?.id || "anonymous",
         user_email: user?.email || "anonymous",
@@ -30,13 +30,11 @@ export default function RBACGuard({ children }) {
         action: "denied",
         reason,
         timestamp: new Date().toISOString(),
-      }).catch(() => {}); // silent fail — never block the redirect
+      }).catch(() => {});
 
       if (!role) {
-        // Not logged in → redirect to login
         navigate("/login", { replace: true });
       } else {
-        // Logged in but wrong role → redirect to own dashboard
         navigate(getDashboardForRole(role), { replace: true });
       }
     }
