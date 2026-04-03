@@ -7,7 +7,11 @@ import { users, staffProfiles, guardianStudents, students } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { logAudit } from '../services/audit.service.js';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+let resend = null;
+function getResend() {
+  if (!resend && process.env.RESEND_API_KEY) resend = new Resend(process.env.RESEND_API_KEY);
+  return resend;
+}
 
 const router = Router();
 
@@ -147,7 +151,9 @@ router.post('/:id/send-invite', requireAuth, requireRole('admin'), async (req, r
     console.log(`[INVITE] Sending invite — userId: ${id}, email: ${user.email}, baseUrl: ${baseUrl}, registerUrl: ${registerUrl}`);
     const fromAddress = process.env.RESEND_FROM_EMAIL || 'Elevate Performance Academy <onboarding@resend.dev>';
 
-    const { data, error } = await resend.emails.send({
+    const r = getResend();
+    if (!r) { console.log('[INVITE] No RESEND_API_KEY — skipping email, invite URL:', registerUrl); return res.json({ success: true, inviteUrl: registerUrl }); }
+    const { data, error } = await r.emails.send({
       from: fromAddress,
       to: [user.email],
       subject: 'Welcome to Elevate Performance Academy — Set Up Your Account',
