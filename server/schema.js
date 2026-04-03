@@ -354,3 +354,78 @@ export const cmsContent = pgTable('cms_content', {
   section: varchar('section', { length: 100 }),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
+
+export const lessonAssignments = pgTable('lesson_assignments', {
+  id: serial('id').primaryKey(),
+  studentId: integer('student_id').notNull().references(() => students.id),
+  academicCoachUserId: integer('academic_coach_user_id').references(() => users.id),
+  subject: varchar('subject', { length: 100 }).notNull().default('General'),
+  title: varchar('title', { length: 255 }).notNull(),
+  instructions: text('instructions'),
+  assignedAt: timestamp('assigned_at').defaultNow().notNull(),
+  dueAt: timestamp('due_at'),
+  status: varchar('status', { length: 30 }).notNull().default('incomplete'),
+  completedAt: timestamp('completed_at'),
+  pointsPossible: integer('points_possible').notNull().default(10),
+  pointsEarned: integer('points_earned'),
+  rewardPointsAwarded: integer('reward_points_awarded').notNull().default(0),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const coachAssignments = pgTable('coach_assignments', {
+  id: serial('id').primaryKey(),
+  coachUserId: integer('coach_user_id').notNull().references(() => users.id),
+  coachType: varchar('coach_type', { length: 30 }).notNull(),
+  studentId: integer('student_id').notNull().references(() => students.id),
+  isActive: boolean('is_active').notNull().default(true),
+  startDate: date('start_date'),
+  endDate: date('end_date'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const studentRewardBalances = pgTable('student_reward_balances', {
+  id: serial('id').primaryKey(),
+  studentId: integer('student_id').notNull().references(() => students.id).unique(),
+  academicPoints: integer('academic_points').notNull().default(0),
+  performancePoints: integer('performance_points').notNull().default(0),
+  totalPoints: integer('total_points').notNull().default(0),
+  totalEarned: integer('total_earned').notNull().default(0),
+  totalRedeemed: integer('total_redeemed').notNull().default(0),
+  lastUpdated: timestamp('last_updated').defaultNow().notNull(),
+});
+
+export const rewardTransactions = pgTable('reward_transactions', {
+  id: serial('id').primaryKey(),
+  studentId: integer('student_id').notNull().references(() => students.id),
+  track: varchar('track', { length: 20 }).notNull(),
+  points: integer('points').notNull(),
+  reason: text('reason'),
+  sourceType: varchar('source_type', { length: 50 }),
+  sourceId: varchar('source_id', { length: 100 }),
+  idempotencyKey: varchar('idempotency_key', { length: 255 }).unique(),
+  awardedBy: integer('awarded_by').references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const studentGoals = pgTable('student_goals', {
+  id: serial('id').primaryKey(),
+  studentId: integer('student_id').notNull().references(() => students.id),
+  track: varchar('track', { length: 20 }).notNull(),
+  title: varchar('title', { length: 255 }).notNull(),
+  targetPoints: integer('target_points').notNull(),
+  currentPoints: integer('current_points').notNull().default(0),
+  status: varchar('status', { length: 20 }).notNull().default('active'),
+  completedAt: timestamp('completed_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const rewardRedemptions = pgTable('reward_redemptions', {
+  id: serial('id').primaryKey(),
+  studentId: integer('student_id').notNull().references(() => students.id),
+  catalogItemId: integer('catalog_item_id').references(() => rewardCatalog.id),
+  pointsCost: integer('points_cost').notNull(),
+  status: varchar('status', { length: 20 }).notNull().default('pending'),
+  reviewNotes: text('review_notes'),
+  reviewedBy: integer('reviewed_by').references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});

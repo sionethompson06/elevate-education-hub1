@@ -55,10 +55,16 @@ const ENTITY_ROUTES = {
   Invoice: '/billing/invoices',
   CmsContent: '/cms',
   Admissions: '/applications',
-  AccessLog: '/users/access-logs',
+  AccessLog: '/audit-logs',
   SchoolYear: '/school-years',
   CoachNote: '/coach-notes',
   TrainingLog: '/training-logs',
+  LessonAssignment: '/gradebook/lessons',
+  CoachAssignment: '/gradebook/coach-assignments',
+  StudentRewardBalance: '/rewards/balance',
+  RewardTransaction: '/rewards/transactions',
+  StudentGoal: '/rewards/goals',
+  RewardRedemption: '/rewards/redemptions',
   Announcement: '/announcements',
   Notification: '/notifications',
   Document: '/documents',
@@ -85,9 +91,13 @@ function filtersToQuery(filters = {}) {
 
 function makeEntityClient(entityName) {
   const route = getRoute(entityName);
-  return {
+  const client = {
     async list(filters = {}) {
-      return apiFetch(route + filtersToQuery(filters));
+      const data = await apiFetch(route + filtersToQuery(filters));
+      return Array.isArray(data) ? data : (data?.data || data?.items || data?.results || []);
+    },
+    async filter(filters = {}) {
+      return client.list(filters);
     },
     async get(id) {
       return apiFetch(route + '/' + id);
@@ -96,12 +106,17 @@ function makeEntityClient(entityName) {
       return apiFetch(route, { method: 'POST', body: JSON.stringify(data) });
     },
     async update(id, data) {
+      // Try PUT first, fall back to PATCH
       return apiFetch(route + '/' + id, { method: 'PUT', body: JSON.stringify(data) });
+    },
+    async patch(id, data) {
+      return apiFetch(route + '/' + id, { method: 'PATCH', body: JSON.stringify(data) });
     },
     async delete(id) {
       return apiFetch(route + '/' + id, { method: 'DELETE' });
     },
   };
+  return client;
 }
 
 // Auth module
@@ -142,23 +157,54 @@ const auth = {
 };
 
 // Functions module (server-side operations)
+// Handles both named functions and Base44-style action dispatch
 const functions = {
   async invoke(functionName, params = {}) {
+    const { action, ...rest } = params;
+
+    // gradebook function dispatcher
+    if (functionName === 'gradebook') {
+      if (action === 'create') return apiFetch('/gradebook/lessons', { method: 'POST', body: JSON.stringify(rest) });
+      if (action === 'update_status') return apiFetch('/gradebook/lessons/' + rest.lesson_id, { method: 'PATCH', body: JSON.stringify(rest) });
+      if (action === 'get_lessons') return apiFetch('/gradebook/lessons' + filtersToQuery(rest));
+      if (action === 'get_coach_queue') return apiFetch('/gradebook/queue');
+      if (action === 'get_history') return apiFetch('/gradebook/lessons/' + rest.lesson_id + '/history');
+      return apiFetch('/gradebook/lessons' + filtersToQuery(rest));
+    }
+
+    // rewards function dispatcher
+    if (functionName === 'rewards') {
+      if (action === 'award_points') return apiFetch('/rewards/award', { method: 'POST', body: JSON.stringify(rest) });
+      if (action === 'get_student_rewards') return apiFetch('/rewards/balance/' + rest.student_id);
+      if (action === 'get_pending_redemptions') return apiFetch('/rewards/redemptions?status=pending');
+      if (action === 'get_catalog') return apiFetch('/rewards/catalog');
+      if (action === 'redeem') return apiFetch('/rewards/redeem', { method: 'POST', body: JSON.stringify(rest) });
+      if (action === 'approve_redemption') return apiFetch('/rewards/redemptions/' + rest.redemption_id, { method: 'PATCH', body: JSON.stringify(rest) });
+      return apiFetch('/rewards' + filtersToQuery(rest));
+    }
+
     const fnRoutes = {
-      getGradebook: () => apiFetch('/progress/gradebook' + filtersToQuery(params)),
-      getRewards: () => apiFetch('/rewards' + filtersToQuery(params)),
-      enrollStudent: () => apiFetch('/enrollments', { method: 'POST', body: JSON.stringify(params) }),
-      stripeCheckout: () => apiFetch('/billing/checkout', { method: 'POST', body: JSON.stringify(params) }),
-      getAttendance: () => apiFetch('/attendance' + filtersToQuery(params)),
-      getSchedule: () => apiFetch('/sections' + filtersToQuery(params)),
-      getMessages: () => apiFetch('/messages' + filtersToQuery(params)),
-      getAnalytics: () => apiFetch('/progress/analytics'),
-      inviteUser: () => apiFetch('/users/invite', { method: 'POST', body: JSON.stringify(params) }),
-      sendAnnouncement: () => apiFetch('/announcements', { method: 'POST', body: JSON.stringify(params) }),
+      getGradebook:    () => apiFetch('/progress/gradebook' + filtersToQuery(params)),
+      getRewards:      () => apiFetch('/rewards' + filtersToQuery(params)),
+      enrollStudent:   () => apiFetch('/enrollments', { method: 'POST', body: JSON.stringify(params) }),
+      stripeCheckout:  () => apiFetch('/stripe/checkout', { method: 'POST', body: JSON.stringify(params) }),
+      stripePortal:    () => apiFetch('/stripe/portal', { method: 'POST', body: JSON.stringify(params) }),
+      getAttendance:   () => apiFetch('/attendance' + filtersToQuery(params)),
+      getSchedule:     () => apiFetch('/sections' + filtersToQuery(params)),
+      getMessages:     () => apiFetch('/messages' + filtersToQuery(params)),
+      getAnalytics:    () => apiFetch('/progress/analytics'),
+      inviteUser:      () => apiFetch('/users/invite', { method: 'POST', body: JSON.stringify(params) }),
+      inviteAndSetRole:() => apiFetch('/users/invite', { method: 'POST', body: JSON.stringify(params) }),
+      sendAnnouncement:() => apiFetch('/announcements', { method: 'POST', body: JSON.stringify(params) }),
+      getPaymentHistory:() => apiFetch('/billing/payments'),
+      adminOverride:   () => apiFetch('/enrollments/' + params.enrollment_id, { method: 'PATCH', body: JSON.stringify(params) }),
+      syncFromAcademy: () => Promise.resolve({ success: true }),
+      dataAccess:      () => apiFetch('/' + (params.resource || 'users') + filtersToQuery(params)),
     };
+
     const fn = fnRoutes[functionName];
     if (fn) return fn();
-    console.warn('[api.functions] Unknown function:', functionName);
+    console.warn('[api.functions] Unknown function:', functionName, params);
     return {};
   },
 };
@@ -189,7 +235,15 @@ const entities = {
   Document:         makeEntityClient('Document'),
   StaffAssignment:  makeEntityClient('StaffAssignment'),
   // Legacy aliases
-  Parent:           makeEntityClient('User'),
+  Parent: {
+    // Parent entity is modeled as users+guardianStudents. Use /users/my-profile for self.
+    async list(f = {}) { return apiFetch('/users' + filtersToQuery({ ...f, role: 'parent' })).then(d => Array.isArray(d) ? d : d?.users || []); },
+    async filter(f = {}) { return this.list(f); },
+    async get(id) { return apiFetch('/users/' + id); },
+    async create(data) { return apiFetch('/users', { method: 'POST', body: JSON.stringify(data) }); },
+    async update(id, data) { return apiFetch('/users/' + id, { method: 'PATCH', body: JSON.stringify(data) }); },
+    async delete(id) { return apiFetch('/users/' + id, { method: 'DELETE' }); },
+  },
   AcademicCoach:    makeEntityClient('User'),
   PerformanceCoach: makeEntityClient('User'),
 };

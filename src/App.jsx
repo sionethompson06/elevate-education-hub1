@@ -23,6 +23,7 @@ import PublicContact from "./pages/public/Contact";
 import PublicFAQ from "./pages/public/FAQ";
 import PublicCancellationPolicy from "./pages/public/CancellationPolicy";
 import PublicProgramPage from "./pages/public/ProgramPage";
+import RegisterInvite from "./pages/RegisterInvite";
 
 // Role dashboards
 import StudentDashboard from "./pages/student/Dashboard";
@@ -99,6 +100,7 @@ const AuthenticatedApp = () => {
 
         {/* Standalone pages (no nav/footer) */}
         <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<RegisterInvite />} />
         <Route path="/unauthorized" element={<Unauthorized />} />
 
         {/* Student portal */}

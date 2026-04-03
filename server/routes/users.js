@@ -279,4 +279,72 @@ router.delete('/:id', requireAuth, requireRole('admin'), async (req, res) => {
   }
 });
 
+// GET /api/users/my-profile — returns current user's profile with linked students (for parents)
+router.get('/my-profile', requireAuth, async (req, res) => {
+  try {
+    const [user] = await db.select().from(users).where(eq(users.id, req.user.id));
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    let linkedStudents = [];
+    if (user.role === 'parent') {
+      linkedStudents = await db.select({
+        id: students.id,
+        firstName: students.firstName,
+        lastName: students.lastName,
+        grade: students.grade,
+        status: students.status,
+      }).from(guardianStudents)
+        .innerJoin(students, eq(guardianStudents.studentId, students.id))
+        .where(eq(guardianStudents.guardianUserId, user.id));
+    }
+
+    res.json({
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      full_name: `${user.firstName} ${user.lastName}`,
+      student_ids: linkedStudents.map(s => s.id),
+      students: linkedStudents,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/users/add-student — link an existing student to the current parent
+router.post('/add-student', requireAuth, requireRole('parent', 'admin'), async (req, res) => {
+  try {
+    const { studentId, relationship } = req.body;
+    if (!studentId) return res.status(400).json({ error: 'studentId required' });
+
+    const [existing] = await db.select().from(guardianStudents).where(
+      eq(guardianStudents.guardianUserId, req.user.id)
+    );
+
+    await db.insert(guardianStudents).values({
+      guardianUserId: req.user.id,
+      studentId: Number(studentId),
+      relationship: relationship || 'parent',
+      isPrimary: !existing,
+    }).onConflictDoNothing();
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/users/invite (check invite status — just list pending users for admin)
+router.get('/invite', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const pending = await db.select({ id: users.id, email: users.email, role: users.role, firstName: users.firstName, lastName: users.lastName })
+      .from(users).where(eq(users.status, 'invited'));
+    res.json(pending);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

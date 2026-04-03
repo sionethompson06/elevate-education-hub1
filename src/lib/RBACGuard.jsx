@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
 import { checkRouteAccess, getDashboardForRole } from "@/lib/rbac";
-import { base44 } from "@/api/base44Client";
+import { apiPost } from "@/api/apiClient";
 
 /**
  * Wraps protected routes. Checks role access on every navigation.
@@ -22,14 +22,11 @@ export default function RBACGuard({ children }) {
 
     if (!allowed) {
       // Log the denied access attempt (silent fail)
-      base44.entities.AccessLog.create({
-        user_id: user?.id || "anonymous",
-        user_email: user?.email || "anonymous",
-        user_role: role || "none",
-        attempted_route: pathname,
-        action: "denied",
-        reason,
-        timestamp: new Date().toISOString(),
+      apiPost('/audit-logs', {
+        action: 'denied',
+        entityType: 'route',
+        entityId: pathname,
+        details: { role: role || 'none', reason },
       }).catch(() => {});
 
       if (!role) {

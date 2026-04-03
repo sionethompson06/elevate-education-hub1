@@ -1,5 +1,7 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync } from 'fs';
@@ -26,6 +28,9 @@ import resourcesRouter from './routes/resources.js';
 import documentsRouter from './routes/documents.js';
 import rewardsRouter from './routes/rewards.js';
 import cmsRouter from './routes/cms.js';
+import gradebookRouter from './routes/gradebook.js';
+import auditLogsRouter from './routes/audit-logs.js';
+import stripeRouter, { stripeWebhookHandler } from './routes/stripe.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -81,7 +86,13 @@ async function startServer() {
     res.status(200).json({ status: 'ok', mode: isDev ? 'development' : 'production' });
   });
 
-  app.use(cors({ origin: isDev ? 'http://localhost:5173' : true, credentials: true }));
+  app.use(helmet({ contentSecurityPolicy: false })); // CSP disabled — SPA handles its own assets
+  app.use(cors({ origin: isDev ? ['http://localhost:5173', 'http://localhost:3001'] : (process.env.ALLOWED_ORIGINS || '').split(',').filter(Boolean), credentials: true }));
+
+  const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false, message: { error: 'Too many login attempts. Please try again in 15 minutes.' } });
+  app.use('/api/auth/login', authLimiter);
+  app.use('/api/auth/register-invite', authLimiter);
+
   app.use(express.json());
 
   app.use('/api/applications', applicationsRouter);
@@ -107,6 +118,10 @@ async function startServer() {
   app.use('/api/documents', documentsRouter);
   app.use('/api/rewards', rewardsRouter);
   app.use('/api/cms', cmsRouter);
+  app.use('/api/gradebook', gradebookRouter);
+  app.use('/api/audit-logs', auditLogsRouter);
+  app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), stripeWebhookHandler);
+  app.use('/api/stripe', stripeRouter);
 
   if (!isDev) {
     const distPath = join(ROOT, 'dist');
