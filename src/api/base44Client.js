@@ -1,61 +1,105 @@
-// Replit-compatible API client — replaces Base44 SDK
-// Provides a compatible interface so existing code continues to work
+// Real API client — replaces Base44 SDK with calls to the Express/PostgreSQL backend.
+// Maintains the same interface (base44.auth, base44.entities, base44.functions)
+// so existing components continue to work without changes.
 
-const LOCAL_STORAGE_KEY = 'elevate_auth_user';
-const LOCAL_STORAGE_TOKEN_KEY = 'elevate_auth_token';
+const TOKEN_KEY = 'elevate_auth_token';
+const USER_KEY = 'elevate_auth_user';
 
-// Simple in-memory store for entities (demo/dev mode)
-const entityStore = {};
+function getToken() {
+  return localStorage.getItem(TOKEN_KEY);
+}
 
-function getStore(entityName) {
-  if (!entityStore[entityName]) {
-    entityStore[entityName] = [];
+function setToken(token) {
+  localStorage.setItem(TOKEN_KEY, token);
+}
+
+function clearSession() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
+}
+
+async function apiFetch(path, options = {}) {
+  const token = getToken();
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(options.headers || {}),
+  };
+  const res = await fetch(`/api${path}`, { ...options, headers });
+  if (res.status === 401) {
+    clearSession();
+    window.location.href = '/login';
+    throw new Error('Session expired');
   }
-  return entityStore[entityName];
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || body.message || `Request failed: ${res.status}`);
+  }
+  return res.json();
 }
 
-function generateId() {
-  return Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
+// Entity name -> API route mapping
+const ENTITY_ROUTES = {
+  User: '/users',
+  Student: '/students',
+  Enrollment: '/enrollments',
+  Program: '/programs',
+  Section: '/sections',
+  Attendance: '/attendance',
+  Grade: '/assignments',
+  Reward: '/rewards',
+  Message: '/messages',
+  Resource: '/resources',
+  Schedule: '/sections',
+  Payment: '/billing/payments',
+  Invoice: '/billing/invoices',
+  CmsContent: '/cms',
+  Admissions: '/applications',
+  AccessLog: '/users/access-logs',
+  SchoolYear: '/school-years',
+  CoachNote: '/coach-notes',
+  TrainingLog: '/training-logs',
+  Announcement: '/announcements',
+  Notification: '/notifications',
+  Document: '/documents',
+  StaffAssignment: '/staff-assignments',
+};
+
+function getRoute(entityName) {
+  const route = ENTITY_ROUTES[entityName];
+  if (!route) {
+    console.warn('[api] No route mapped for entity:', entityName);
+    return '/' + entityName.toLowerCase() + 's';
+  }
+  return route;
 }
 
-// Entity CRUD helper
+function filtersToQuery(filters = {}) {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(filters)) {
+    if (v !== undefined && v !== null) params.append(k, v);
+  }
+  const str = params.toString();
+  return str ? '?' + str : '';
+}
+
 function makeEntityClient(entityName) {
+  const route = getRoute(entityName);
   return {
     async list(filters = {}) {
-      const store = getStore(entityName);
-      let results = [...store];
-      for (const [key, val] of Object.entries(filters)) {
-        results = results.filter(item => item[key] === val);
-      }
-      return results;
+      return apiFetch(route + filtersToQuery(filters));
     },
     async get(id) {
-      const store = getStore(entityName);
-      return store.find(item => item.id === id) || null;
+      return apiFetch(route + '/' + id);
     },
     async create(data) {
-      const store = getStore(entityName);
-      const item = { ...data, id: generateId(), created_date: new Date().toISOString() };
-      store.push(item);
-      return item;
+      return apiFetch(route, { method: 'POST', body: JSON.stringify(data) });
     },
     async update(id, data) {
-      const store = getStore(entityName);
-      const idx = store.findIndex(item => item.id === id);
-      if (idx >= 0) {
-        store[idx] = { ...store[idx], ...data };
-        return store[idx];
-      }
-      return null;
+      return apiFetch(route + '/' + id, { method: 'PUT', body: JSON.stringify(data) });
     },
     async delete(id) {
-      const store = getStore(entityName);
-      const idx = store.findIndex(item => item.id === id);
-      if (idx >= 0) {
-        store.splice(idx, 1);
-        return true;
-      }
-      return false;
+      return apiFetch(route + '/' + id, { method: 'DELETE' });
     },
   };
 }
@@ -63,85 +107,91 @@ function makeEntityClient(entityName) {
 // Auth module
 const auth = {
   async me() {
+    const token = getToken();
+    if (!token) return null;
     try {
-      const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (stored) {
-        return JSON.parse(stored);
-      }
-    } catch {}
-    return null;
-  },
-  async login(email, password) {
-    // Demo login — returns a mock user based on email prefix
-    const roleMap = {
-      admin: 'admin',
-      student: 'student',
-      parent: 'parent',
-      coach: 'academic_coach',
-      performance: 'performance_coach',
-    };
-    const prefix = email.split('@')[0].toLowerCase();
-    let role = 'student';
-    for (const [key, val] of Object.entries(roleMap)) {
-      if (prefix.includes(key)) { role = val; break; }
+      const res = await apiFetch('/auth/me');
+      // /api/auth/me returns { user: {...} }
+      const user = res.user || res;
+      if (!user || !user.id) { clearSession(); return null; }
+      localStorage.setItem(USER_KEY, JSON.stringify(user));
+      return user;
+    } catch {
+      clearSession();
+      return null;
     }
-    const user = {
-      id: generateId(),
-      email,
-      full_name: email.split('@')[0].replace(/[._]/g, ' '),
-      role,
-    };
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(user));
-    localStorage.setItem(LOCAL_STORAGE_TOKEN_KEY, 'demo-token-' + generateId());
+  },
+
+  async login(email, password) {
+    const { token, user } = await apiFetch('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+    setToken(token);
+    localStorage.setItem(USER_KEY, JSON.stringify(user));
     return user;
   },
+
   async logout() {
-    localStorage.removeItem(LOCAL_STORAGE_KEY);
-    localStorage.removeItem(LOCAL_STORAGE_TOKEN_KEY);
+    clearSession();
   },
+
   redirectToLogin(returnUrl) {
-    window.location.href = '/login' + (returnUrl ? `?from=${encodeURIComponent(returnUrl)}` : '');
+    window.location.href = '/login' + (returnUrl ? '?from=' + encodeURIComponent(returnUrl) : '');
   },
 };
 
-// Functions module (stubs for Base44 server functions)
+// Functions module (server-side operations)
 const functions = {
   async invoke(functionName, params = {}) {
-    console.log(`[base44.functions] invoke: ${functionName}`, params);
-    // Return sensible stubs per function
-    switch (functionName) {
-      case 'getGradebook': return { grades: [], summary: {} };
-      case 'getRewards': return { points: 0, badges: [], history: [] };
-      case 'enrollStudent': return { success: true, enrollment: {} };
-      case 'stripeCheckout': return { url: null, sessionId: null };
-      case 'getAttendance': return { records: [], summary: {} };
-      case 'getSchedule': return { events: [] };
-      case 'getMessages': return { messages: [], channels: [] };
-      case 'getAnalytics': return { data: {} };
-      default: return {};
-    }
+    const fnRoutes = {
+      getGradebook: () => apiFetch('/progress/gradebook' + filtersToQuery(params)),
+      getRewards: () => apiFetch('/rewards' + filtersToQuery(params)),
+      enrollStudent: () => apiFetch('/enrollments', { method: 'POST', body: JSON.stringify(params) }),
+      stripeCheckout: () => apiFetch('/billing/checkout', { method: 'POST', body: JSON.stringify(params) }),
+      getAttendance: () => apiFetch('/attendance' + filtersToQuery(params)),
+      getSchedule: () => apiFetch('/sections' + filtersToQuery(params)),
+      getMessages: () => apiFetch('/messages' + filtersToQuery(params)),
+      getAnalytics: () => apiFetch('/progress/analytics'),
+      inviteUser: () => apiFetch('/users/invite', { method: 'POST', body: JSON.stringify(params) }),
+      sendAnnouncement: () => apiFetch('/announcements', { method: 'POST', body: JSON.stringify(params) }),
+    };
+    const fn = fnRoutes[functionName];
+    if (fn) return fn();
+    console.warn('[api.functions] Unknown function:', functionName);
+    return {};
   },
 };
 
-// Entity clients for all used entities
+// Entity clients
 const entities = {
-  AccessLog: makeEntityClient('AccessLog'),
-  User: makeEntityClient('User'),
-  Student: makeEntityClient('Student'),
-  Parent: makeEntityClient('Parent'),
-  AcademicCoach: makeEntityClient('AcademicCoach'),
-  PerformanceCoach: makeEntityClient('PerformanceCoach'),
-  Enrollment: makeEntityClient('Enrollment'),
-  Attendance: makeEntityClient('Attendance'),
-  Grade: makeEntityClient('Grade'),
-  Reward: makeEntityClient('Reward'),
-  Message: makeEntityClient('Message'),
-  Resource: makeEntityClient('Resource'),
-  Schedule: makeEntityClient('Schedule'),
-  Program: makeEntityClient('Program'),
-  Payment: makeEntityClient('Payment'),
-  CmsContent: makeEntityClient('CmsContent'),
-  Admissions: makeEntityClient('Admissions'),
+  AccessLog:        makeEntityClient('AccessLog'),
+  User:             makeEntityClient('User'),
+  Student:          makeEntityClient('Student'),
+  Enrollment:       makeEntityClient('Enrollment'),
+  Program:          makeEntityClient('Program'),
+  Section:          makeEntityClient('Section'),
+  Attendance:       makeEntityClient('Attendance'),
+  Grade:            makeEntityClient('Grade'),
+  Reward:           makeEntityClient('Reward'),
+  Message:          makeEntityClient('Message'),
+  Resource:         makeEntityClient('Resource'),
+  Schedule:         makeEntityClient('Schedule'),
+  Payment:          makeEntityClient('Payment'),
+  Invoice:          makeEntityClient('Invoice'),
+  CmsContent:       makeEntityClient('CmsContent'),
+  Admissions:       makeEntityClient('Admissions'),
+  SchoolYear:       makeEntityClient('SchoolYear'),
+  CoachNote:        makeEntityClient('CoachNote'),
+  TrainingLog:      makeEntityClient('TrainingLog'),
+  Announcement:     makeEntityClient('Announcement'),
+  Notification:     makeEntityClient('Notification'),
+  Document:         makeEntityClient('Document'),
+  StaffAssignment:  makeEntityClient('StaffAssignment'),
+  // Legacy aliases
+  Parent:           makeEntityClient('User'),
+  AcademicCoach:    makeEntityClient('User'),
+  PerformanceCoach: makeEntityClient('User'),
 };
 
 export const base44 = {

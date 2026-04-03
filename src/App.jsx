@@ -16,6 +16,13 @@ import Home from "./pages/Home";
 import Apply from "./pages/Apply";
 import Unauthorized from "./pages/Unauthorized";
 import Login from "./pages/Login";
+import PublicHome from "./pages/public/Home";
+import PublicAdmissions from "./pages/public/Admissions";
+import PublicApplication from "./pages/public/Application";
+import PublicContact from "./pages/public/Contact";
+import PublicFAQ from "./pages/public/FAQ";
+import PublicCancellationPolicy from "./pages/public/CancellationPolicy";
+import PublicProgramPage from "./pages/public/ProgramPage";
 
 // Role dashboards
 import StudentDashboard from "./pages/student/Dashboard";
@@ -77,16 +84,17 @@ const AuthenticatedApp = () => {
       <Routes>
         {/* Public routes with shared nav/footer layout */}
         <Route element={<PublicLayout />}>
-          <Route path="/" element={<Home />} />
+          <Route path="/" element={<PublicHome />} />
           <Route path="/apply" element={<Apply />} />
-          <Route path="/academics" element={<PlaceholderPage title="Academics" />} />
-          <Route path="/athletics" element={<PlaceholderPage title="Athletics" />} />
-          <Route path="/virtual-homeschool" element={<PlaceholderPage title="Virtual Homeschool" />} />
-          <Route path="/college-nil" element={<PlaceholderPage title="College & NIL" />} />
-          <Route path="/admissions" element={<PlaceholderPage title="Admissions" />} />
-          <Route path="/faq" element={<PlaceholderPage title="FAQ" />} />
-          <Route path="/contact" element={<PlaceholderPage title="Contact" />} />
-          <Route path="/cancellation-policy" element={<PlaceholderPage title="Cancellation Policy" />} />
+          <Route path="/academics" element={<PublicProgramPage programType="academics" />} />
+          <Route path="/athletics" element={<PublicProgramPage programType="athletics" />} />
+          <Route path="/virtual-homeschool" element={<PublicProgramPage programType="virtual_homeschool" />} />
+          <Route path="/college-nil" element={<PublicProgramPage programType="college_nil" />} />
+          <Route path="/admissions" element={<PublicAdmissions />} />
+          <Route path="/application" element={<PublicApplication />} />
+          <Route path="/faq" element={<PublicFAQ />} />
+          <Route path="/contact" element={<PublicContact />} />
+          <Route path="/cancellation-policy" element={<PublicCancellationPolicy />} />
         </Route>
 
         {/* Standalone pages (no nav/footer) */}
@@ -161,16 +169,6 @@ const AuthenticatedApp = () => {
   );
 };
 
-function PlaceholderPage({ title }) {
-  return (
-    <div className="min-h-[60vh] flex items-center justify-center">
-      <div className="text-center">
-        <h1 className="text-2xl font-bold text-[#1a3c5e] mb-2">{title}</h1>
-        <p className="text-slate-400">Full page content coming in Phase 3 (Public Pages + CMS).</p>
-      </div>
-    </div>
-  );
-}
 
 function App() {
   return (
