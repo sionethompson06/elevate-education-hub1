@@ -96,7 +96,13 @@ function makeEntityClient(entityName) {
       // Guard: ignore sort/limit args passed as non-objects (Base44 legacy call signature)
       const safeFilters = (filters && typeof filters === 'object') ? filters : {};
       const data = await apiFetch(route + filtersToQuery(safeFilters));
-      return Array.isArray(data) ? data : (data?.data || data?.items || data?.results || []);
+      if (Array.isArray(data)) return data;
+      if (data && typeof data === 'object') {
+        for (const val of Object.values(data)) {
+          if (Array.isArray(val)) return val;
+        }
+      }
+      return [];
     },
     async filter(filters = {}) {
       return client.list(filters);
