@@ -32,13 +32,13 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
 
   const { data: existingAssignments = [], refetch: refetchAssignments } = useQuery({
     queryKey: ["coach-assignments-user", user.id],
-    queryFn: () => base44.entities.CoachAssignment.filter({ coach_user_id: user.id, is_active: true }),
+    queryFn: () => base44.entities.CoachAssignment.filter({ coachUserId: user.id, isActive: true }),
     enabled: isCoach,
   });
 
   const { data: allStudents = [] } = useQuery({
     queryKey: ["all-students-for-coach"],
-    queryFn: () => base44.entities.Student.filter({ is_active: true }),
+    queryFn: () => base44.entities.Student.list(),
     enabled: isCoach,
   });
 
@@ -54,26 +54,25 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
     enabled: isCoach && assignTab === "program",
   });
 
-  const assignedStudentIds = new Set(existingAssignments.map(a => a.student_id));
+  const assignedStudentIds = new Set(existingAssignments.map(a => a.studentId));
   const unassignedStudents = allStudents.filter(s => !assignedStudentIds.has(s.id));
 
   // Derive unique grade levels from all students
-  const gradeOptions = [...new Set(allStudents.map(s => s.grade_level).filter(Boolean))].sort();
+  const gradeOptions = [...new Set(allStudents.map(s => s.grade).filter(Boolean))].sort();
 
   // Filter students by selected program & grade
   const studentsMatchingFilter = (() => {
     if (!selectedProgramId) return [];
 
-    // Get student IDs enrolled in this program
     const enrolledStudentIds = new Set(
       allEnrollments
-        .filter(e => e.program_id === selectedProgramId && ["active", "active_override", "pending_payment"].includes(e.status))
-        .map(e => e.student_id)
+        .filter(e => (e.programId ?? e.program_id) === selectedProgramId && ["active", "active_override", "pending_payment"].includes(e.status))
+        .map(e => e.studentId ?? e.student_id)
     );
 
     return allStudents.filter(s => {
       const inProgram = enrolledStudentIds.has(s.id);
-      const inGrade = !selectedGrade || s.grade_level === selectedGrade;
+      const inGrade = !selectedGrade || s.grade === selectedGrade;
       const notAssigned = !assignedStudentIds.has(s.id);
       return inProgram && inGrade && notAssigned;
     });
@@ -83,72 +82,65 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
+  const studentName = (s) => s ? `${s.firstName || ''} ${s.lastName || ''}`.trim() || s.email : '';
+
   const handleAssignStudent = async () => {
     if (!selectedStudentId) return;
-    const student = allStudents.find(s => s.id === selectedStudentId);
-    if (!student) return;
-
-    await base44.entities.CoachAssignment.create({
-      coach_user_id: user.id,
-      coach_email: user.email,
-      coach_type: role,
-      student_id: student.id,
-      student_email: student.user_email || "",
-      is_active: true,
-      assigned_date: new Date().toISOString().split("T")[0],
-    });
-    setSelectedStudentId("");
-    refetchAssignments();
-    toast({ title: "Student assigned" });
+    try {
+      await base44.entities.CoachAssignment.create({
+        coachUserId: user.id,
+        coachType: role,
+        studentId: parseInt(selectedStudentId),
+        isActive: true,
+        startDate: new Date().toISOString().split("T")[0],
+      });
+      setSelectedStudentId("");
+      refetchAssignments();
+      toast({ title: "Student assigned" });
+    } catch (err) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
   };
 
   const handleBulkAssign = async () => {
     if (studentsMatchingFilter.length === 0) return;
     setBulkAssigning(true);
-
     const today = new Date().toISOString().split("T")[0];
-    await Promise.all(
-      studentsMatchingFilter.map(student =>
-        base44.entities.CoachAssignment.create({
-          coach_user_id: user.id,
-          coach_email: user.email,
-          coach_type: role,
-          student_id: student.id,
-          student_email: student.user_email || "",
-          is_active: true,
-          assigned_date: today,
-          program_id: selectedProgramId,
-          program_name: selectedProgram?.name || "",
-          grade_level: selectedGrade || "",
-        })
-      )
-    );
-
-    refetchAssignments();
+    try {
+      await Promise.all(
+        studentsMatchingFilter.map(student =>
+          base44.entities.CoachAssignment.create({
+            coachUserId: user.id,
+            coachType: role,
+            studentId: student.id,
+            isActive: true,
+            startDate: today,
+          })
+        )
+      );
+      refetchAssignments();
+      toast({ title: `${studentsMatchingFilter.length} student(s) assigned`, description: `Program: ${selectedProgram?.name}${selectedGrade ? ` · Grade ${selectedGrade}` : ""}` });
+    } catch (err) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
     setBulkAssigning(false);
-    toast({ title: `${studentsMatchingFilter.length} student(s) assigned`, description: `Program: ${selectedProgram?.name}${selectedGrade ? ` · Grade ${selectedGrade}` : ""}` });
   };
 
   const handleRemoveAssignment = async (assignmentId) => {
-    await base44.entities.CoachAssignment.update(assignmentId, { is_active: false });
-    refetchAssignments();
-    toast({ title: "Student removed from coach" });
+    try {
+      await base44.entities.CoachAssignment.patch(assignmentId, { isActive: false });
+      refetchAssignments();
+      toast({ title: "Student removed from coach" });
+    } catch (err) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
   };
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      await base44.entities.User.update(user.id, { role });
-      await base44.entities.AuditLog.create({
-        actor_email: "admin",
-        action: "user_role_updated",
-        resource_type: "User",
-        resource_id: user.id,
-        description: `Role updated to "${role}" for ${user.email}`,
-        timestamp: new Date().toISOString(),
-        severity: "info",
-      });
-      toast({ title: "Role updated", description: `${user.full_name || user.email} is now ${role}.` });
+      await base44.entities.User.patch(user.id, { role });
+      toast({ title: "Role updated", description: `${user.firstName ? `${user.firstName} ${user.lastName}` : user.email} is now ${role}.` });
       onUpdated();
     } catch (err) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -245,14 +237,13 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
                     <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Currently Assigned</p>
                     <div className="max-h-40 overflow-y-auto space-y-1">
                       {existingAssignments.map(a => {
-                        const student = allStudents.find(s => s.id === a.student_id);
+                        const student = allStudents.find(s => s.id === (a.studentId ?? a.student_id));
                         return (
                           <div key={a.id} className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
                             <div>
-                              <p className="text-sm font-medium text-slate-800">{student?.full_name || a.student_email || a.student_id}</p>
+                              <p className="text-sm font-medium text-slate-800">{studentName(student) || `Student #${a.studentId}`}</p>
                               <p className="text-xs text-slate-400">
-                                {student?.grade_level ? `Grade ${student.grade_level}` : ""}
-                                {a.program_name ? ` · ${a.program_name}` : ""}
+                                {student?.grade ? `Grade ${student.grade}` : ""}
                               </p>
                             </div>
                             <button onClick={() => handleRemoveAssignment(a.id)} className="text-red-400 hover:text-red-600 p-1">
@@ -281,7 +272,7 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
                           <option value="">Select a student…</option>
                           {unassignedStudents.map(s => (
                             <option key={s.id} value={s.id}>
-                              {s.full_name}{s.grade_level ? ` (Grade ${s.grade_level})` : ""}
+                              {studentName(s)}{s.grade ? ` (Grade ${s.grade})` : ""}
                             </option>
                           ))}
                         </select>
@@ -347,8 +338,8 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
                               {studentsMatchingFilter.map(s => (
                                 <div key={s.id} className="flex items-center gap-2 text-xs text-slate-600 bg-blue-50 border border-blue-100 rounded-lg px-2 py-1.5">
                                   <GraduationCap className="w-3 h-3 text-blue-400 shrink-0" />
-                                  <span className="font-medium">{s.full_name}</span>
-                                  {s.grade_level && <span className="text-slate-400">· Grade {s.grade_level}</span>}
+                                  <span className="font-medium">{studentName(s)}</span>
+                                  {s.grade && <span className="text-slate-400">· Grade {s.grade}</span>}
                                 </div>
                               ))}
                             </div>

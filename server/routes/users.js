@@ -126,7 +126,6 @@ router.post('/:id/send-invite', requireAuth, requireRole('admin'), async (req, r
       role: users.role,
     }).from(users).where(eq(users.id, id));
     if (!user) return res.status(404).json({ success: false, error: 'User not found' });
-    if (user.role !== 'parent') return res.status(400).json({ success: false, error: 'Invites can only be sent to parent users' });
 
     const linkedStudents = await db
       .select({
@@ -342,7 +341,7 @@ router.post('/add-student', requireAuth, requireRole('parent', 'admin'), async (
   }
 });
 
-// GET /api/users/invite (check invite status — just list pending users for admin)
+// GET /api/users/invite — list pending/invited users
 router.get('/invite', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     const pending = await db.select({ id: users.id, email: users.email, role: users.role, firstName: users.firstName, lastName: users.lastName })
@@ -350,6 +349,111 @@ router.get('/invite', requireAuth, requireRole('admin'), async (req, res) => {
     res.json(pending);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/users/invite — create user record and send invite email in one step
+router.post('/invite', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const { email, role, firstName, lastName } = req.body;
+    if (!email) return res.status(400).json({ success: false, error: 'Email is required' });
+
+    const validRoles = ['parent', 'student', 'academic_coach', 'performance_coach', 'admin'];
+    const assignedRole = validRoles.includes(role) ? role : 'parent';
+
+    const emailLower = email.toLowerCase().trim();
+    let userId;
+
+    const [existing] = await db.select().from(users).where(eq(users.email, emailLower));
+    if (existing) {
+      if (existing.passwordHash) {
+        return res.status(409).json({ success: false, error: 'A user with this email is already registered.' });
+      }
+      // Update role if it changed
+      await db.update(users).set({ role: assignedRole, status: 'invited' }).where(eq(users.id, existing.id));
+      userId = existing.id;
+    } else {
+      const derivedFirst = firstName?.trim() || emailLower.split('@')[0];
+      const derivedLast = lastName?.trim() || '';
+      const [created] = await db.insert(users).values({
+        email: emailLower,
+        role: assignedRole,
+        firstName: derivedFirst,
+        lastName: derivedLast,
+        status: 'invited',
+      }).returning();
+      userId = created.id;
+
+      // Auto-create staff profile for coaches
+      if (['academic_coach', 'performance_coach', 'admin'].includes(assignedRole)) {
+        await db.insert(staffProfiles).values({ userId, title: null, bio: null }).onConflictDoNothing();
+      }
+    }
+
+    // Generate invite token (7-day expiry)
+    const { randomBytes } = await import('crypto');
+    const inviteToken = randomBytes(32).toString('hex');
+    const inviteTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    await db.update(users).set({ inviteToken, inviteTokenExpiry }).where(eq(users.id, userId));
+
+    const [invitedUser] = await db.select().from(users).where(eq(users.id, userId));
+
+    let baseUrl = (process.env.APP_URL || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
+    if (!baseUrl.startsWith('http')) baseUrl = `https://${baseUrl}`;
+    const registerUrl = `${baseUrl}/register?token=${inviteToken}`;
+
+    const roleLabels = {
+      parent: 'Parent Portal', student: 'Student Portal',
+      academic_coach: 'Academic Coach Portal', performance_coach: 'Performance Coach Portal', admin: 'Admin Portal',
+    };
+    const portalLabel = roleLabels[assignedRole] || 'Portal';
+
+    const r = getResend();
+    const fromAddress = process.env.RESEND_FROM_EMAIL || 'Elevate Performance Academy <onboarding@resend.dev>';
+
+    if (r) {
+      const { error } = await r.emails.send({
+        from: fromAddress,
+        to: [emailLower],
+        subject: `You're invited to Elevate Performance Academy — Set Up Your Account`,
+        html: `
+          <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:600px;margin:0 auto;padding:40px 20px;color:#1a1a2e;">
+            <div style="text-align:center;margin-bottom:30px;">
+              <h1 style="color:#1a1a2e;font-size:24px;margin:0;">Elevate Performance Academy</h1>
+              <p style="color:#6b7280;font-size:14px;margin-top:4px;">${portalLabel} Invitation</p>
+            </div>
+            <p style="font-size:16px;line-height:1.6;">Hi ${invitedUser.firstName},</p>
+            <p style="font-size:16px;line-height:1.6;">You've been invited to join the Elevate Performance Academy platform as a <strong>${portalLabel}</strong> user.</p>
+            <p style="font-size:16px;line-height:1.6;">Click the button below to create your password and access your portal.</p>
+            <div style="text-align:center;margin:32px 0;">
+              <a href="${registerUrl}" style="display:inline-block;background:#1a3c5e;color:white;text-decoration:none;padding:14px 32px;border-radius:8px;font-size:16px;font-weight:600;">Set Up My Account</a>
+            </div>
+            <p style="font-size:14px;color:#6b7280;">This link expires in 7 days. If you need a new link contact your administrator.</p>
+            <hr style="border:none;border-top:1px solid #e5e7eb;margin:32px 0;"/>
+            <p style="font-size:12px;color:#9ca3af;text-align:center;">Elevate Performance Academy</p>
+          </div>
+        `,
+      });
+      if (error) console.error('[INVITE] Resend error:', error);
+    } else {
+      console.log(`[INVITE] No RESEND_API_KEY — invite URL: ${registerUrl}`);
+    }
+
+    await logAudit({
+      userId: req.user.id,
+      action: 'invite',
+      entityType: 'user',
+      entityId: userId,
+      details: { email: emailLower, role: assignedRole },
+      ipAddress: req.ip,
+    });
+
+    const responseData = { success: true, user: { id: userId, email: emailLower, role: assignedRole, firstName: invitedUser.firstName, lastName: invitedUser.lastName } };
+    if (process.env.NODE_ENV !== 'production') responseData.inviteUrl = registerUrl;
+    res.json(responseData);
+  } catch (err) {
+    console.error('Invite error:', err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

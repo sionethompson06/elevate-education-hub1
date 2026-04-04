@@ -31,6 +31,7 @@ import cmsRouter from './routes/cms.js';
 import gradebookRouter from './routes/gradebook.js';
 import auditLogsRouter from './routes/audit-logs.js';
 import stripeRouter, { stripeWebhookHandler } from './routes/stripe.js';
+import coachAssignmentsRouter from './routes/coach-assignments.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -120,6 +121,7 @@ async function startServer() {
   app.use('/api/cms', cmsRouter);
   app.use('/api/gradebook', gradebookRouter);
   app.use('/api/audit-logs', auditLogsRouter);
+  app.use('/api/coach-assignments', coachAssignmentsRouter);
   app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), stripeWebhookHandler);
   app.use('/api/stripe', stripeRouter);
 
