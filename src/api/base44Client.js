@@ -180,6 +180,40 @@ const functions = {
       return apiFetch('/gradebook/lessons' + filtersToQuery(rest));
     }
 
+    // enrollment function dispatcher
+    if (functionName === 'enrollment') {
+      if (action === 'get_programs') {
+        const res = await apiFetch('/programs/available');
+        const raw = Array.isArray(res) ? res : (res?.programs || []);
+        const programs = raw.map(p => {
+          const categoryMap = { academic: 'academic', athletic: 'athletic', virtual: 'virtual_homeschool', combined: 'combined' };
+          const category = categoryMap[p.type] || p.type;
+          const amount = parseFloat(p.tuitionAmount || 0);
+          let price_monthly = null, price_annual = null;
+          if (p.billingCycle === 'monthly') { price_monthly = amount; }
+          else if (p.billingCycle === 'annual') { price_annual = amount; price_monthly = Math.round(amount / 12); }
+          else if (p.billingCycle === 'semester') { price_monthly = Math.round(amount / 6); }
+          return { ...p, category, price_monthly, price_annual, features: p.features || [] };
+        });
+        return { data: { programs } };
+      }
+      if (action === 'get_my_enrollments') {
+        const res = await apiFetch('/enrollments/my-students');
+        const enrollments = (res?.enrollments || []).map(e => ({
+          ...e,
+          program_id: e.programId ?? e.program_id,
+          program_name: e.programName ?? e.program_name,
+          student_id: e.studentId ?? e.student_id,
+        }));
+        return { data: { enrollments, students: res?.students || [] } };
+      }
+      if (action === 'enroll') {
+        const res = await apiFetch('/enrollments', { method: 'POST', body: JSON.stringify({ studentId: rest.student_id, programId: rest.program_id }) });
+        return { data: res };
+      }
+      return { data: {} };
+    }
+
     // rewards function dispatcher
     if (functionName === 'rewards') {
       if (action === 'award_points') return apiFetch('/rewards/award', { method: 'POST', body: JSON.stringify(rest) });
