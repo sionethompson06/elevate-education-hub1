@@ -11,123 +11,165 @@ const { programs, sections, schoolYears, terms } = schema;
 
 console.log('Seeding programs, school year, terms, and sections...\n');
 
+// ── Clear existing program data ───────────────────────────────────────────────
+await db.delete(sections);
+await db.delete(programs);
+await db.delete(terms);
+await db.delete(schoolYears);
+console.log('✓ Cleared old program data');
+
 // ── School Year ───────────────────────────────────────────────────────────────
 const [sy] = await db.insert(schoolYears).values({
   name: '2025-2026',
   startDate: '2025-08-15',
   endDate: '2026-06-15',
   isCurrent: true,
-}).onConflictDoNothing().returning();
-
-const schoolYearId = sy?.id;
-console.log('✓ School year 2025-2026', schoolYearId ? `(id: ${schoolYearId})` : '(already exists)');
-
-// Get school year id if already existed
-let syId = schoolYearId;
-if (!syId) {
-  const existing = await db.select().from(schoolYears).limit(1);
-  syId = existing[0]?.id;
-}
+}).returning();
+console.log(`✓ School year 2025-2026 (id: ${sy.id})`);
 
 // ── Terms ─────────────────────────────────────────────────────────────────────
-if (syId) {
-  await db.insert(terms).values([
-    { schoolYearId: syId, name: 'Fall 2025', startDate: '2025-08-15', endDate: '2025-12-20' },
-    { schoolYearId: syId, name: 'Spring 2026', startDate: '2026-01-10', endDate: '2026-06-15' },
-  ]).onConflictDoNothing();
-  console.log('✓ Terms: Fall 2025, Spring 2026');
-}
+await db.insert(terms).values([
+  { schoolYearId: sy.id, name: 'Fall 2025', startDate: '2025-08-15', endDate: '2025-12-20' },
+  { schoolYearId: sy.id, name: 'Spring 2026', startDate: '2026-01-10', endDate: '2026-06-15' },
+]);
+console.log('✓ Terms: Fall 2025, Spring 2026');
 
 // ── Programs ──────────────────────────────────────────────────────────────────
 const programData = [
   {
     name: 'Hybrid Microschool',
     type: 'academic',
-    description: 'Full academic curriculum with small class sizes and personalized instruction. Mon/Tue/Thu on-site, Wed home learning, Fri enrichment. Grades K–12, max 40 students.',
-    tuitionAmount: '15000.00',
-    billingCycle: 'annual',
+    description: 'A K–12 learning environment where every student is known, challenged, and supported. Small cohorts, mastery-based learning, and a schedule designed for maximum academic performance.',
+    tuitionAmount: '750.00',
+    billingCycle: 'monthly',
     status: 'active',
-    schoolYearId: syId,
+    schoolYearId: sy.id,
+    metadata: {
+      price_annual: 7500,
+      features: [
+        'Personalized learning plans',
+        'Small class sizes',
+        '3 days a week on site',
+        'Academic coaching',
+        'Progress tracking',
+      ],
+    },
   },
   {
-    name: 'Elite Athletic Training',
-    type: 'athletic',
-    description: 'Year-round athletic development with sport-specific training and college prep. Speed, strength, injury prevention, nutrition, mental performance, NIL mentorship.',
-    tuitionAmount: '8500.00',
-    billingCycle: 'semester',
-    status: 'active',
-    schoolYearId: syId,
-  },
-  {
-    name: 'Homeschool Support',
+    name: 'Virtual Homeschool Support',
     type: 'virtual',
-    description: 'K–12 virtual support with dedicated academic coach. Synchronous and asynchronous learning, Personal Learning Plans, small cohorts of 6–8 students.',
+    description: 'Full-service virtual homeschool support with certified academic coaches, curriculum planning, and weekly check-ins.',
     tuitionAmount: '199.00',
     billingCycle: 'monthly',
     status: 'active',
-    schoolYearId: syId,
+    schoolYearId: sy.id,
+    metadata: {
+      price_2x: 299,
+      features: [
+        'Weekly coach sessions',
+        'Curriculum guidance',
+        'Resource library',
+        'Parent reports',
+        'Flexible scheduling',
+      ],
+    },
   },
   {
-    name: 'Homeschool Support — 2x Weekly',
-    type: 'virtual',
-    description: 'Enhanced K–12 virtual support with 2 sessions per week. Mon/Wed via Zoom, 1–2 hours each. College prep and transcript planning included.',
-    tuitionAmount: '399.00',
+    name: 'Performance Training',
+    type: 'athletic',
+    description: 'Elite athletic and mental performance training designed to develop peak performers in sport and academics.',
+    tuitionAmount: '500.00',
     billingCycle: 'monthly',
     status: 'active',
-    schoolYearId: syId,
+    schoolYearId: sy.id,
+    metadata: {
+      price_annual: 5000,
+      features: [
+        '4x/week - elite performance training',
+        'Strength & conditioning',
+        'Mental performance',
+        'Nutrition guidance',
+        'Performance analytics',
+        'D1 and NIL coaching',
+      ],
+    },
+  },
+  {
+    name: 'Combination Program',
+    type: 'combined',
+    description: 'Combine Performance Training with an academic program and save 10%. The ultimate package for students who want elite athletic development alongside rigorous academic support.',
+    tuitionAmount: '1125.00',
+    billingCycle: 'monthly',
+    status: 'active',
+    schoolYearId: sy.id,
+    metadata: {
+      badge: 'SAVE 10%',
+      variants: [
+        { name: 'Hybrid Microschool Combination', price_monthly: 1125, price_annual: 11250 },
+        { name: 'Virtual Combination 1 Session / Week', price_monthly: 629 },
+        { name: 'Virtual Combination 2 Sessions / Week', price_monthly: 719 },
+      ],
+      features: [
+        'Everything in Performance Training',
+        'Academic program included',
+        '10% bundle savings',
+        'Unified coaching team',
+        'Holistic progress tracking',
+      ],
+    },
   },
 ];
 
-const insertedPrograms = await db.insert(programs).values(programData).onConflictDoNothing().returning();
+const insertedPrograms = await db.insert(programs).values(programData).returning();
 console.log(`✓ Programs inserted: ${insertedPrograms.length}`);
-insertedPrograms.forEach(p => console.log(`  - ${p.name} ($${p.tuitionAmount}/${p.billingCycle}) id:${p.id}`));
+insertedPrograms.forEach(p => console.log(`  - ${p.name} (id: ${p.id})`));
 
 // ── Sections ──────────────────────────────────────────────────────────────────
-const hybridId = insertedPrograms.find(p => p.name === 'Hybrid Microschool')?.id;
-const athleticId = insertedPrograms.find(p => p.name === 'Elite Athletic Training')?.id;
-const homeschool1Id = insertedPrograms.find(p => p.name === 'Homeschool Support')?.id;
-const homeschool2Id = insertedPrograms.find(p => p.name === 'Homeschool Support — 2x Weekly')?.id;
+const hybrid = insertedPrograms.find(p => p.name === 'Hybrid Microschool');
+const virtual = insertedPrograms.find(p => p.name === 'Virtual Homeschool Support');
+const athletic = insertedPrograms.find(p => p.name === 'Performance Training');
+const combo = insertedPrograms.find(p => p.name === 'Combination Program');
 
 const sectionData = [];
 
-if (hybridId) {
+if (hybrid) {
   sectionData.push(
-    { programId: hybridId, name: 'Grades K–2 (Session 1)', capacity: 10, schedule: { days: ['Monday','Tuesday','Thursday'], time: '9:00-10:30 AM', room: 'Classroom 01' }, schoolYearId: syId },
-    { programId: hybridId, name: 'Grades 3–4 (Session 2)', capacity: 10, schedule: { days: ['Monday','Tuesday','Thursday'], time: '11:00 AM-12:30 PM', room: 'Classroom 01' }, schoolYearId: syId },
-    { programId: hybridId, name: 'Grades 5–6 (Session 1)', capacity: 10, schedule: { days: ['Monday','Tuesday','Thursday'], time: '9:00-10:30 AM', room: 'Classroom 02' }, schoolYearId: syId },
-    { programId: hybridId, name: 'Grades 7–8 (Session 2)', capacity: 10, schedule: { days: ['Monday','Tuesday','Thursday'], time: '11:00 AM-12:30 PM', room: 'Classroom 02' }, schoolYearId: syId },
-    { programId: hybridId, name: 'Grades 9–12 (AM)', capacity: 10, schedule: { days: ['Monday','Tuesday','Thursday'], time: '9:00-10:30 AM', room: 'Classroom 03' }, schoolYearId: syId },
-    { programId: hybridId, name: 'Grades 9–12 (PM)', capacity: 10, schedule: { days: ['Monday','Tuesday','Thursday'], time: '11:00 AM-12:30 PM', room: 'Classroom 03' }, schoolYearId: syId },
+    { programId: hybrid.id, name: 'Grades K–2', capacity: 10, schedule: { days: ['Mon','Tue','Thu'], time: '9:00-10:30 AM' }, schoolYearId: sy.id },
+    { programId: hybrid.id, name: 'Grades 3–5', capacity: 10, schedule: { days: ['Mon','Tue','Thu'], time: '11:00 AM-12:30 PM' }, schoolYearId: sy.id },
+    { programId: hybrid.id, name: 'Grades 6–8', capacity: 10, schedule: { days: ['Mon','Tue','Thu'], time: '9:00-10:30 AM' }, schoolYearId: sy.id },
+    { programId: hybrid.id, name: 'Grades 9–12', capacity: 10, schedule: { days: ['Mon','Tue','Thu'], time: '1:00-2:30 PM' }, schoolYearId: sy.id },
   );
 }
 
-if (athleticId) {
+if (virtual) {
   sectionData.push(
-    { programId: athleticId, name: 'Strength & Conditioning', capacity: 20, schedule: { days: ['Tuesday','Thursday'], time: '2:00-4:00 PM', room: 'Athletic Center' }, schoolYearId: syId },
-    { programId: athleticId, name: 'Speed Development', capacity: 20, schedule: { days: ['Monday','Wednesday'], time: '3:00-4:00 PM', room: 'Athletic Center' }, schoolYearId: syId },
-    { programId: athleticId, name: 'College & NIL Prep', capacity: 15, schedule: { days: ['Friday'], time: '10:00-11:30 AM', room: 'Conference Room' }, schoolYearId: syId },
+    { programId: virtual.id, name: 'Cohort A — 1x Weekly (Monday)', capacity: 8, schedule: { days: ['Monday'], time: '10:00 AM-12:00 PM', room: 'Zoom' }, schoolYearId: sy.id },
+    { programId: virtual.id, name: 'Cohort B — 1x Weekly (Wednesday)', capacity: 8, schedule: { days: ['Wednesday'], time: '10:00 AM-12:00 PM', room: 'Zoom' }, schoolYearId: sy.id },
+    { programId: virtual.id, name: 'Cohort A — 2x Weekly (Mon/Wed)', capacity: 8, schedule: { days: ['Monday','Wednesday'], time: '10:00 AM-12:00 PM', room: 'Zoom' }, schoolYearId: sy.id },
+    { programId: virtual.id, name: 'Cohort B — 2x Weekly (Tue/Thu)', capacity: 8, schedule: { days: ['Tuesday','Thursday'], time: '10:00 AM-12:00 PM', room: 'Zoom' }, schoolYearId: sy.id },
   );
 }
 
-if (homeschool1Id) {
+if (athletic) {
   sectionData.push(
-    { programId: homeschool1Id, name: 'Cohort A — 1x Weekly', capacity: 8, schedule: { days: ['Monday'], time: '10:00 AM-12:00 PM', room: 'Virtual (Zoom)' }, schoolYearId: syId },
-    { programId: homeschool1Id, name: 'Cohort B — 1x Weekly', capacity: 8, schedule: { days: ['Wednesday'], time: '10:00 AM-12:00 PM', room: 'Virtual (Zoom)' }, schoolYearId: syId },
+    { programId: athletic.id, name: 'Strength & Conditioning', capacity: 20, schedule: { days: ['Mon','Tue','Thu','Fri'], time: '2:00-4:00 PM', room: 'Athletic Center' }, schoolYearId: sy.id },
+    { programId: athletic.id, name: 'Speed & Agility', capacity: 20, schedule: { days: ['Mon','Wed','Fri'], time: '4:00-5:00 PM', room: 'Athletic Center' }, schoolYearId: sy.id },
+    { programId: athletic.id, name: 'Mental Performance & NIL', capacity: 15, schedule: { days: ['Friday'], time: '10:00-11:30 AM', room: 'Conference Room' }, schoolYearId: sy.id },
   );
 }
 
-if (homeschool2Id) {
+if (combo) {
   sectionData.push(
-    { programId: homeschool2Id, name: 'Cohort A — 2x Weekly', capacity: 8, schedule: { days: ['Monday','Wednesday'], time: '10:00 AM-12:00 PM', room: 'Virtual (Zoom)' }, schoolYearId: syId },
-    { programId: homeschool2Id, name: 'Cohort B — 2x Weekly', capacity: 8, schedule: { days: ['Monday','Wednesday'], time: '1:00-3:00 PM', room: 'Virtual (Zoom)' }, schoolYearId: syId },
+    { programId: combo.id, name: 'Combo — Hybrid + Performance', capacity: 10, schedule: { days: ['Mon','Tue','Thu'], time: 'Full Day' }, schoolYearId: sy.id },
+    { programId: combo.id, name: 'Combo — Virtual 1x + Performance', capacity: 8, schedule: { days: ['Mon','Thu'], time: 'Combined' }, schoolYearId: sy.id },
+    { programId: combo.id, name: 'Combo — Virtual 2x + Performance', capacity: 8, schedule: { days: ['Mon','Tue','Thu'], time: 'Combined' }, schoolYearId: sy.id },
   );
 }
 
 if (sectionData.length) {
-  const insertedSections = await db.insert(sections).values(sectionData).onConflictDoNothing().returning();
+  const insertedSections = await db.insert(sections).values(sectionData).returning();
   console.log(`\n✓ Sections inserted: ${insertedSections.length}`);
-  insertedSections.forEach(s => console.log(`  - ${s.name} (capacity: ${s.capacity})`));
 }
 
-console.log('\n✅ All done! Programs, school year, terms, and sections are ready.');
+console.log('\n✅ Done! Programs and sections are ready.');
 await pool.end();

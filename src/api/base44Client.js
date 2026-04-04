@@ -185,15 +185,21 @@ const functions = {
       if (action === 'get_programs') {
         const res = await apiFetch('/programs/available');
         const raw = Array.isArray(res) ? res : (res?.programs || []);
+        const categoryMap = { academic: 'academic', athletic: 'athletic', virtual: 'virtual_homeschool', combined: 'combined' };
         const programs = raw.map(p => {
-          const categoryMap = { academic: 'academic', athletic: 'athletic', virtual: 'virtual_homeschool', combined: 'combined' };
+          const meta = p.metadata || {};
           const category = categoryMap[p.type] || p.type;
-          const amount = parseFloat(p.tuitionAmount || 0);
-          let price_monthly = null, price_annual = null;
-          if (p.billingCycle === 'monthly') { price_monthly = amount; }
-          else if (p.billingCycle === 'annual') { price_annual = amount; price_monthly = Math.round(amount / 12); }
-          else if (p.billingCycle === 'semester') { price_monthly = Math.round(amount / 6); }
-          return { ...p, category, price_monthly, price_annual, features: p.features || [] };
+          const price_monthly = parseFloat(p.tuitionAmount || 0);
+          return {
+            ...p,
+            category,
+            price_monthly,
+            price_annual: meta.price_annual || null,
+            price_2x: meta.price_2x || null,
+            features: meta.features || [],
+            variants: meta.variants || null,
+            badge: meta.badge || null,
+          };
         });
         return { data: { programs } };
       }

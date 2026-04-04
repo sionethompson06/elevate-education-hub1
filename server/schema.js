@@ -107,6 +107,7 @@ export const programs = pgTable('programs', {
   billingCycle: varchar('billing_cycle', { length: 30 }).notNull().default('monthly'),
   status: varchar('status', { length: 20 }).notNull().default('active'),
   schoolYearId: integer('school_year_id').references(() => schoolYears.id),
+  metadata: jsonb('metadata').default('{}'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
