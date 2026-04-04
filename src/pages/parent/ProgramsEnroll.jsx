@@ -15,6 +15,49 @@ const CATEGORY_COLORS = {
 
 const DISPLAY_ORDER = { academic: 0, virtual_homeschool: 1, athletic: 2, combined: 3 };
 
+// Static display config — features, pricing variants, and extras keyed by program type.
+// These are fallbacks used when the DB metadata field is empty (e.g. migration order issue).
+const PROGRAM_DISPLAY = {
+  academic: {
+    features: ['Personalized learning plans', 'Small class sizes', '3 days a week on site', 'Academic coaching', 'Progress tracking'],
+    price_monthly: 750,
+    price_annual: 7500,
+  },
+  virtual_homeschool: {
+    features: ['Weekly coach sessions', 'Curriculum guidance', 'Resource library', 'Parent reports', 'Flexible scheduling'],
+    price_monthly: 199,
+    price_2x: 299,
+  },
+  athletic: {
+    features: ['4x/week - elite performance training', 'Strength & conditioning', 'Mental performance', 'Nutrition guidance', 'Performance analytics', 'D1 and NIL coaching'],
+    price_monthly: 500,
+    price_annual: 5000,
+  },
+  combined: {
+    features: ['Everything in Performance Training', 'Academic program included', '10% bundle savings', 'Unified coaching team', 'Holistic progress tracking'],
+    badge: 'SAVE 10%',
+    variants: [
+      { name: 'Hybrid Microschool Combination', price_monthly: 1125, price_annual: 11250 },
+      { name: 'Virtual Combination 1 Session / Week', price_monthly: 629 },
+      { name: 'Virtual Combination 2 Sessions / Week', price_monthly: 719 },
+    ],
+  },
+};
+
+// Merge DB program data with static display config so UI always renders correctly.
+function mergeDisplay(program) {
+  const defaults = PROGRAM_DISPLAY[program.category] || {};
+  return {
+    ...program,
+    features:      program.features?.length      ? program.features      : (defaults.features  || []),
+    price_monthly: program.price_monthly          || defaults.price_monthly,
+    price_annual:  program.price_annual           || defaults.price_annual  || null,
+    price_2x:      program.price_2x               || defaults.price_2x      || null,
+    variants:      program.variants?.length       ? program.variants      : (defaults.variants  || null),
+    badge:         program.badge                  || defaults.badge         || null,
+  };
+}
+
 function FeatureGrid({ features }) {
   if (!features?.length) return null;
   return (
@@ -377,7 +420,9 @@ export default function ProgramsEnroll() {
     enabled: !!user,
   });
 
-  const programs = (programData?.programs || []).sort((a, b) => (DISPLAY_ORDER[a.category] ?? 99) - (DISPLAY_ORDER[b.category] ?? 99));
+  const programs = (programData?.programs || [])
+    .sort((a, b) => (DISPLAY_ORDER[a.category] ?? 99) - (DISPLAY_ORDER[b.category] ?? 99))
+    .map(mergeDisplay);
   const myEnrollments = (enrollmentData?.enrollments || []).map(e => ({ ...e, programId: e.programId ?? e.program_id }));
 
   const handleEnroll = async ({ studentId, billingCycle, variant }) => {
