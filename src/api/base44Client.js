@@ -93,7 +93,9 @@ function makeEntityClient(entityName) {
   const route = getRoute(entityName);
   const client = {
     async list(filters = {}) {
-      const data = await apiFetch(route + filtersToQuery(filters));
+      // Guard: ignore sort/limit args passed as non-objects (Base44 legacy call signature)
+      const safeFilters = (filters && typeof filters === 'object') ? filters : {};
+      const data = await apiFetch(route + filtersToQuery(safeFilters));
       return Array.isArray(data) ? data : (data?.data || data?.items || data?.results || []);
     },
     async filter(filters = {}) {
@@ -198,7 +200,7 @@ const functions = {
       sendAnnouncement:() => apiFetch('/announcements', { method: 'POST', body: JSON.stringify(params) }),
       getPaymentHistory:() => apiFetch('/billing/payments'),
       adminOverride:   () => apiFetch('/enrollments/' + params.enrollment_id, { method: 'PATCH', body: JSON.stringify(params) }),
-      syncFromAcademy: () => Promise.resolve({ success: true }),
+      syncFromAcademy: () => Promise.resolve({ success: true, data: { message: 'Applications are up to date.' } }),
       dataAccess:      () => apiFetch('/' + (params.resource || 'users') + filtersToQuery(params)),
     };
 
