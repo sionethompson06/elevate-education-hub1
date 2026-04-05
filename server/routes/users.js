@@ -153,7 +153,21 @@ router.post('/:id/send-invite', requireAuth, requireRole('admin'), async (req, r
     const registerUrl = `${baseUrl}/register?token=${inviteToken}`;
 
     console.log(`[INVITE] Sending invite — userId: ${id}, email: ${user.email}, baseUrl: ${baseUrl}, registerUrl: ${registerUrl}`);
-    const fromAddress = process.env.RESEND_FROM_EMAIL || 'Elevate Performance Academy <onboarding@resend.dev>';
+    const fromAddress = process.env.RESEND_FROM_EMAIL || 'Elevate Performance Academy <noreply@mail.elevateperformance-academy.com>';
+
+    const portalLabelMap = {
+      parent: 'Parent Portal', student: 'Student Portal',
+      academic_coach: 'Academic Coach Portal', performance_coach: 'Performance Coach Portal', admin: 'Admin Portal',
+    };
+    const portalLabel = portalLabelMap[user.role] || 'Portal';
+
+    const isParent = user.role === 'parent' || user.role === 'user';
+    const bodyHtml = isParent
+      ? `<p style="font-size: 16px; line-height: 1.6;">Welcome to Elevate Performance Academy! We are excited to have your family join our community.</p>
+          <p style="font-size: 16px; line-height: 1.6;">Your child${linkedStudents.length > 1 ? 'ren' : ''}, <strong>${studentNames || 'your student'}</strong>, ${linkedStudents.length > 1 ? 'have' : 'has'} been accepted into our program.</p>
+          <p style="font-size: 16px; line-height: 1.6;">To get started, please click the button below to create your password and set up your account.</p>`
+      : `<p style="font-size: 16px; line-height: 1.6;">Welcome to Elevate Performance Academy! You have been invited to join the platform as a <strong>${portalLabel}</strong> member.</p>
+          <p style="font-size: 16px; line-height: 1.6;">To get started, please click the button below to create your password and set up your account.</p>`;
 
     const r = getResend();
     if (!r) { console.log('[INVITE] No RESEND_API_KEY — skipping email, invite URL:', registerUrl); return res.json({ success: true, inviteUrl: registerUrl }); }
@@ -165,12 +179,10 @@ router.post('/:id/send-invite', requireAuth, requireRole('admin'), async (req, r
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px 20px; color: #1a1a2e;">
           <div style="text-align: center; margin-bottom: 30px;">
             <h1 style="color: #1a1a2e; font-size: 24px; margin: 0;">Elevate Performance Academy</h1>
-            <p style="color: #6b7280; font-size: 14px; margin-top: 4px;">Parent Portal Invitation</p>
+            <p style="color: #6b7280; font-size: 14px; margin-top: 4px;">${portalLabel} Invitation</p>
           </div>
           <p style="font-size: 16px; line-height: 1.6;">Dear ${user.firstName} ${user.lastName},</p>
-          <p style="font-size: 16px; line-height: 1.6;">Welcome to Elevate Performance Academy! We are excited to have your family join our community.</p>
-          <p style="font-size: 16px; line-height: 1.6;">Your child${linkedStudents.length > 1 ? 'ren' : ''}, <strong>${studentNames || 'your student'}</strong>, ${linkedStudents.length > 1 ? 'have' : 'has'} been accepted into our program.</p>
-          <p style="font-size: 16px; line-height: 1.6;">To get started, please click the button below to create your password and set up your account.</p>
+          ${bodyHtml}
           <div style="text-align: center; margin: 32px 0;">
             <a href="${registerUrl}" style="display: inline-block; background: #3b82f6; color: white; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-size: 16px; font-weight: 600;">Set Up My Account</a>
           </div>
@@ -413,28 +425,35 @@ router.post('/invite', requireAuth, requireRole('admin'), async (req, res) => {
     const portalLabel = roleLabels[assignedRole] || 'Portal';
 
     const r = getResend();
-    const fromAddress = process.env.RESEND_FROM_EMAIL || 'Elevate Performance Academy <onboarding@resend.dev>';
+    const fromAddress = process.env.RESEND_FROM_EMAIL || 'Elevate Performance Academy <noreply@mail.elevateperformance-academy.com>';
+
+    const isParentRole = assignedRole === 'parent' || assignedRole === 'user';
+    const inviteBodyHtml = isParentRole
+      ? `<p style="font-size: 16px; line-height: 1.6;">Welcome to Elevate Performance Academy! We are excited to have your family join our community.</p>
+          <p style="font-size: 16px; line-height: 1.6;">To get started, please click the button below to create your password and set up your account.</p>`
+      : `<p style="font-size: 16px; line-height: 1.6;">Welcome to Elevate Performance Academy! You have been invited to join the platform as a <strong>${portalLabel}</strong> member.</p>
+          <p style="font-size: 16px; line-height: 1.6;">To get started, please click the button below to create your password and set up your account.</p>`;
 
     if (r) {
       const { error } = await r.emails.send({
         from: fromAddress,
         to: [emailLower],
-        subject: `You're invited to Elevate Performance Academy — Set Up Your Account`,
+        subject: 'Welcome to Elevate Performance Academy — Set Up Your Account',
         html: `
-          <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:600px;margin:0 auto;padding:40px 20px;color:#1a1a2e;">
-            <div style="text-align:center;margin-bottom:30px;">
-              <h1 style="color:#1a1a2e;font-size:24px;margin:0;">Elevate Performance Academy</h1>
-              <p style="color:#6b7280;font-size:14px;margin-top:4px;">${portalLabel} Invitation</p>
+          <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px 20px; color: #1a1a2e;">
+            <div style="text-align: center; margin-bottom: 30px;">
+              <h1 style="color: #1a1a2e; font-size: 24px; margin: 0;">Elevate Performance Academy</h1>
+              <p style="color: #6b7280; font-size: 14px; margin-top: 4px;">${portalLabel} Invitation</p>
             </div>
-            <p style="font-size:16px;line-height:1.6;">Hi ${invitedUser.firstName},</p>
-            <p style="font-size:16px;line-height:1.6;">You've been invited to join the Elevate Performance Academy platform as a <strong>${portalLabel}</strong> user.</p>
-            <p style="font-size:16px;line-height:1.6;">Click the button below to create your password and access your portal.</p>
-            <div style="text-align:center;margin:32px 0;">
-              <a href="${registerUrl}" style="display:inline-block;background:#1a3c5e;color:white;text-decoration:none;padding:14px 32px;border-radius:8px;font-size:16px;font-weight:600;">Set Up My Account</a>
+            <p style="font-size: 16px; line-height: 1.6;">Dear ${invitedUser.firstName} ${invitedUser.lastName},</p>
+            ${inviteBodyHtml}
+            <div style="text-align: center; margin: 32px 0;">
+              <a href="${registerUrl}" style="display: inline-block; background: #3b82f6; color: white; text-decoration: none; padding: 14px 32px; border-radius: 8px; font-size: 16px; font-weight: 600;">Set Up My Account</a>
             </div>
-            <p style="font-size:14px;color:#6b7280;">This link expires in 7 days. If you need a new link contact your administrator.</p>
-            <hr style="border:none;border-top:1px solid #e5e7eb;margin:32px 0;"/>
-            <p style="font-size:12px;color:#9ca3af;text-align:center;">Elevate Performance Academy</p>
+            <p style="font-size: 14px; color: #6b7280; line-height: 1.6;">This link will expire in 7 days. If you need a new link, please contact the academy.</p>
+            <p style="font-size: 14px; color: #6b7280; line-height: 1.6;">If you have any questions, please don't hesitate to reach out.</p>
+            <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 32px 0;" />
+            <p style="font-size: 12px; color: #9ca3af; text-align: center;">Elevate Performance Academy<br/>This is an automated message from the Elevate Performance Hub.</p>
           </div>
         `,
       });
