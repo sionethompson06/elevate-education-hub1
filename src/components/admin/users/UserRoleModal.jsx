@@ -20,6 +20,7 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
   const [role, setRole] = useState(user.role || "user");
   const [saving, setSaving] = useState(false);
   const [resending, setResending] = useState(false);
+  const [inviteUrl, setInviteUrl] = useState(null);
   const [assignTab, setAssignTab] = useState("individual"); // "individual" | "program"
 
   // Individual tab state
@@ -140,18 +141,17 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
 
   const handleResendInvite = async () => {
     setResending(true);
+    setInviteUrl(null);
     try {
       const res = await apiPost(`/users/${user.id}/send-invite`, {});
-      const inviteUrl = res.registerUrl || res.inviteUrl;
-      toast({
-        title: "Invite sent!",
-        description: inviteUrl
-          ? `No email provider configured — share this link: ${inviteUrl}`
-          : `Invite email sent to ${user.email}.`,
-        duration: inviteUrl ? 12000 : 4000,
-      });
+      const url = res.registerUrl || res.inviteUrl;
+      if (res.emailSent) {
+        toast({ title: "Invite email sent!", description: `Sent to ${user.email}.` });
+      } else if (url) {
+        setInviteUrl(url); // show copyable link in modal
+      }
     } catch (err) {
-      toast({ title: "Failed to send invite", description: err.message, variant: "destructive" });
+      toast({ title: "Error", description: err.message, variant: "destructive" });
     }
     setResending(false);
   };
@@ -399,6 +399,25 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
             {resending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
             Resend Invite / Reset Password Link
           </Button>
+          {inviteUrl && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-1.5">
+              <p className="text-xs font-semibold text-amber-800">Email not configured — copy & share this link:</p>
+              <div className="flex gap-2">
+                <input
+                  readOnly
+                  value={inviteUrl}
+                  className="flex-1 text-xs bg-white border border-amber-200 rounded-lg px-2 py-1.5 text-slate-700 font-mono truncate"
+                />
+                <button
+                  onClick={() => { navigator.clipboard.writeText(inviteUrl); toast({ title: "Copied!" }); }}
+                  className="shrink-0 text-xs px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium"
+                >
+                  Copy
+                </button>
+              </div>
+              <p className="text-xs text-amber-600">This link expires in 7 days.</p>
+            </div>
+          )}
           <div className="flex gap-3">
             <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">
               Cancel

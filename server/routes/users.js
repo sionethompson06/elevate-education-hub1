@@ -179,7 +179,8 @@ router.post('/:id/send-invite', requireAuth, requireRole('admin'), async (req, r
 
     if (error) {
       console.error('Resend email error:', error);
-      return res.status(500).json({ success: false, error: error.message || 'Failed to send email' });
+      // Don't fail — return the invite URL so admin can share it manually
+      return res.json({ success: true, emailSent: false, emailError: error.message, registerUrl, inviteUrl: registerUrl });
     }
 
     await logAudit({
@@ -191,11 +192,7 @@ router.post('/:id/send-invite', requireAuth, requireRole('admin'), async (req, r
       ipAddress: req.ip,
     });
 
-    const responseData = { success: true, message: 'Invite email sent successfully', emailId: data?.id };
-    if (process.env.NODE_ENV !== 'production') {
-      responseData.registerUrl = registerUrl;
-    }
-    res.json(responseData);
+    res.json({ success: true, emailSent: true, message: 'Invite email sent successfully', emailId: data?.id, registerUrl, inviteUrl: registerUrl });
   } catch (err) {
     console.error('Send invite error:', err);
     res.status(500).json({ success: false, error: err.message });
@@ -431,10 +428,11 @@ router.post('/invite', requireAuth, requireRole('admin'), async (req, res) => {
           </div>
         `,
       });
-      if (error) console.error('[INVITE] Resend error:', error);
+      if (error) console.error('[INVITE] Resend error:', error.message);
     } else {
       console.log(`[INVITE] No RESEND_API_KEY — invite URL: ${registerUrl}`);
     }
+    // Always include registerUrl in response so admin can share manually if email fails
 
     await logAudit({
       userId: req.user.id,
@@ -445,9 +443,7 @@ router.post('/invite', requireAuth, requireRole('admin'), async (req, res) => {
       ipAddress: req.ip,
     });
 
-    const responseData = { success: true, user: { id: userId, email: emailLower, role: assignedRole, firstName: invitedUser.firstName, lastName: invitedUser.lastName } };
-    if (process.env.NODE_ENV !== 'production') responseData.inviteUrl = registerUrl;
-    res.json(responseData);
+    res.json({ success: true, user: { id: userId, email: emailLower, role: assignedRole, firstName: invitedUser.firstName, lastName: invitedUser.lastName }, inviteUrl: registerUrl, registerUrl });
   } catch (err) {
     console.error('Invite error:', err);
     res.status(500).json({ success: false, error: err.message });
