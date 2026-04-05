@@ -6,434 +6,488 @@ import { useNavigate } from "react-router-dom";
 import { Check, ChevronRight, Loader2, AlertCircle, X, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-const CATEGORY_TABS = [
-  { key: "all", label: "All" },
-  { key: "academic", label: "🏫 Academic" },
-  { key: "virtual_homeschool", label: "💻 Virtual" },
-  { key: "athletic", label: "🏆 Athletic" },
-  { key: "combined", label: "🎯 Bundles" },
-];
-
 const CATEGORY_COLORS = {
-  academic: { bar: "bg-blue-600", title: "text-blue-700", badge: "bg-blue-50 border-blue-200" },
-  virtual_homeschool: { bar: "bg-purple-600", title: "text-purple-700", badge: "bg-purple-50 border-purple-200" },
-  athletic: { bar: "bg-red-600", title: "text-red-700", badge: "bg-red-50 border-red-200" },
-  combined: { bar: "bg-teal-500", title: "text-teal-700", badge: "bg-teal-50 border-teal-200" },
+  academic:          { bar: "bg-blue-600",   title: "text-blue-700",   badge: "bg-blue-50 border-blue-200 text-blue-700" },
+  virtual_homeschool:{ bar: "bg-purple-600", title: "text-purple-700", badge: "bg-purple-50 border-purple-200 text-purple-700" },
+  athletic:          { bar: "bg-red-500",    title: "text-red-700",    badge: "bg-red-50 border-red-200 text-red-700" },
+  combined:          { bar: "bg-gradient-to-r from-red-500 to-yellow-400", title: "text-amber-700", badge: "bg-amber-50 border-amber-200 text-amber-700" },
 };
 
-const isInIframe = () => { try { return window.self !== window.top; } catch { return true; } };
+const DISPLAY_ORDER = { academic: 0, virtual_homeschool: 1, athletic: 2, combined: 3 };
 
+// Static display config — features, pricing variants, and extras keyed by program type.
+// These are fallbacks used when the DB metadata field is empty (e.g. migration order issue).
+const PROGRAM_DISPLAY = {
+  academic: {
+    features: ['Personalized learning plans', 'Small class sizes', '3 days a week on site', 'Academic coaching', 'Progress tracking'],
+    price_monthly: 750,
+    price_annual: 7500,
+  },
+  virtual_homeschool: {
+    features: ['Weekly coach sessions', 'Curriculum guidance', 'Resource library', 'Parent reports', 'Flexible scheduling'],
+    price_monthly: 199,
+    price_2x: 299,
+  },
+  athletic: {
+    features: ['4x/week - elite performance training', 'Strength & conditioning', 'Mental performance', 'Nutrition guidance', 'Performance analytics', 'D1 and NIL coaching'],
+    price_monthly: 500,
+    price_annual: 5000,
+  },
+  combined: {
+    features: ['Everything in Performance Training', 'Academic program included', '10% bundle savings', 'Unified coaching team', 'Holistic progress tracking'],
+    badge: 'SAVE 10%',
+    variants: [
+      { name: 'Hybrid Microschool Combination', price_monthly: 1125, price_annual: 11250 },
+      { name: 'Virtual Combination 1 Session / Week', price_monthly: 629 },
+      { name: 'Virtual Combination 2 Sessions / Week', price_monthly: 719 },
+    ],
+  },
+};
+
+// Merge DB program data with static display config so UI always renders correctly.
+function mergeDisplay(program) {
+  const defaults = PROGRAM_DISPLAY[program.category] || {};
+  return {
+    ...program,
+    features:      program.features?.length      ? program.features      : (defaults.features  || []),
+    price_monthly: program.price_monthly          || defaults.price_monthly,
+    price_annual:  program.price_annual           || defaults.price_annual  || null,
+    price_2x:      program.price_2x               || defaults.price_2x      || null,
+    variants:      program.variants?.length       ? program.variants      : (defaults.variants  || null),
+    badge:         program.badge                  || defaults.badge         || null,
+  };
+}
+
+function FeatureGrid({ features }) {
+  if (!features?.length) return null;
+  return (
+    <div className="grid grid-cols-2 gap-x-6 gap-y-2 mt-3">
+      {features.map((f, i) => (
+        <div key={i} className="flex items-start gap-2">
+          <Check className="w-4 h-4 text-green-500 shrink-0 mt-0.5" />
+          <span className="text-sm text-slate-700">{f}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EnrollButton({ onClick, disabled, loading }) {
+  return (
+    <Button
+      className="w-full bg-slate-900 hover:bg-slate-800 text-white rounded-xl py-2.5 mt-4"
+      onClick={onClick}
+      disabled={disabled}
+    >
+      {loading
+        ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Processing…</>
+        : <>Enroll a Student <ChevronRight className="w-4 h-4 ml-1" /></>}
+    </Button>
+  );
+}
+
+function EnrollmentBadge({ enrollment }) {
+  if (!enrollment) return null;
+  const isPending = enrollment.status === "pending_payment";
+  return (
+    <div className={`inline-block mt-3 text-xs px-3 py-1 rounded-full border font-medium ${
+      isPending ? "bg-yellow-50 border-yellow-300 text-yellow-800" : "bg-green-50 border-green-300 text-green-800"
+    }`}>
+      {enrollment.program_variant
+        ? `${enrollment.program_variant} — ${isPending ? "pending" : "enrolled"}`
+        : isPending ? "⏳ Pending Payment" : "✓ Enrolled"}
+    </div>
+  );
+}
+
+// ── Academic card (Hybrid Microschool) ────────────────────────────────────────
+function AcademicCard({ program, enrollments, onEnroll }) {
+  const colors = CATEGORY_COLORS.academic;
+  const enrolled = enrollments.find(e => e.programId === program.id && ["active","active_override","pending_payment"].includes(e.status));
+  return (
+    <div className="rounded-2xl bg-white border border-slate-200 shadow-sm overflow-hidden">
+      <div className={`h-1.5 ${colors.bar}`} />
+      <div className="p-6 flex gap-6">
+        <div className="flex-1 min-w-0">
+          <span className={`inline-block text-xs font-semibold px-3 py-1 rounded-full border mb-3 ${colors.badge}`}>{program.name}</span>
+          <p className="text-sm text-slate-700 leading-relaxed">{program.description}</p>
+          <FeatureGrid features={program.features} />
+          <EnrollmentBadge enrollment={enrolled} />
+        </div>
+        <div className="shrink-0 min-w-[140px] text-right">
+          <div className="mb-3">
+            <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Monthly</p>
+            <p className="text-4xl font-bold text-slate-900">${program.price_monthly?.toLocaleString()}</p>
+            <p className="text-xs text-slate-400">/month</p>
+          </div>
+          {program.price_annual && (
+            <div className="mb-3">
+              <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">One-time</p>
+              <p className="text-3xl font-bold text-slate-900">${program.price_annual?.toLocaleString()}</p>
+            </div>
+          )}
+          <EnrollButton onClick={() => onEnroll(program, null)} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Virtual Homeschool card ───────────────────────────────────────────────────
+function VirtualCard({ program, enrollments, onEnroll }) {
+  const colors = CATEGORY_COLORS.virtual_homeschool;
+  const enrolled1x = enrollments.find(e => e.programId === program.id && e.program_variant === '1x' && ["active","active_override","pending_payment"].includes(e.status));
+  const enrolled2x = enrollments.find(e => e.programId === program.id && e.program_variant === '2x' && ["active","active_override","pending_payment"].includes(e.status));
+  return (
+    <div className="rounded-2xl bg-white border border-slate-200 shadow-sm overflow-hidden">
+      <div className={`h-1.5 ${colors.bar}`} />
+      <div className="p-6 flex gap-6">
+        <div className="flex-1 min-w-0">
+          <span className={`inline-block text-xs font-semibold px-3 py-1 rounded-full border mb-3 ${colors.badge}`}>{program.name}</span>
+          <p className="text-sm text-slate-700 leading-relaxed">{program.description}</p>
+          <FeatureGrid features={program.features} />
+          {(enrolled1x || enrolled2x) && (
+            <div className="mt-3 flex gap-2 flex-wrap">
+              <EnrollmentBadge enrollment={enrolled1x ? { ...enrolled1x, program_variant: '1 Session / Week' } : null} />
+              <EnrollmentBadge enrollment={enrolled2x ? { ...enrolled2x, program_variant: '2 Sessions / Week' } : null} />
+            </div>
+          )}
+        </div>
+        <div className="shrink-0 min-w-[140px] text-right space-y-4">
+          <div>
+            <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">1 Session / Week</p>
+            <p className="text-4xl font-bold text-slate-900">${program.price_monthly?.toLocaleString()}</p>
+            <p className="text-xs text-slate-400">/month</p>
+          </div>
+          {program.price_2x && (
+            <div>
+              <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">2 Sessions / Week</p>
+              <p className="text-4xl font-bold text-slate-900">${program.price_2x?.toLocaleString()}</p>
+              <p className="text-xs text-slate-400">/month</p>
+            </div>
+          )}
+          <EnrollButton onClick={() => onEnroll(program, null)} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Athletic / Performance card ───────────────────────────────────────────────
+function AthleticCard({ program, enrollments, onEnroll }) {
+  const colors = CATEGORY_COLORS.athletic;
+  const enrolled = enrollments.find(e => e.programId === program.id && ["active","active_override","pending_payment"].includes(e.status));
+  return (
+    <div className="rounded-2xl bg-white border border-slate-200 shadow-sm overflow-hidden">
+      <div className={`h-1.5 ${colors.bar}`} />
+      <div className="p-6 flex gap-6">
+        <div className="flex-1 min-w-0">
+          <span className={`inline-block text-xs font-semibold px-3 py-1 rounded-full border mb-3 ${colors.badge}`}>{program.name}</span>
+          <p className="text-sm text-slate-700 leading-relaxed">{program.description}</p>
+          <FeatureGrid features={program.features} />
+          <EnrollmentBadge enrollment={enrolled} />
+        </div>
+        <div className="shrink-0 min-w-[140px] text-right">
+          <div className="mb-3">
+            <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">Monthly</p>
+            <p className="text-4xl font-bold text-slate-900">${program.price_monthly?.toLocaleString()}</p>
+            <p className="text-xs text-slate-400">/month</p>
+          </div>
+          {program.price_annual && (
+            <div className="mb-3">
+              <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">One-time</p>
+              <p className="text-3xl font-bold text-slate-900">${program.price_annual?.toLocaleString()}</p>
+            </div>
+          )}
+          <EnrollButton onClick={() => onEnroll(program, null)} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Combination card ──────────────────────────────────────────────────────────
+function CombinationCard({ program, enrollments, onEnroll }) {
+  const colors = CATEGORY_COLORS.combined;
+  const variants = program.variants || [];
+  return (
+    <div className="rounded-2xl bg-white border border-slate-200 shadow-sm overflow-hidden">
+      <div className={`h-1.5 ${colors.bar}`} />
+      <div className="p-6 flex gap-6">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-3">
+            <span className={`inline-block text-xs font-semibold px-3 py-1 rounded-full border ${colors.badge}`}>{program.name}</span>
+            {program.badge && (
+              <span className="inline-block text-xs font-bold px-3 py-1 rounded-full bg-amber-400 text-amber-900 border border-amber-500">{program.badge}</span>
+            )}
+          </div>
+          <p className="text-sm text-slate-700 leading-relaxed">{program.description}</p>
+          <FeatureGrid features={program.features} />
+        </div>
+        <div className="shrink-0 min-w-[200px] space-y-3">
+          {variants.map((v, i) => (
+            <div key={i} className="bg-slate-50 rounded-xl p-3 text-right border border-slate-200">
+              <p className="text-xs text-slate-500 font-medium mb-1">{v.name}</p>
+              <p className="text-2xl font-bold text-slate-900">${v.price_monthly?.toLocaleString()}<span className="text-xs font-normal text-slate-400">/mo</span></p>
+              {v.price_annual && (
+                <p className="text-xs text-slate-400">or ${v.price_annual?.toLocaleString()} one-time</p>
+              )}
+            </div>
+          ))}
+          <EnrollButton onClick={() => onEnroll(program, null)} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Enrollment Modal ──────────────────────────────────────────────────────────
+function EnrollModal({ program, students, onClose, onConfirm, enrolling, error }) {
+  const isVirtual = program.category === 'virtual_homeschool';
+  const isCombined = program.category === 'combined';
+  const variants = program.variants || [];
+
+  const [selectedStudentId, setSelectedStudentId] = useState(students[0]?.id || null);
+  const [billingCycle, setBillingCycle] = useState('monthly');
+  const [selectedVariant, setSelectedVariant] = useState(variants[0]?.name || null);
+  const [policyAck, setPolicyAck] = useState(false);
+
+  const getPrice = () => {
+    if (isCombined) {
+      const v = variants.find(x => x.name === selectedVariant);
+      return billingCycle === 'annual' && v?.price_annual
+        ? `$${v.price_annual.toLocaleString()} one-time`
+        : `$${v?.price_monthly?.toLocaleString()}/mo`;
+    }
+    if (isVirtual) {
+      const p = selectedVariant === '2x' ? program.price_2x : program.price_monthly;
+      return `$${p?.toLocaleString()}/mo`;
+    }
+    return billingCycle === 'annual' && program.price_annual
+      ? `$${program.price_annual.toLocaleString()} one-time`
+      : `$${program.price_monthly?.toLocaleString()}/mo`;
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="font-bold text-[#1a3c5e] text-lg">Enroll in {program.name}</h3>
+          <button onClick={onClose} className="p-1 rounded hover:bg-slate-100"><X className="w-5 h-5 text-slate-500" /></button>
+        </div>
+
+        {/* Variant selector for virtual */}
+        {isVirtual && program.price_2x && (
+          <div className="mb-5">
+            <label className="block text-sm font-medium text-slate-700 mb-2">Session Frequency</label>
+            <div className="flex gap-2">
+              {[['1x', `1 Session / Week — $${program.price_monthly}/mo`], ['2x', `2 Sessions / Week — $${program.price_2x}/mo`]].map(([key, label]) => (
+                <button key={key} onClick={() => setSelectedVariant(key)}
+                  className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-semibold border-2 transition-colors text-left ${selectedVariant === key ? 'border-[#1a3c5e] bg-[#1a3c5e] text-white' : 'border-slate-200 text-slate-600'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Variant selector for combination */}
+        {isCombined && variants.length > 0 && (
+          <div className="mb-5">
+            <label className="block text-sm font-medium text-slate-700 mb-2">Program Combination</label>
+            <div className="space-y-2">
+              {variants.map(v => (
+                <button key={v.name} onClick={() => setSelectedVariant(v.name)}
+                  className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 transition-all text-left ${selectedVariant === v.name ? 'border-[#1a3c5e] bg-[#1a3c5e]/5' : 'border-slate-200 hover:border-slate-300'}`}>
+                  <span className="text-sm font-medium text-slate-800">{v.name}</span>
+                  <span className="text-sm font-bold text-slate-900">${v.price_monthly}/mo</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Billing cycle for programs with annual option */}
+        {!isVirtual && !isCombined && program.price_annual && (
+          <div className="mb-5">
+            <label className="block text-sm font-medium text-slate-700 mb-2">Billing Cycle</label>
+            <div className="flex gap-2">
+              {[['monthly', `Monthly — $${program.price_monthly}/mo`], ['annual', `One-time — $${program.price_annual}`]].map(([key, label]) => (
+                <button key={key} onClick={() => setBillingCycle(key)}
+                  className={`flex-1 py-2.5 rounded-xl text-xs font-semibold border-2 transition-colors ${billingCycle === key ? 'border-[#1a3c5e] bg-[#1a3c5e] text-white' : 'border-slate-200 text-slate-600'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Student selector */}
+        <div className="mb-5">
+          <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-1.5">
+            <Users className="w-4 h-4" /> Enrolling for
+          </label>
+          {students.length === 0 ? (
+            <p className="text-sm text-slate-400 italic">No students found on your account.</p>
+          ) : (
+            <div className="space-y-2">
+              {students.map(s => (
+                <button key={s.id} onClick={() => setSelectedStudentId(s.id)}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all text-left ${selectedStudentId === s.id ? 'border-[#1a3c5e] bg-[#1a3c5e]/5' : 'border-slate-200 hover:border-slate-300'}`}>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${selectedStudentId === s.id ? 'bg-[#1a3c5e] text-white' : 'bg-slate-100 text-slate-600'}`}>
+                    {(s.firstName || s.full_name || '?').charAt(0)}
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-slate-800">{s.firstName ? `${s.firstName} ${s.lastName}` : s.full_name}</p>
+                    {s.grade && <p className="text-xs text-slate-400">Grade {s.grade}</p>}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Price summary */}
+        <div className="bg-slate-50 rounded-xl p-4 mb-5 text-sm flex justify-between">
+          <span className="text-slate-600">{isCombined ? (selectedVariant || program.name) : isVirtual ? `${selectedVariant === '2x' ? '2 Sessions / Week' : '1 Session / Week'}` : program.name}</span>
+          <span className="font-semibold">{getPrice()}</span>
+        </div>
+
+        {/* Policy */}
+        <div className="mb-4">
+          <p className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-2">Enrollment & Cancellation Policy</p>
+          <div className="border border-slate-200 rounded-xl p-3 h-32 overflow-y-auto text-xs text-slate-600 leading-relaxed bg-slate-50 space-y-2">
+            <p><strong>Monthly Billing</strong> — Tuition is charged in advance each month. Payments are processed automatically.</p>
+            <p><strong>30-Day Written Cancellation Notice</strong> — To cancel, a 30-day written notice is required via email. The notice period begins on the date the request is received. Tuition for the current cycle and any services within the notice period remain your responsibility.</p>
+            <p><strong>Non-Attendance</strong> — Discontinuing participation without written notice does not constitute cancellation. Charges continue until the 30-day requirement is fulfilled.</p>
+            <p><strong>Agreement</strong> — By enrolling you acknowledge and agree to this policy.</p>
+          </div>
+          <label className="flex items-start gap-2 mt-3 cursor-pointer">
+            <input type="checkbox" checked={policyAck} onChange={e => setPolicyAck(e.target.checked)} className="mt-0.5 accent-[#1a3c5e]" />
+            <span className="text-xs text-slate-700">I have read and agree to the Enrollment & Cancellation Policy.</span>
+          </label>
+        </div>
+
+        {error && (
+          <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-red-700 text-sm mb-4">
+            <AlertCircle className="w-4 h-4 shrink-0" /> {error}
+          </div>
+        )}
+
+        <div className="flex gap-3">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
+          <Button
+            className="flex-1 bg-[#1a3c5e] hover:bg-[#0d2540]"
+            disabled={enrolling || !policyAck || !selectedStudentId}
+            onClick={() => onConfirm({ studentId: selectedStudentId, billingCycle, variant: selectedVariant })}
+          >
+            {enrolling ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Processing…</> : 'Confirm & Pay'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
 export default function ProgramsEnroll() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const qc = useQueryClient();
 
-  const [categoryFilter, setCategoryFilter] = useState("all");
-  const [enrollModal, setEnrollModal] = useState(null); // program object
-  const [billingCycle, setBillingCycle] = useState("monthly");
-  const [selectedStudentId, setSelectedStudentId] = useState(null);
+  const [enrollModal, setEnrollModal] = useState(null);
   const [enrolling, setEnrolling] = useState(false);
   const [error, setError] = useState(null);
-  const [policyAcknowledged, setPolicyAcknowledged] = useState(false);
 
-  const { data: programData, isLoading: programsLoading } = useQuery({
-    queryKey: ["parent-programs"],
-    queryFn: () => base44.functions.invoke("enrollment", { action: "get_programs" }).then(r => r.data),
+  const { data: programData, isLoading } = useQuery({
+    queryKey: ['parent-programs'],
+    queryFn: () => base44.functions.invoke('enrollment', { action: 'get_programs' }).then(r => r.data),
     enabled: !!user,
   });
 
   const { data: enrollmentData } = useQuery({
-    queryKey: ["my-enrollments", user?.id],
-    queryFn: () => base44.functions.invoke("enrollment", { action: "get_my_enrollments" }).then(r => r.data),
+    queryKey: ['my-enrollments', user?.id],
+    queryFn: () => base44.functions.invoke('enrollment', { action: 'get_my_enrollments' }).then(r => r.data),
     enabled: !!user,
   });
 
-  const { data: parents = [] } = useQuery({
-    queryKey: ["parent-record", user?.email],
-    queryFn: () => base44.entities.Parent.filter({ user_email: user.email }),
-    enabled: !!user?.email,
-  });
-  const parent = parents[0];
-
   const { data: students = [] } = useQuery({
-    queryKey: ["parent-students", parent?.student_ids],
+    queryKey: ['my-students', user?.id],
     queryFn: async () => {
-      if (!parent?.student_ids?.length) return [];
-      const all = await Promise.all(parent.student_ids.map(sid => base44.entities.Student.filter({ id: sid })));
-      return all.flat();
+      const res = await base44.functions.invoke('enrollment', { action: 'get_my_enrollments' });
+      return res.data?.students || [];
     },
-    enabled: !!parent?.student_ids?.length,
+    enabled: !!user,
   });
 
-  const PROGRAM_ORDER = [
-    { key: "combination", match: (name) => name.startsWith("combination") },
-    { key: "hybrid microschool", match: (name) => name.startsWith("hybrid microschool") },
-    { key: "virtual homeschool", match: (name) => name.includes("virtual homeschool") },
-    { key: "performance training", match: (name) => name.includes("performance training") },
-  ];
+  const programs = (programData?.programs || [])
+    .sort((a, b) => (DISPLAY_ORDER[a.category] ?? 99) - (DISPLAY_ORDER[b.category] ?? 99))
+    .map(mergeDisplay);
+  const myEnrollments = (enrollmentData?.enrollments || []).map(e => ({ ...e, programId: e.programId ?? e.program_id }));
 
-  // Desired display order (index = priority)
-  const DISPLAY_ORDER = [
-    (name) => name.startsWith("hybrid microschool"),
-    (name) => name.includes("virtual homeschool"),
-    (name) => name.includes("performance training"),
-    (name) => name.startsWith("combination"),
-  ];
-
-  const sortPrograms = (list) => {
-    return [...list].sort((a, b) => {
-      const aName = a.name.toLowerCase();
-      const bName = b.name.toLowerCase();
-      const aIdx = DISPLAY_ORDER.findIndex(fn => fn(aName));
-      const bIdx = DISPLAY_ORDER.findIndex(fn => fn(bName));
-      const ai = aIdx === -1 ? 99 : aIdx;
-      const bi = bIdx === -1 ? 99 : bIdx;
-      if (ai !== bi) return ai - bi;
-      return (a.price_monthly || 0) - (b.price_monthly || 0);
-    });
-  };
-
-  const programs = programData?.programs || [];
-  const myEnrollments = enrollmentData?.enrollments || [];
-
-  const filtered = sortPrograms(
-    categoryFilter === "all" ? programs : programs.filter(p => p.category === categoryFilter)
-  );
-
-  const getEnrolled = (programId) =>
-    myEnrollments.find(e => e.program_id === programId && ["active", "active_override", "pending_payment"].includes(e.status));
-
-  const openModal = (program) => {
-    setBillingCycle("monthly");
-    setSelectedStudentId(students[0]?.id || null);
-    setError(null);
-    setPolicyAcknowledged(false);
-    setEnrollModal(program);
-  };
-
-  const annualSavings = (program) => {
-    if (!program.price_annual || !program.price_monthly) return null;
-    const annualEquiv = program.price_monthly * 12;
-    return annualEquiv - program.price_annual;
-  };
-
-  const handleConfirmEnroll = async () => {
-    if (isInIframe()) {
-      alert("Payment checkout is only available from the published app. Please open the app in a new tab.");
-      return;
-    }
+  const handleEnroll = async ({ studentId, billingCycle, variant }) => {
     setEnrolling(true);
     setError(null);
-    const res = await base44.functions.invoke("enrollment", {
-      action: "enroll",
-      program_id: enrollModal.id,
-      student_id: selectedStudentId || undefined,
-      billing_cycle: billingCycle,
-    });
-    setEnrolling(false);
-
-    if (res.data?.error) {
-      if (res.data?.enrollment_id) {
-        // Already enrolled — send to checkout
-        setEnrollModal(null);
-        qc.invalidateQueries({ queryKey: ["my-enrollments"] });
-        navigate(`/parent/checkout?enrollment_id=${res.data.enrollment_id}`);
-      } else {
-        setError(res.data.error);
-      }
-      return;
-    }
-
-    if (res.data?.enrollment) {
-      qc.invalidateQueries({ queryKey: ["my-enrollments"] });
+    try {
+      const res = await base44.functions.invoke('enrollment', {
+        action: 'enroll',
+        program_id: enrollModal.id,
+        student_id: studentId,
+        billing_cycle: billingCycle,
+        variant,
+      });
+      qc.invalidateQueries({ queryKey: ['my-enrollments'] });
       setEnrollModal(null);
-      navigate(`/parent/checkout?enrollment_id=${res.data.enrollment.id}`);
+      if (res.data?.enrollment) {
+        navigate(`/parent/checkout?enrollment_id=${res.data.enrollment.id}`);
+      }
+    } catch (err) {
+      setError(err.message || 'Enrollment failed. Please try again.');
+    } finally {
+      setEnrolling(false);
     }
   };
+
+  const cardProps = (program) => ({
+    program,
+    enrollments: myEnrollments,
+    onEnroll: (p) => { setError(null); setEnrollModal(p); },
+  });
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-[#1a3c5e] mb-1">Programs & Enroll</h1>
-        <p className="text-slate-500">Browse our programs and enroll your student today.</p>
+        <h1 className="text-4xl font-bold text-slate-900 mb-1">Programs</h1>
+        <p className="text-slate-500 text-lg">Explore and enroll your students in our programs</p>
       </div>
 
-      {/* Category tabs */}
-      <div className="flex gap-2 flex-wrap">
-        {CATEGORY_TABS.map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => setCategoryFilter(tab.key)}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-colors border ${
-              categoryFilter === tab.key
-                ? "bg-[#1a3c5e] text-white border-[#1a3c5e]"
-                : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {programsLoading ? (
-        <div className="flex justify-center py-16">
+      {isLoading ? (
+        <div className="flex justify-center py-20">
           <div className="w-6 h-6 border-4 border-slate-200 border-t-[#1a3c5e] rounded-full animate-spin" />
         </div>
+      ) : programs.length === 0 ? (
+        <div className="text-center py-16 text-slate-400">No programs available at this time.</div>
       ) : (
-        <div className="space-y-4">
-          {filtered.map(program => {
-            const colors = CATEGORY_COLORS[program.category] || CATEGORY_COLORS.academic;
-            const enrolled = getEnrolled(program.id);
-            const savings = annualSavings(program);
-
-            return (
-              <div key={program.id} className="rounded-xl bg-white border border-slate-200 shadow-sm overflow-hidden">
-                <div className={`h-1.5 ${colors.bar}`} />
-                <div className="p-6">
-                  <div className="flex gap-6">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-2">
-                        <h3 className={`text-lg font-bold ${colors.title}`}>{program.name}</h3>
-                        {enrolled && (
-                          <span className={`text-xs px-2 py-0.5 rounded-full border font-semibold ${
-                            enrolled.status === "pending_payment" ? "bg-yellow-50 border-yellow-200 text-yellow-700" : "bg-green-50 border-green-200 text-green-700"
-                          }`}>
-                            {enrolled.status === "pending_payment" ? "⏳ Pending Payment" : "✓ Enrolled"}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-sm text-slate-600 leading-relaxed mb-4">{program.description}</p>
-                      {program.features?.length > 0 && (
-                        <div className="grid grid-cols-2 gap-2">
-                          {program.features.map((f, i) => (
-                            <div key={i} className="flex items-start gap-1.5">
-                              <Check className="w-3.5 h-3.5 text-green-600 shrink-0 mt-0.5" />
-                              <span className="text-xs text-slate-600">{f}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="shrink-0 text-right min-w-[140px]">
-                      <p className="text-3xl font-bold text-slate-900">${program.price_monthly?.toLocaleString()}</p>
-                      <p className="text-xs text-slate-400 mb-1">/month</p>
-                      {program.price_annual && (
-                        <p className="text-xs text-slate-500 mb-1">or ${program.price_annual?.toLocaleString()} / year</p>
-                      )}
-                      {savings && savings > 0 && (
-                        <p className="text-xs text-green-600 font-semibold mb-3">Save ${savings}/yr annually</p>
-                      )}
-
-                      {enrolled ? (
-                        enrolled.status === "pending_payment" ? (
-                          <Button
-                            size="sm"
-                            className="w-full bg-yellow-500 hover:bg-yellow-600 text-white mt-2"
-                            onClick={() => navigate(`/parent/checkout?enrollment_id=${enrolled.id}`)}
-                          >
-                            Complete Payment
-                          </Button>
-                        ) : (
-                          <div className="flex items-center justify-center gap-1.5 py-2 rounded-lg bg-green-50 border border-green-200 text-green-700 text-xs font-semibold mt-2">
-                            <Check className="w-3.5 h-3.5" /> Currently Enrolled
-                          </div>
-                        )
-                      ) : (
-                        <Button
-                          size="sm"
-                          className="w-full bg-[#1a3c5e] hover:bg-[#0d2540] text-white mt-2"
-                          onClick={() => openModal(program)}
-                        >
-                          Enroll Now <ChevronRight className="w-3.5 h-3.5 ml-1" />
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
+        <div className="space-y-5">
+          {programs.map(program => {
+            if (program.category === 'academic') return <AcademicCard key={program.id} {...cardProps(program)} />;
+            if (program.category === 'virtual_homeschool') return <VirtualCard key={program.id} {...cardProps(program)} />;
+            if (program.category === 'athletic') return <AthleticCard key={program.id} {...cardProps(program)} />;
+            if (program.category === 'combined') return <CombinationCard key={program.id} {...cardProps(program)} />;
+            return null;
           })}
-          {filtered.length === 0 && (
-            <div className="text-center py-12 text-slate-400">No programs found in this category.</div>
-          )}
         </div>
       )}
 
-      {/* Enroll Modal */}
       {enrollModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="font-bold text-[#1a3c5e] text-lg">Enroll in {enrollModal.name}</h3>
-              <button onClick={() => setEnrollModal(null)} className="p-1 rounded hover:bg-slate-100">
-                <X className="w-5 h-5 text-slate-500" />
-              </button>
-            </div>
-
-            {/* Student selector — always visible */}
-            <div className="mb-5">
-              <label className="block text-sm font-medium text-slate-700 mb-2 flex items-center gap-1.5">
-                <Users className="w-4 h-4" /> Enrolling for
-              </label>
-              {students.length === 0 ? (
-                <p className="text-sm text-slate-400 italic">No students found on your account.</p>
-              ) : students.length === 1 ? (
-                <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
-                  <div className="w-8 h-8 rounded-full bg-[#1a3c5e] flex items-center justify-center text-white text-sm font-bold shrink-0">
-                    {students[0].full_name?.charAt(0)}
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-slate-800">{students[0].full_name}</p>
-                    {students[0].grade_level && <p className="text-xs text-slate-400">Grade {students[0].grade_level}{students[0].sport ? ` · ${students[0].sport}` : ""}</p>}
-                  </div>
-                  <div className="ml-auto">
-                    <span className="text-xs bg-[#1a3c5e] text-white px-2 py-0.5 rounded-full font-medium">Selected</span>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {students.map(s => (
-                    <button
-                      key={s.id}
-                      onClick={() => setSelectedStudentId(s.id)}
-                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all text-left ${
-                        selectedStudentId === s.id
-                          ? "border-[#1a3c5e] bg-[#1a3c5e]/5"
-                          : "border-slate-200 hover:border-slate-300 bg-white"
-                      }`}
-                    >
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${
-                        selectedStudentId === s.id ? "bg-[#1a3c5e] text-white" : "bg-slate-100 text-slate-600"
-                      }`}>
-                        {s.full_name?.charAt(0)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-sm font-semibold ${selectedStudentId === s.id ? "text-[#1a3c5e]" : "text-slate-800"}`}>{s.full_name}</p>
-                        {(s.grade_level || s.sport) && (
-                          <p className="text-xs text-slate-400">
-                            {s.grade_level ? `Grade ${s.grade_level}` : ""}
-                            {s.grade_level && s.sport ? " · " : ""}
-                            {s.sport || ""}
-                          </p>
-                        )}
-                      </div>
-                      <div className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${
-                        selectedStudentId === s.id ? "border-[#1a3c5e] bg-[#1a3c5e]" : "border-slate-300"
-                      }`}>
-                        {selectedStudentId === s.id && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Billing toggle */}
-            <div className="mb-5">
-              <label className="block text-sm font-medium text-slate-700 mb-2">Billing Cycle</label>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setBillingCycle("monthly")}
-                  className={`flex-1 py-2.5 rounded-xl text-sm font-semibold border-2 transition-colors ${
-                    billingCycle === "monthly" ? "border-[#1a3c5e] bg-[#1a3c5e] text-white" : "border-slate-200 text-slate-600"
-                  }`}
-                >
-                  Monthly<br />
-                  <span className="text-xs font-normal">${enrollModal.price_monthly?.toLocaleString()}/mo</span>
-                </button>
-                {enrollModal.price_annual && (
-                  <button
-                    onClick={() => setBillingCycle("annual")}
-                    className={`flex-1 py-2.5 rounded-xl text-sm font-semibold border-2 transition-colors relative ${
-                      billingCycle === "annual" ? "border-teal-600 bg-teal-600 text-white" : "border-slate-200 text-slate-600"
-                    }`}
-                  >
-                    Annual
-                    {annualSavings(enrollModal) > 0 && (
-                      <span className={`block text-xs font-normal ${billingCycle === "annual" ? "text-teal-100" : "text-green-600"}`}>
-                        Save ${annualSavings(enrollModal)}/yr
-                      </span>
-                    )}
-                    <span className="block text-xs font-normal">${enrollModal.price_annual?.toLocaleString()} total</span>
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Price summary */}
-            <div className="bg-slate-50 rounded-xl p-4 mb-5 space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-slate-600">{enrollModal.name}</span>
-                <span className="font-semibold">
-                  {billingCycle === "annual"
-                    ? `$${enrollModal.price_annual?.toLocaleString()}`
-                    : `$${enrollModal.price_monthly?.toLocaleString()}/mo`}
-                </span>
-              </div>
-              {billingCycle === "annual" && annualSavings(enrollModal) > 0 && (
-                <div className="flex justify-between text-green-600 text-xs">
-                  <span>Annual savings</span>
-                  <span>–${annualSavings(enrollModal)}</span>
-                </div>
-              )}
-            </div>
-
-            {/* Policy acknowledgment */}
-            <div className="mb-4">
-              <p className="text-xs font-semibold text-slate-700 uppercase tracking-wide mb-2">Monthly Enrollment & Cancellation Policy</p>
-              <div className="border border-slate-200 rounded-xl p-3 h-40 overflow-y-auto text-xs text-slate-600 leading-relaxed bg-slate-50 space-y-2">
-                <p><strong>Monthly Billing</strong></p>
-                <p>Enrollment in our education support programs, tutoring services, coaching sessions, and homeschool support programs operates on a one-time charge or a monthly recurring billing structure. Tuition is charged in advance of each upcoming service month. Payments are processed automatically using the payment method on file. Monthly tuition reserves the student's instructional time, instructor availability, and program resources.</p>
-                <p><strong>30-Day Written Cancellation Notice</strong></p>
-                <p>To cancel enrollment, a 30-day written notice is required. Cancellation requests must be submitted in writing via email to the business. The 30-day notice period begins on the date the written cancellation request is received. Tuition for the current billing cycle and any services scheduled within the notice period remains the responsibility of the parent or guardian. Because student spots are reserved and staffing is scheduled in advance, immediate cancellations are not permitted.</p>
-                <p><strong>Example</strong></p>
-                <p>If a cancellation request is received on April 10, services and billing may continue through May 10 to satisfy the required 30-day notice period.</p>
-                <p><strong>Non-Attendance</strong></p>
-                <p>Failure to attend scheduled sessions or discontinuing participation without submitting a written cancellation notice does not constitute cancellation, and tuition charges will continue until the 30-day notice requirement has been fulfilled.</p>
-                <p><strong>Exceptional Circumstances</strong></p>
-                <p>We understand that unforeseen situations can arise. Exceptions to this policy may be considered at the discretion of the business.</p>
-                <p><strong>Agreement to Terms</strong></p>
-                <p>By enrolling in services, parents or guardians acknowledge that they have read and agreed to the Monthly Enrollment and Cancellation Policy, including the 30-day written cancellation requirement.</p>
-              </div>
-              <label className="flex items-start gap-2 mt-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={policyAcknowledged}
-                  onChange={e => setPolicyAcknowledged(e.target.checked)}
-                  className="mt-0.5 accent-[#1a3c5e]"
-                />
-                <span className="text-xs text-slate-700">I have read and agree to the Monthly Enrollment & Cancellation Policy, including the 30-day written cancellation requirement.</span>
-              </label>
-            </div>
-
-            {error && (
-              <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-red-700 text-sm mb-4">
-                <AlertCircle className="w-4 h-4 shrink-0" /> {error}
-              </div>
-            )}
-
-            {isInIframe() && (
-              <div className="flex items-center gap-2 bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 text-yellow-800 text-xs mb-4">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                Checkout only works from the published app. Please open in a new tab.
-              </div>
-            )}
-
-            <div className="flex gap-3">
-              <button onClick={() => setEnrollModal(null)} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">
-                Cancel
-              </button>
-              <Button
-                className="flex-1 bg-[#1a3c5e] hover:bg-[#0d2540]"
-                disabled={enrolling || isInIframe() || !policyAcknowledged || !selectedStudentId}
-                onClick={handleConfirmEnroll}
-              >
-                {enrolling ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Processing…</> : "Confirm & Pay"}
-              </Button>
-            </div>
-          </div>
-        </div>
+        <EnrollModal
+          program={enrollModal}
+          students={students}
+          onClose={() => setEnrollModal(null)}
+          onConfirm={handleEnroll}
+          enrolling={enrolling}
+          error={error}
+        />
       )}
     </div>
   );

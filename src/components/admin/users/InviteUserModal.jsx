@@ -16,22 +16,28 @@ const ROLES = [
 export default function InviteUserModal({ onClose, onInvited }) {
   const { toast } = useToast();
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState("user");
+  const [role, setRole] = useState("parent");
   const [sending, setSending] = useState(false);
+  const [inviteUrl, setInviteUrl] = useState(null);
 
   const handleInvite = async () => {
     if (!email.trim()) return;
     setSending(true);
+    setInviteUrl(null);
     try {
       const res = await base44.functions.invoke("inviteAndSetRole", { email: email.trim(), role });
-      const result = res.data;
-
-      if (result.warning) {
-        toast({ title: "Invitation sent", description: result.warning });
+      const result = res.data || res;
+      const url = result.inviteUrl || result.registerUrl;
+      if (result.emailSent) {
+        toast({ title: "Invite email sent!", description: `Sent to ${email}.` });
+        onInvited();
+      } else if (url) {
+        setInviteUrl(url);
+        onInvited();
       } else {
-        toast({ title: "Invitation sent!", description: `Invite emailed to ${email}. Role: ${role}.` });
+        toast({ title: "Invitation created", description: `User created with role: ${role}.` });
+        onInvited();
       }
-      onInvited();
     } catch (err) {
       toast({ title: "Invite failed", description: err.message, variant: "destructive" });
     }
@@ -95,18 +101,42 @@ export default function InviteUserModal({ onClose, onInvited }) {
           </p>
         </div>
 
+        {inviteUrl && (
+          <div className="px-6 pb-3">
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-1.5">
+              <p className="text-xs font-semibold text-amber-800">Email not configured — copy & share this link:</p>
+              <div className="flex gap-2">
+                <input
+                  readOnly
+                  value={inviteUrl}
+                  className="flex-1 text-xs bg-white border border-amber-200 rounded-lg px-2 py-1.5 text-slate-700 font-mono truncate"
+                />
+                <button
+                  onClick={() => { navigator.clipboard.writeText(inviteUrl); toast({ title: "Copied!" }); }}
+                  className="shrink-0 text-xs px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium"
+                >
+                  Copy
+                </button>
+              </div>
+              <p className="text-xs text-amber-600">This link expires in 7 days. Send it directly to the user.</p>
+            </div>
+          </div>
+        )}
+
         <div className="flex gap-3 px-6 pb-5">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">
-            Cancel
+            {inviteUrl ? "Done" : "Cancel"}
           </button>
-          <Button
-            className="flex-1 bg-[#1a3c5e] hover:bg-[#0d2540]"
-            onClick={handleInvite}
-            disabled={sending || !email.trim()}
-          >
-            {sending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
-            Send Invite
-          </Button>
+          {!inviteUrl && (
+            <Button
+              className="flex-1 bg-[#1a3c5e] hover:bg-[#0d2540]"
+              onClick={handleInvite}
+              disabled={sending || !email.trim()}
+            >
+              {sending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
+              Send Invite
+            </Button>
+          )}
         </div>
       </div>
     </div>

@@ -196,9 +196,11 @@ export default function UserManagement() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <div className="w-8 h-8 rounded-full bg-[#1a3c5e] flex items-center justify-center text-white text-xs font-bold shrink-0">
-                          {u.full_name?.charAt(0) || "?"}
+                          {(u.firstName || u.full_name || u.email || "?").charAt(0).toUpperCase()}
                         </div>
-                        <span className="font-medium text-slate-800">{u.full_name || "—"}</span>
+                        <span className="font-medium text-slate-800">
+                          {u.firstName ? `${u.firstName} ${u.lastName || ""}`.trim() : (u.full_name || u.email || "—")}
+                        </span>
                       </div>
                     </td>
                     <td className="px-4 py-3 text-slate-500">{u.email}</td>
@@ -215,7 +217,7 @@ export default function UserManagement() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-slate-400 text-xs">
-                      {u.created_date ? new Date(u.created_date).toLocaleDateString() : "—"}
+                      {(u.createdAt || u.created_date) ? new Date(u.createdAt || u.created_date).toLocaleDateString() : "—"}
                     </td>
                     <td className="px-4 py-3 text-right">
                       {isPlatformUser ? (
@@ -228,8 +230,12 @@ export default function UserManagement() {
                       ) : (
                         <button
                           onClick={async () => {
-                            await base44.users.inviteUser(u.email, "user");
-                            alert(`Invite sent to ${u.email}`);
+                            try {
+                              await base44.functions.invoke("inviteUser", { email: u.email, role: u.role || "parent" });
+                              alert(`Invite sent to ${u.email}`);
+                            } catch (err) {
+                              alert(`Failed: ${err.message}`);
+                            }
                           }}
                           className="text-xs text-purple-600 hover:underline font-medium"
                         >
