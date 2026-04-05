@@ -145,7 +145,7 @@ router.post('/:id/send-invite', requireAuth, requireRole('admin'), async (req, r
 
     let baseUrl = (process.env.APP_URL || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
     if (!baseUrl.startsWith('http')) baseUrl = `https://${baseUrl}`;
-    const registerUrl = `${baseUrl}/Register?token=${inviteToken}`;
+    const registerUrl = `${baseUrl}/register?token=${inviteToken}`;
 
     console.log(`[INVITE] Sending invite — userId: ${id}, email: ${user.email}, baseUrl: ${baseUrl}, registerUrl: ${registerUrl}`);
     const fromAddress = process.env.RESEND_FROM_EMAIL || 'Elevate Performance Academy <onboarding@resend.dev>';
