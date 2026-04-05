@@ -174,8 +174,7 @@ router.post('/register-invite', async (req, res) => {
     }).where(
       and(
         eq(users.inviteToken, token),
-        gt(users.inviteTokenExpiry, new Date()),
-        inArray(users.status, ['active', 'pending', 'invited'])
+        gt(users.inviteTokenExpiry, new Date())
       )
     ).returning();
 

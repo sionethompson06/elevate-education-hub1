@@ -366,11 +366,8 @@ router.post('/invite', requireAuth, requireRole('admin'), async (req, res) => {
 
     const [existing] = await db.select().from(users).where(eq(users.email, emailLower));
     if (existing) {
-      if (existing.passwordHash) {
-        return res.status(409).json({ success: false, error: 'A user with this email is already registered.' });
-      }
-      // Update role if it changed
-      await db.update(users).set({ role: assignedRole, status: 'invited' }).where(eq(users.id, existing.id));
+      // Allow resend for any existing user — works as both re-invite and password reset
+      await db.update(users).set({ role: assignedRole }).where(eq(users.id, existing.id));
       userId = existing.id;
     } else {
       const derivedFirst = firstName?.trim() || emailLower.split('@')[0];

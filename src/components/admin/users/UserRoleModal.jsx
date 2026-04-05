@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { base44 } from "@/api/base44Client";
+import { apiPost } from "@/api/apiClient";
 import { useQuery } from "@tanstack/react-query";
-import { X, Loader2, BookOpen, Activity, Save, Plus, Trash2, Users, GraduationCap } from "lucide-react";
+import { X, Loader2, BookOpen, Activity, Save, Plus, Trash2, Users, GraduationCap, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -18,6 +19,7 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
   const { toast } = useToast();
   const [role, setRole] = useState(user.role || "user");
   const [saving, setSaving] = useState(false);
+  const [resending, setResending] = useState(false);
   const [assignTab, setAssignTab] = useState("individual"); // "individual" | "program"
 
   // Individual tab state
@@ -134,6 +136,24 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
     } catch (err) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     }
+  };
+
+  const handleResendInvite = async () => {
+    setResending(true);
+    try {
+      const res = await apiPost(`/users/${user.id}/send-invite`, {});
+      const inviteUrl = res.registerUrl || res.inviteUrl;
+      toast({
+        title: "Invite sent!",
+        description: inviteUrl
+          ? `No email provider configured — share this link: ${inviteUrl}`
+          : `Invite email sent to ${user.email}.`,
+        duration: inviteUrl ? 12000 : 4000,
+      });
+    } catch (err) {
+      toast({ title: "Failed to send invite", description: err.message, variant: "destructive" });
+    }
+    setResending(false);
   };
 
   const handleSave = async () => {
@@ -369,18 +389,29 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
         </div>
 
         {/* Footer */}
-        <div className="flex gap-3 px-6 pb-5 shrink-0">
-          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">
-            Cancel
-          </button>
+        <div className="px-6 pb-5 shrink-0 space-y-2">
           <Button
-            className="flex-1 bg-[#1a3c5e] hover:bg-[#0d2540]"
-            onClick={handleSave}
-            disabled={saving || role === user.role}
+            variant="outline"
+            className="w-full border-slate-200 text-slate-600 hover:bg-slate-50 gap-2"
+            onClick={handleResendInvite}
+            disabled={resending}
           >
-            {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-            {role === user.role ? "No Changes" : "Save Role"}
+            {resending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            Resend Invite / Reset Password Link
           </Button>
+          <div className="flex gap-3">
+            <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">
+              Cancel
+            </button>
+            <Button
+              className="flex-1 bg-[#1a3c5e] hover:bg-[#0d2540]"
+              onClick={handleSave}
+              disabled={saving || role === user.role}
+            >
+              {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+              {role === user.role ? "No Changes" : "Save Role"}
+            </Button>
+          </div>
         </div>
       </div>
     </div>
