@@ -143,7 +143,12 @@ router.post('/:id/send-invite', requireAuth, requireRole('admin'), async (req, r
     const inviteTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     await db.update(users).set({ inviteToken, inviteTokenExpiry, passwordHash: null }).where(eq(users.id, id));
 
-    let baseUrl = (process.env.APP_URL || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
+    const configuredUrl = process.env.APP_URL || '';
+    const isLocalhost = !configuredUrl || configuredUrl.includes('localhost') || configuredUrl.includes('127.0.0.1');
+    let baseUrl = isLocalhost
+      ? `${req.protocol}://${req.get('host')}`
+      : configuredUrl;
+    baseUrl = baseUrl.replace(/\/+$/, '');
     if (!baseUrl.startsWith('http')) baseUrl = `https://${baseUrl}`;
     const registerUrl = `${baseUrl}/register?token=${inviteToken}`;
 
@@ -392,7 +397,12 @@ router.post('/invite', requireAuth, requireRole('admin'), async (req, res) => {
 
     const [invitedUser] = await db.select().from(users).where(eq(users.id, userId));
 
-    let baseUrl = (process.env.APP_URL || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
+    const configuredUrl2 = process.env.APP_URL || '';
+    const isLocalhost2 = !configuredUrl2 || configuredUrl2.includes('localhost') || configuredUrl2.includes('127.0.0.1');
+    let baseUrl = isLocalhost2
+      ? `${req.protocol}://${req.get('host')}`
+      : configuredUrl2;
+    baseUrl = baseUrl.replace(/\/+$/, '');
     if (!baseUrl.startsWith('http')) baseUrl = `https://${baseUrl}`;
     const registerUrl = `${baseUrl}/register?token=${inviteToken}`;
 

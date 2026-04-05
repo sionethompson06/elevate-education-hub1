@@ -6,19 +6,21 @@ function getResend() {
   return resend;
 }
 
-const FROM = process.env.FROM_EMAIL || 'noreply@elevate-education-hub.com';
+const FROM = process.env.RESEND_FROM_EMAIL || process.env.FROM_EMAIL || 'onboarding@resend.dev';
 const APP_URL = process.env.APP_URL || 'http://localhost:3001';
 
 async function send(to, subject, html) {
   if (!process.env.RESEND_API_KEY) {
     console.log(`[email] (no RESEND_API_KEY) To: ${to} | Subject: ${subject}`);
-    return;
+    return { sent: false, reason: 'no_api_key' };
   }
-  try {
-    await getResend().emails.send({ from: FROM, to, subject, html });
-  } catch (err) {
-    console.error('[email] send error:', err.message);
+  const { data, error } = await getResend().emails.send({ from: FROM, to, subject, html });
+  if (error) {
+    console.error('[email] send error:', error.message || JSON.stringify(error));
+    return { sent: false, reason: error.message };
   }
+  console.log(`[email] sent — id: ${data?.id} | To: ${to}`);
+  return { sent: true, id: data?.id };
 }
 
 export async function sendInviteEmail(to, firstName, inviteToken) {
