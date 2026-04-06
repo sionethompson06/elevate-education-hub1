@@ -43,23 +43,38 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', mode: isDev ? 'development' : 'production' });
 });
 
+// Env check — verify required env vars are set (no token needed, non-sensitive)
+app.get('/api/admin/env-check', (req, res) => {
+  const vars = ['DATABASE_URL', 'ADMIN_TOKEN', 'ADMIN_PASSWORD', 'JWT_SECRET'];
+  const status = {};
+  for (const v of vars) status[v] = process.env[v] ? 'SET' : 'MISSING';
+  const allSet = Object.values(status).every(s => s === 'SET');
+  res.status(allSet ? 200 : 500).json({ allSet, vars: status });
+});
+
 // Admin init — seeds admin user on demand (protected by ADMIN_TOKEN)
 // Call once after deployment: GET /api/admin/init?token=YOUR_ADMIN_TOKEN
 app.get('/api/admin/init', async (req, res) => {
   const token = req.query.token || req.headers['x-admin-token'];
   if (!token || token !== process.env.ADMIN_TOKEN) {
-    return res.status(403).json({ success: false, error: 'Forbidden' });
+    return res.status(403).json({ success: false, error: 'Forbidden — wrong or missing token' });
+  }
+  if (!process.env.DATABASE_URL) {
+    return res.status(500).json({ success: false, error: 'DATABASE_URL is not set in environment variables' });
+  }
+  if (!process.env.ADMIN_PASSWORD) {
+    return res.status(500).json({ success: false, error: 'ADMIN_PASSWORD is not set in environment variables' });
   }
   try {
     const adminEmail = 'admin@elevateperformance-academy.com';
     const [existing] = await db.select().from(users).where(eq(users.email, adminEmail));
     if (existing && existing.passwordHash) {
-      return res.json({ success: true, message: 'Admin user already exists and has a password set.' });
+      return res.json({ success: true, message: 'Admin already exists with password set.', email: adminEmail, action: 'none' });
     }
     const passwordHash = await bcrypt.hash(process.env.ADMIN_PASSWORD, 10);
     if (existing) {
       await db.update(users).set({ passwordHash, status: 'active' }).where(eq(users.email, adminEmail));
-      return res.json({ success: true, message: 'Admin password updated.', email: adminEmail });
+      return res.json({ success: true, message: 'Admin password set.', email: adminEmail, action: 'updated' });
     }
     await db.insert(users).values({
       email: adminEmail,
@@ -69,18 +84,33 @@ app.get('/api/admin/init', async (req, res) => {
       lastName: 'EPA',
       status: 'active',
     });
-    return res.json({ success: true, message: 'Admin user created.', email: adminEmail });
+    return res.json({ success: true, message: 'Admin user created.', email: adminEmail, action: 'created' });
   } catch (err) {
     console.error('[admin/init] error:', err.message);
-    return res.status(500).json({ success: false, error: err.message });
+    return res.status(500).json({ success: false, error: err.message, hint: 'Check that DATABASE_URL is correct and the database is reachable.' });
   }
 });
 
 app.use(helmet({ contentSecurityPolicy: false }));
+
+// CORS — same-origin on Vercel (frontend + API on same domain), allow localhost in dev
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+  : [];
+
 app.use(cors({
-  origin: isDev
-    ? ['http://localhost:5173', 'http://localhost:3001', 'http://localhost:5000']
-    : (process.env.ALLOWED_ORIGINS || '*'),
+  origin: (origin, callback) => {
+    // Allow same-origin requests (origin is undefined for same-origin + server-side)
+    if (!origin) return callback(null, true);
+    // Allow localhost in dev
+    if (origin.includes('localhost') || origin.includes('127.0.0.1')) return callback(null, true);
+    // Allow explicitly configured origins
+    if (allowedOrigins.length && allowedOrigins.includes(origin)) return callback(null, true);
+    // Allow the Vercel deployment domain
+    if (origin.includes('vercel.app') || origin.includes('replit.app') || origin.includes('replit.dev')) return callback(null, true);
+    // In production without explicit origins configured, allow all (API is protected by auth)
+    callback(null, true);
+  },
   credentials: true,
 }));
 
