@@ -68,11 +68,17 @@ router.post('/login', async (req, res) => {
       [user] = await db.select().from(users).where(eq(users.role, 'admin'));
     }
     if (!user) {
-      return res.status(401).json({ success: false, error: 'Invalid credentials' });
+      return res.status(401).json({ success: false, error: 'Invalid email or password.' });
+    }
+    if (!user.passwordHash) {
+      return res.status(401).json({ success: false, error: 'Account not set up yet. Use your invitation link to create a password.' });
+    }
+    if (user.status !== 'active') {
+      return res.status(403).json({ success: false, error: 'Account is inactive. Contact administration.' });
     }
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) {
-      return res.status(401).json({ success: false, error: 'Invalid password' });
+      return res.status(401).json({ success: false, error: 'Invalid email or password.' });
     }
     const token = generateToken(user);
     await logAudit({ userId: user.id, action: 'login', entityType: 'user', entityId: user.id, ipAddress: req.ip });
