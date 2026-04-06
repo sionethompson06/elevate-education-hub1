@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import { eq, desc, and } from 'drizzle-orm';
+import { eq, desc } from 'drizzle-orm';
 import db from '../db-postgres.js';
-import { billingAccounts, invoices, payments, enrollments, students, programs } from '../schema.js';
+import { billingAccounts, invoices, payments, enrollments, students, programs, guardianStudents } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { logAudit } from '../services/audit.service.js';
 import { createNotification } from '../services/notification.service.js';
@@ -36,7 +36,6 @@ router.get('/my-account', requireAuth, async (req, res) => {
 
 router.get('/invoices', requireAuth, async (req, res) => {
   try {
-    let accountFilter;
     if (req.user.role === 'admin') {
       const allInvoices = await db.select({
         id: invoices.id,
@@ -47,8 +46,16 @@ router.get('/invoices', requireAuth, async (req, res) => {
         status: invoices.status,
         dueDate: invoices.dueDate,
         paidDate: invoices.paidDate,
+        stripePaymentId: invoices.stripePaymentId,
         createdAt: invoices.createdAt,
-      }).from(invoices).orderBy(desc(invoices.createdAt));
+        programName: programs.name,
+        studentFirstName: students.firstName,
+        studentLastName: students.lastName,
+      }).from(invoices)
+        .leftJoin(enrollments, eq(invoices.enrollmentId, enrollments.id))
+        .leftJoin(programs, eq(enrollments.programId, programs.id))
+        .leftJoin(students, eq(enrollments.studentId, students.id))
+        .orderBy(desc(invoices.createdAt));
       return res.json({ success: true, invoices: allInvoices });
     }
 
@@ -65,8 +72,15 @@ router.get('/invoices', requireAuth, async (req, res) => {
       status: invoices.status,
       dueDate: invoices.dueDate,
       paidDate: invoices.paidDate,
+      stripePaymentId: invoices.stripePaymentId,
       createdAt: invoices.createdAt,
+      programName: programs.name,
+      studentFirstName: students.firstName,
+      studentLastName: students.lastName,
     }).from(invoices)
+      .leftJoin(enrollments, eq(invoices.enrollmentId, enrollments.id))
+      .leftJoin(programs, eq(enrollments.programId, programs.id))
+      .leftJoin(students, eq(enrollments.studentId, students.id))
       .where(eq(invoices.billingAccountId, account.id))
       .orderBy(desc(invoices.createdAt));
     res.json({ success: true, invoices: myInvoices });

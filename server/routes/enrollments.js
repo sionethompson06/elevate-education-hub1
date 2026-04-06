@@ -31,6 +31,8 @@ router.get('/my-students', requireAuth, async (req, res) => {
         status: enrollments.status,
         createdAt: enrollments.createdAt,
         programName: programs.name,
+        programBillingCycle: programs.billingCycle,
+        programTuition: programs.tuitionAmount,
         studentFirstName: students.firstName,
         studentLastName: students.lastName,
       }).from(enrollments)
@@ -38,6 +40,25 @@ router.get('/my-students', requireAuth, async (req, res) => {
         .leftJoin(students, eq(enrollments.studentId, students.id))
         .where(eq(enrollments.studentId, sid));
       myEnrollments.push(...enrs);
+    }
+
+    // Attach latest invoice data to each enrollment
+    if (myEnrollments.length > 0) {
+      const allInvoices = await db.select().from(invoices).orderBy(desc(invoices.createdAt));
+      const invoiceMap = {};
+      for (const inv of allInvoices) {
+        if (inv.enrollmentId && !invoiceMap[inv.enrollmentId]) {
+          invoiceMap[inv.enrollmentId] = inv;
+        }
+      }
+      for (const enr of myEnrollments) {
+        const inv = invoiceMap[enr.id];
+        enr.invoiceId = inv?.id || null;
+        enr.invoiceAmount = inv?.amount || null;
+        enr.invoiceStatus = inv?.status || null;
+        enr.invoiceDueDate = inv?.dueDate || null;
+        enr.invoiceDescription = inv?.description || null;
+      }
     }
 
     res.json({ success: true, students: myStudents, enrollments: myEnrollments });

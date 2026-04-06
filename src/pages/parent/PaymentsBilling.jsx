@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { base44 } from "@/api/base44Client";
+import { apiGet } from "@/api/apiClient";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   CreditCard, DollarSign, CheckCircle, Clock, XCircle, AlertCircle,
@@ -12,19 +12,19 @@ import { Button } from "@/components/ui/button";
 import PaymentHistory from "@/components/parent/PaymentHistory";
 
 const STATUS_CONFIG = {
-  active:          { label: "Active",        color: "bg-green-100 text-green-700 border-green-200",   icon: CheckCircle },
-  active_override: { label: "Active",        color: "bg-green-100 text-green-700 border-green-200",   icon: CheckCircle },
-  pending_payment: { label: "Pending",       color: "bg-yellow-100 text-yellow-700 border-yellow-200", icon: Clock },
-  payment_failed:  { label: "Past Due",      color: "bg-red-100 text-red-700 border-red-200",          icon: AlertCircle },
-  cancelled:       { label: "Cancelled",     color: "bg-slate-100 text-slate-500 border-slate-200",   icon: XCircle },
-  paused:          { label: "Paused",        color: "bg-orange-100 text-orange-600 border-orange-200", icon: Clock },
+  active:          { label: "Active",    color: "bg-green-100 text-green-700 border-green-200",    icon: CheckCircle },
+  active_override: { label: "Active",    color: "bg-green-100 text-green-700 border-green-200",    icon: CheckCircle },
+  pending_payment: { label: "Pending",   color: "bg-yellow-100 text-yellow-700 border-yellow-200", icon: Clock },
+  payment_failed:  { label: "Past Due",  color: "bg-red-100 text-red-700 border-red-200",           icon: AlertCircle },
+  cancelled:       { label: "Cancelled", color: "bg-slate-100 text-slate-500 border-slate-200",    icon: XCircle },
+  paused:          { label: "Paused",    color: "bg-orange-100 text-orange-600 border-orange-200", icon: Clock },
 };
 
 const FILTER_TABS = [
-  { key: "all", label: "All" },
-  { key: "active", label: "Active" },
-  { key: "pending", label: "Pending" },
-  { key: "past_due", label: "Past Due" },
+  { key: "all",       label: "All" },
+  { key: "active",    label: "Active" },
+  { key: "pending",   label: "Pending" },
+  { key: "past_due",  label: "Past Due" },
   { key: "cancelled", label: "Cancelled" },
 ];
 
@@ -36,85 +36,61 @@ export default function PaymentsBilling() {
 
   const [statusFilter, setStatusFilter] = useState("all");
   const [studentFilter, setStudentFilter] = useState("all");
-  const [portalLoading, setPortalLoading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(paymentSuccess);
 
-  // Auto-dismiss success banner after 6s
+  // Auto-dismiss success banner after 6 seconds
   useEffect(() => {
     if (showSuccess) {
-      qc.invalidateQueries({ queryKey: ["billing-enrollments"] });
+      qc.invalidateQueries({ queryKey: ["parent-my-students"] });
       const t = setTimeout(() => setShowSuccess(false), 6000);
       return () => clearTimeout(t);
     }
   }, [showSuccess]);
 
-  const { data: parents = [] } = useQuery({
-    queryKey: ["parent-record", user?.email],
-    queryFn: () => base44.entities.Parent.filter({ user_email: user.email }),
-    enabled: !!user?.email,
-  });
-  const parent = parents[0];
-  const studentIds = parent?.student_ids || [];
-
-  const { data: students = [] } = useQuery({
-    queryKey: ["parent-students-billing", studentIds],
-    queryFn: async () => {
-      if (!studentIds.length) return [];
-      const all = await Promise.all(studentIds.map(sid => base44.entities.Student.filter({ id: sid })));
-      return all.flat();
-    },
-    enabled: studentIds.length > 0,
+  // Same data source as Dashboard — enrollments + students from PostgreSQL
+  const { data: myData = { students: [], enrollments: [] }, isLoading, refetch } = useQuery({
+    queryKey: ["parent-my-students", user?.id],
+    queryFn: () => apiGet("/enrollments/my-students"),
+    enabled: !!user?.id,
   });
 
-  const { data: enrollments = [], isLoading, refetch } = useQuery({
-    queryKey: ["billing-enrollments", studentIds],
-    queryFn: async () => {
-      if (!studentIds.length) return [];
-      const all = await Promise.all(studentIds.map(sid => base44.entities.Enrollment.filter({ student_id: sid })));
-      return all.flat();
-    },
-    enabled: studentIds.length > 0,
+  // Billing account — for stripeCustomerId / Stripe portal access
+  const { data: accountData } = useQuery({
+    queryKey: ["parent-billing-account", user?.id],
+    queryFn: () => apiGet("/billing/my-account"),
+    enabled: !!user?.id,
   });
 
-  // Filter
+  const students = myData.students || [];
+  const enrollments = myData.enrollments || [];
+  const billingAccount = accountData?.account || null;
+
+  // ── Filtering ────────────────────────────────────────────────────────────
   const filtered = enrollments.filter(e => {
     const statusMatch =
       statusFilter === "all" ||
-      (statusFilter === "active" && ["active", "active_override"].includes(e.status)) ||
-      (statusFilter === "pending" && e.status === "pending_payment") ||
-      (statusFilter === "past_due" && e.status === "payment_failed") ||
+      (statusFilter === "active"    && ["active", "active_override"].includes(e.status)) ||
+      (statusFilter === "pending"   && e.status === "pending_payment") ||
+      (statusFilter === "past_due"  && e.status === "payment_failed") ||
       (statusFilter === "cancelled" && e.status === "cancelled");
-    const studentMatch = studentFilter === "all" || e.student_id === studentFilter;
+    const studentMatch = studentFilter === "all" || e.studentId === studentFilter;
     return statusMatch && studentMatch;
   });
 
-  // Stats
-  const activeCount = enrollments.filter(e => ["active", "active_override"].includes(e.status)).length;
-  const pendingCount = enrollments.filter(e => e.status === "pending_payment").length;
-  const monthlySpend = enrollments
-    .filter(e => ["active", "active_override"].includes(e.status) && e.billing_cycle === "monthly")
-    .reduce((sum, e) => sum + (e.amount_due || 0), 0);
-  const annualSpend = enrollments
-    .filter(e => ["active", "active_override"].includes(e.status))
-    .reduce((sum, e) => sum + (e.billing_cycle === "annual" ? (e.amount_due || 0) : (e.amount_due || 0) * 12), 0);
+  // ── Stats ─────────────────────────────────────────────────────────────────
+  const activeEnrollments = enrollments.filter(e => ["active", "active_override"].includes(e.status));
+  const pendingEnrollments = enrollments.filter(e => ["pending_payment", "pending"].includes(e.status));
+  const activeCount = activeEnrollments.length;
+  const pendingCount = pendingEnrollments.length;
 
-  const openStripePortal = async () => {
-    setPortalLoading(true);
-    try {
-      const res = await base44.functions.invoke("stripePortal", {
-        return_url: window.location.href,
-      });
-      if (res.data?.url) {
-        window.location.href = res.data.url;
-      } else {
-        alert(res.data?.error || "Could not open billing portal.");
-      }
-    } catch (err) {
-      alert("Billing portal is not available yet. Please complete a payment first.");
-    } finally {
-      setPortalLoading(false);
-    }
-  };
+  const monthlySpend = activeEnrollments
+    .filter(e => e.programBillingCycle === "monthly")
+    .reduce((sum, e) => sum + (parseFloat(e.invoiceAmount) || parseFloat(e.programTuition) || 0), 0);
+
+  const annualSpend = activeEnrollments.reduce((sum, e) => {
+    const amount = parseFloat(e.invoiceAmount) || parseFloat(e.programTuition) || 0;
+    return sum + (e.programBillingCycle === "annual" ? amount : amount * 12);
+  }, 0);
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
@@ -123,20 +99,20 @@ export default function PaymentsBilling() {
           <h1 className="text-3xl font-bold text-[#1a3c5e]">Payments & Billing</h1>
           <p className="text-slate-500 text-sm mt-0.5">Manage your enrollments and payment history</p>
         </div>
-        {parent?.stripe_customer_id && (
-          <Button
-            variant="outline"
-            className="gap-2"
-            onClick={openStripePortal}
-            disabled={portalLoading}
+        {billingAccount?.stripeCustomerId && (
+          <a
+            href="https://billing.stripe.com/p/login/test_eVa5oq8oP0vc2qQ144"
+            target="_blank"
+            rel="noopener noreferrer"
           >
-            {portalLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ExternalLink className="w-4 h-4" />}
-            Manage Subscription
-          </Button>
+            <Button variant="outline" className="gap-2">
+              <ExternalLink className="w-4 h-4" /> Manage Subscription
+            </Button>
+          </a>
         )}
       </div>
 
-      {/* Success banner */}
+      {/* Payment success banner */}
       {showSuccess && (
         <div className="flex items-center justify-between gap-3 bg-green-50 border border-green-200 rounded-xl px-5 py-4">
           <div className="flex items-center gap-2">
@@ -172,19 +148,21 @@ export default function PaymentsBilling() {
         </div>
       </div>
 
-      {/* Pending action banner */}
-      {pendingCount > 0 && (
+      {/* Pending payment action banner */}
+      {pendingEnrollments.length > 0 && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-5 py-4">
           <div className="flex items-center gap-2 mb-2">
             <AlertCircle className="w-4 h-4 text-yellow-600" />
             <p className="text-sm font-semibold text-yellow-800">Payment Required</p>
           </div>
-          <p className="text-sm text-yellow-700 mb-3">{pendingCount} enrollment{pendingCount > 1 ? "s" : ""} awaiting payment.</p>
+          <p className="text-sm text-yellow-700 mb-3">
+            {pendingEnrollments.length} enrollment{pendingEnrollments.length > 1 ? "s" : ""} awaiting payment.
+          </p>
           <div className="flex flex-wrap gap-2">
-            {enrollments.filter(e => e.status === "pending_payment").map(e => (
+            {pendingEnrollments.map(e => (
               <Link key={e.id} to={`/parent/checkout?enrollment_id=${e.id}`}>
                 <button className="text-xs bg-[#1a3c5e] text-white px-3 py-1.5 rounded-lg hover:bg-[#0d2540] transition-colors flex items-center gap-1">
-                  <CreditCard className="w-3.5 h-3.5" /> Pay for {e.program_name}
+                  <CreditCard className="w-3.5 h-3.5" /> Pay for {e.programName || `Program #${e.programId}`}
                 </button>
               </Link>
             ))}
@@ -200,7 +178,9 @@ export default function PaymentsBilling() {
               key={tab.key}
               onClick={() => setStatusFilter(tab.key)}
               className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                statusFilter === tab.key ? "bg-[#1a3c5e] text-white border-[#1a3c5e]" : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
+                statusFilter === tab.key
+                  ? "bg-[#1a3c5e] text-white border-[#1a3c5e]"
+                  : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
               }`}
             >
               {tab.label}
@@ -212,7 +192,9 @@ export default function PaymentsBilling() {
             <button
               onClick={() => setStudentFilter("all")}
               className={`px-3 py-1.5 rounded-full text-xs font-medium border flex items-center gap-1 transition-colors ${
-                studentFilter === "all" ? "bg-slate-800 text-white border-slate-800" : "bg-white text-slate-600 border-slate-200"
+                studentFilter === "all"
+                  ? "bg-slate-800 text-white border-slate-800"
+                  : "bg-white text-slate-600 border-slate-200"
               }`}
             >
               <Users className="w-3 h-3" /> All Students
@@ -222,10 +204,12 @@ export default function PaymentsBilling() {
                 key={s.id}
                 onClick={() => setStudentFilter(s.id)}
                 className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                  studentFilter === s.id ? "bg-slate-800 text-white border-slate-800" : "bg-white text-slate-600 border-slate-200"
+                  studentFilter === s.id
+                    ? "bg-slate-800 text-white border-slate-800"
+                    : "bg-white text-slate-600 border-slate-200"
                 }`}
               >
-                {s.full_name}
+                {s.firstName} {s.lastName}
               </button>
             ))}
           </div>
@@ -238,55 +222,68 @@ export default function PaymentsBilling() {
           <div className="w-5 h-5 border-4 border-slate-200 border-t-[#1a3c5e] rounded-full animate-spin" />
         </div>
       ) : filtered.length === 0 ? (
-        <Card><CardContent className="py-10 text-center">
-          <p className="text-slate-400 text-sm">No enrollments found.</p>
-          <Link to="/parent/programs" className="text-xs text-[#1a3c5e] hover:underline mt-1 block">Browse Programs →</Link>
-        </CardContent></Card>
+        <Card>
+          <CardContent className="py-10 text-center">
+            <p className="text-slate-400 text-sm">No enrollments found.</p>
+            <Link to="/parent/programs" className="text-xs text-[#1a3c5e] hover:underline mt-1 block">
+              Browse Programs →
+            </Link>
+          </CardContent>
+        </Card>
       ) : (
         <div className="space-y-3">
           {filtered.map(e => {
             const sc = STATUS_CONFIG[e.status] || STATUS_CONFIG.pending_payment;
             const Icon = sc.icon;
-            const student = students.find(s => s.id === e.student_id);
+            const studentName = e.studentFirstName
+              ? `${e.studentFirstName} ${e.studentLastName || ""}`.trim()
+              : null;
+            const displayAmount = parseFloat(e.invoiceAmount) || parseFloat(e.programTuition) || null;
             return (
               <div key={e.id} className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
                 <div className="flex items-start justify-between gap-4 flex-wrap">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <p className="font-semibold text-slate-800">{e.program_name}</p>
+                      <p className="font-semibold text-slate-800">
+                        {e.programName || `Program #${e.programId}`}
+                      </p>
                       <span className={`text-xs px-2 py-0.5 rounded-full border font-medium flex items-center gap-1 ${sc.color}`}>
                         <Icon className="w-3 h-3" /> {sc.label}
                       </span>
                     </div>
-                    {student && <p className="text-xs text-slate-500 mb-2">Student: {student.full_name}</p>}
+                    {studentName && (
+                      <p className="text-xs text-slate-500 mb-2">Student: {studentName}</p>
+                    )}
                     <div className="flex flex-wrap gap-4 text-xs text-slate-500">
-                      {e.billing_cycle && (
-                        <span className="capitalize">💳 {e.billing_cycle} billing</span>
+                      {e.programBillingCycle && (
+                        <span className="capitalize">💳 {e.programBillingCycle} billing</span>
                       )}
-                      {e.amount_due && (
+                      {displayAmount != null && (
                         <span>
                           <DollarSign className="w-3 h-3 inline" />
-                          {e.billing_cycle === "annual" ? `$${e.amount_due?.toLocaleString()} / year` : `$${e.amount_due?.toLocaleString()} / month`}
+                          {e.programBillingCycle === "annual"
+                            ? `$${displayAmount.toLocaleString()} / year`
+                            : `$${displayAmount.toLocaleString()} / month`}
                         </span>
                       )}
-                      {e.enrolled_date && <span>Enrolled: {e.enrolled_date}</span>}
-                      {e.stripe_subscription_id && (
-                        <span className="font-mono text-slate-400 truncate max-w-[160px]">Sub: {e.stripe_subscription_id}</span>
+                      {e.invoiceStatus && (
+                        <span className="capitalize">Invoice: {e.invoiceStatus}</span>
+                      )}
+                      {e.invoiceDueDate && (
+                        <span>Due: {e.invoiceDueDate}</span>
+                      )}
+                      {e.createdAt && (
+                        <span>Enrolled: {new Date(e.createdAt).toLocaleDateString()}</span>
                       )}
                     </div>
                   </div>
                   <div className="flex flex-col gap-2 items-end shrink-0">
-                    {["pending_payment", "payment_failed"].includes(e.status) && (
+                    {["pending_payment", "pending", "payment_failed"].includes(e.status) && (
                       <Link to={`/parent/checkout?enrollment_id=${e.id}`}>
                         <Button size="sm" className="bg-[#1a3c5e] hover:bg-[#0d2540]">
                           <CreditCard className="w-3.5 h-3.5 mr-1" /> Complete Payment
                         </Button>
                       </Link>
-                    )}
-                    {["active", "active_override"].includes(e.status) && parent?.stripe_customer_id && (
-                      <Button size="sm" variant="outline" onClick={openStripePortal} disabled={portalLoading}>
-                        <ExternalLink className="w-3.5 h-3.5 mr-1" /> Manage
-                      </Button>
                     )}
                   </div>
                 </div>
