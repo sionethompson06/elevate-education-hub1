@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { base44 } from "@/api/base44Client";
 import { useAuth } from "@/lib/AuthContext";
 import { Button } from "@/components/ui/button";
 import { X, Loader2, UserPlus } from "lucide-react";
@@ -12,16 +11,17 @@ const PROGRAM_OPTIONS = [
 
 const GRADE_OPTIONS = ["K","1","2","3","4","5","6","7","8","9","10","11","12"];
 
-export default function AddStudentModal({ parent, onClose, onAdded }) {
+export default function AddStudentModal({ onClose, onAdded }) {
   const { user } = useAuth();
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
   const [form, setForm] = useState({
-    first_name: "",
-    last_name: "",
-    date_of_birth: "",
-    grade_level: "",
+    firstName: "",
+    lastName: "",
+    dateOfBirth: "",
+    grade: "",
     sport: "",
-    program_interest: "",
+    programInterest: "",
     notes: "",
   });
 
@@ -29,41 +29,37 @@ export default function AddStudentModal({ parent, onClose, onAdded }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError("");
     setSaving(true);
-
-    let currentParent = parent;
-
-    // If no parent record exists yet, create one
-    if (!currentParent) {
-      currentParent = await base44.entities.Parent.create({
-        user_id: user.id,
-        user_email: user.email,
-        full_name: user.full_name || user.email,
-        student_ids: [],
-        is_primary_contact: true,
-        billing_email: user.email,
+    try {
+      const token = localStorage.getItem("elevate_auth_token");
+      const res = await fetch("/api/students/add-my-student", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          firstName: form.firstName.trim(),
+          lastName: form.lastName.trim(),
+          dateOfBirth: form.dateOfBirth || null,
+          grade: form.grade || null,
+          sport: form.sport || null,
+          programInterest: form.programInterest || null,
+          notes: form.notes || null,
+        }),
       });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setError(data.error || "Failed to add student. Please try again.");
+        return;
+      }
+      onAdded(data.student);
+    } catch (err) {
+      setError("Network error. Please check your connection and try again.");
+    } finally {
+      setSaving(false);
     }
-
-    // Create student
-    const student = await base44.entities.Student.create({
-      user_id: user.id,
-      user_email: user.email,
-      full_name: `${form.first_name.trim()} ${form.last_name.trim()}`,
-      date_of_birth: form.date_of_birth || undefined,
-      grade_level: form.grade_level || undefined,
-      sport: form.sport || undefined,
-      parent_ids: [currentParent.id],
-      is_active: true,
-      notes: form.notes || "",
-    });
-
-    // Link student to parent
-    const updatedIds = [...(currentParent.student_ids || []), student.id];
-    await base44.entities.Parent.update(currentParent.id, { student_ids: updatedIds });
-
-    setSaving(false);
-    onAdded();
   };
 
   return (
@@ -80,15 +76,14 @@ export default function AddStudentModal({ parent, onClose, onAdded }) {
         </div>
 
         <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
-          {/* Name */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">First Name *</label>
               <input
                 required
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30"
-                value={form.first_name}
-                onChange={e => set("first_name", e.target.value)}
+                value={form.firstName}
+                onChange={e => set("firstName", e.target.value)}
                 placeholder="First name"
               />
             </div>
@@ -97,38 +92,38 @@ export default function AddStudentModal({ parent, onClose, onAdded }) {
               <input
                 required
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30"
-                value={form.last_name}
-                onChange={e => set("last_name", e.target.value)}
+                value={form.lastName}
+                onChange={e => set("lastName", e.target.value)}
                 placeholder="Last name"
               />
             </div>
           </div>
 
-          {/* DOB + Grade */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">Date of Birth</label>
               <input
                 type="date"
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30"
-                value={form.date_of_birth}
-                onChange={e => set("date_of_birth", e.target.value)}
+                value={form.dateOfBirth}
+                onChange={e => set("dateOfBirth", e.target.value)}
               />
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1">Grade Level</label>
               <select
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30"
-                value={form.grade_level}
-                onChange={e => set("grade_level", e.target.value)}
+                value={form.grade}
+                onChange={e => set("grade", e.target.value)}
               >
                 <option value="">Select grade…</option>
-                {GRADE_OPTIONS.map(g => <option key={g} value={g}>{g === "K" ? "Kindergarten" : `Grade ${g}`}</option>)}
+                {GRADE_OPTIONS.map(g => (
+                  <option key={g} value={g}>{g === "K" ? "Kindergarten" : `Grade ${g}`}</option>
+                ))}
               </select>
             </div>
           </div>
 
-          {/* Sport */}
           <div>
             <label className="block text-xs font-semibold text-slate-600 mb-1">Sport (if applicable)</label>
             <input
@@ -139,20 +134,18 @@ export default function AddStudentModal({ parent, onClose, onAdded }) {
             />
           </div>
 
-          {/* Program Interest */}
           <div>
             <label className="block text-xs font-semibold text-slate-600 mb-1">Program Interest</label>
             <select
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30"
-              value={form.program_interest}
-              onChange={e => set("program_interest", e.target.value)}
+              value={form.programInterest}
+              onChange={e => set("programInterest", e.target.value)}
             >
               <option value="">Select a program…</option>
               {PROGRAM_OPTIONS.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
           </div>
 
-          {/* Notes */}
           <div>
             <label className="block text-xs font-semibold text-slate-600 mb-1">Additional Notes</label>
             <textarea
@@ -163,6 +156,10 @@ export default function AddStudentModal({ parent, onClose, onAdded }) {
               placeholder="Any additional information…"
             />
           </div>
+
+          {error && (
+            <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
+          )}
 
           <div className="flex gap-3 pt-1">
             <button type="button" onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">

@@ -57,6 +57,36 @@ router.get('/:id', requireAuth, requireRole('admin'), async (req, res) => {
   }
 });
 
+// Parent self-service: add their own child
+router.post('/add-my-student', requireAuth, async (req, res) => {
+  try {
+    const { firstName, lastName, dateOfBirth, grade, sport, programInterest, notes } = req.body;
+    if (!firstName || !lastName) {
+      return res.status(400).json({ success: false, error: 'First and last name are required' });
+    }
+    const [student] = await db.insert(students).values({
+      firstName: firstName.trim(),
+      lastName: lastName.trim(),
+      dateOfBirth: dateOfBirth || null,
+      grade: grade || null,
+      status: 'intake',
+    }).returning();
+
+    await db.insert(guardianStudents).values({
+      guardianUserId: req.user.id,
+      studentId: student.id,
+      relationship: 'parent',
+      isPrimary: true,
+    });
+
+    await logAudit({ userId: req.user.id, action: 'add_student', entityType: 'student', entityId: student.id, ipAddress: req.ip });
+    res.json({ success: true, student });
+  } catch (err) {
+    console.error('Add student error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 router.post('/', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     const { firstName, lastName, dateOfBirth, grade, guardianUserId, relationship, emergencyContact } = req.body;
