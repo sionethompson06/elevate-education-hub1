@@ -38,7 +38,7 @@ export default function ParentDashboard() {
   const students = myData.students || [];
   const enrollments = myData.enrollments || [];
 
-  const pendingPayment = enrollments.filter(e => ["pending_payment", "payment_failed"].includes(e.status));
+  const pendingPayment = enrollments.filter(e => ["pending_payment", "pending", "payment_failed"].includes(e.status));
   const activeEnrollments = enrollments.filter(e => ["active", "active_override"].includes(e.status));
 
   const handleStudentAdded = () => {
@@ -79,7 +79,7 @@ export default function ParentDashboard() {
             {pendingPayment.map(e => (
               <Link key={e.id} to={`/parent/checkout?enrollment_id=${e.id}`}>
                 <button className="text-xs bg-[#1a3c5e] text-white px-3 py-1.5 rounded-lg hover:bg-[#0d2540] transition-colors">
-                  Pay for {e.program_name}
+                  {e.studentFirstName ? `${e.studentFirstName} — ` : ''}{e.programName || e.program_name || 'Program'}
                 </button>
               </Link>
             ))}
