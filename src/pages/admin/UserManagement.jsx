@@ -1,9 +1,10 @@
 import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { base44 } from "@/api/base44Client";
-import { Search, Users, Shield, UserCheck, UserPlus } from "lucide-react";
+import { apiGet, apiPatch } from "@/api/apiClient";
+import { Search, Users, Shield, UserCheck, UserPlus, ArchiveRestore } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/use-toast";
 import UserRoleModal from "@/components/admin/users/UserRoleModal";
 import InviteUserModal from "@/components/admin/users/InviteUserModal";
 
@@ -20,84 +21,59 @@ const ROLE_FILTERS = ["all", "admin", "academic_coach", "performance_coach", "pa
 
 export default function UserManagement() {
   const qc = useQueryClient();
+  const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
   const [selected, setSelected] = useState(null);
   const [showInvite, setShowInvite] = useState(false);
+  const [activeTab, setActiveTab] = useState("active"); // "active" | "archived"
 
-  // Fetch platform users (invited/registered)
-  const { data: platformUsers = [], isLoading: loadingUsers } = useQuery({
+  const { data: activeData, isLoading: loadingActive } = useQuery({
     queryKey: ["admin-all-users"],
-    queryFn: () => base44.entities.User.list("-created_date", 500),
+    queryFn: () => apiGet('/users').then(d => d.users || []),
   });
 
-  // Fetch Parent and Student entity records to surface non-registered users
-  const { data: parentRecords = [], isLoading: loadingParents } = useQuery({
-    queryKey: ["admin-all-parents"],
-    queryFn: () => base44.entities.Parent.list("-created_date", 500),
+  const { data: archivedData, isLoading: loadingArchived } = useQuery({
+    queryKey: ["admin-archived-users"],
+    queryFn: () => apiGet('/users?archived=true').then(d => d.users || []),
+    enabled: activeTab === "archived",
   });
 
-  const { data: studentRecords = [], isLoading: loadingStudents } = useQuery({
-    queryKey: ["admin-all-students"],
-    queryFn: () => base44.entities.Student.list("-created_date", 500),
-  });
-
-  // Build a unified user list — platform users + entity-only records
-  const allUsers = useMemo(() => {
-    const registeredEmails = new Set(platformUsers.map(u => u.email?.toLowerCase()));
-    const combined = [...platformUsers];
-
-    // Add parents not yet registered on the platform
-    for (const p of parentRecords) {
-      const email = p.user_email?.toLowerCase();
-      if (email && !registeredEmails.has(email)) {
-        registeredEmails.add(email);
-        combined.push({
-          id: p.id,
-          full_name: p.full_name,
-          email: p.user_email,
-          role: "parent",
-          created_date: p.created_date,
-          _source: "parent_record",
-          _record: p,
-        });
-      }
-    }
-
-    // Add students not yet registered on the platform
-    for (const s of studentRecords) {
-      const email = s.user_email?.toLowerCase();
-      if (email && !registeredEmails.has(email)) {
-        registeredEmails.add(email);
-        combined.push({
-          id: s.id,
-          full_name: s.full_name,
-          email: s.user_email,
-          role: "student",
-          created_date: s.created_date,
-          _source: "student_record",
-          _record: s,
-        });
-      }
-    }
-
-    return combined;
-  }, [platformUsers, parentRecords, studentRecords]);
-
-  const isLoading = loadingUsers || loadingParents || loadingStudents;
+  const allUsers = activeData || [];
+  const archivedUsers = archivedData || [];
+  const isLoading = loadingActive;
 
   const filtered = allUsers.filter(u => {
     const matchRole = roleFilter === "all" || u.role === roleFilter;
     const matchSearch = !search ||
-      u.full_name?.toLowerCase().includes(search.toLowerCase()) ||
+      u.firstName?.toLowerCase().includes(search.toLowerCase()) ||
+      u.lastName?.toLowerCase().includes(search.toLowerCase()) ||
       u.email?.toLowerCase().includes(search.toLowerCase());
     return matchRole && matchSearch;
   });
+
+  const filteredArchived = archivedUsers.filter(u =>
+    !search ||
+    u.firstName?.toLowerCase().includes(search.toLowerCase()) ||
+    u.lastName?.toLowerCase().includes(search.toLowerCase()) ||
+    u.email?.toLowerCase().includes(search.toLowerCase())
+  );
 
   const counts = ROLE_FILTERS.slice(1).reduce((acc, r) => {
     acc[r] = allUsers.filter(u => u.role === r).length;
     return acc;
   }, {});
+
+  const handleRestore = async (userId, userName) => {
+    try {
+      await apiPatch(`/users/${userId}/restore`, {});
+      toast({ title: "User restored", description: `${userName} has been restored to active.` });
+      qc.invalidateQueries({ queryKey: ["admin-all-users"] });
+      qc.invalidateQueries({ queryKey: ["admin-archived-users"] });
+    } catch (err) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  };
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
@@ -135,25 +111,47 @@ export default function UserManagement() {
         </CardContent></Card>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-2">
-        {ROLE_FILTERS.map(r => (
-          <button
-            key={r}
-            onClick={() => setRoleFilter(r)}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-              roleFilter === r
-                ? "bg-[#1a3c5e] text-white border-[#1a3c5e]"
-                : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
-            }`}
-          >
-            {r === "all" ? "All Roles" : (ROLE_CONFIG[r]?.label || r)}
-            {r !== "all" && counts[r] !== undefined && (
-              <span className="ml-1 opacity-70">({counts[r]})</span>
-            )}
-          </button>
-        ))}
+      {/* Tabs */}
+      <div className="flex gap-1 bg-slate-100 rounded-xl p-1 w-fit">
+        <button
+          onClick={() => setActiveTab("active")}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            activeTab === "active" ? "bg-white text-[#1a3c5e] shadow-sm" : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Active Users <span className="ml-1 text-xs opacity-60">({allUsers.length})</span>
+        </button>
+        <button
+          onClick={() => setActiveTab("archived")}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            activeTab === "archived" ? "bg-white text-slate-700 shadow-sm" : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Archived
+        </button>
       </div>
+
+      {activeTab === "active" && <>
+        {/* Filters */}
+        <div className="flex flex-wrap gap-2">
+          {ROLE_FILTERS.map(r => (
+            <button
+              key={r}
+              onClick={() => setRoleFilter(r)}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                roleFilter === r
+                  ? "bg-[#1a3c5e] text-white border-[#1a3c5e]"
+                  : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
+              }`}
+            >
+              {r === "all" ? "All Roles" : (ROLE_CONFIG[r]?.label || r)}
+              {r !== "all" && counts[r] !== undefined && (
+                <span className="ml-1 opacity-70">({counts[r]})</span>
+              )}
+            </button>
+          ))}
+        </div>
+      </>}
 
       {/* Search */}
       <div className="relative">
@@ -167,88 +165,137 @@ export default function UserManagement() {
         />
       </div>
 
-      {/* User list */}
-      {isLoading ? (
-        <div className="flex justify-center py-12">
-          <div className="w-6 h-6 border-4 border-slate-200 border-t-[#1a3c5e] rounded-full animate-spin" />
-        </div>
-      ) : filtered.length === 0 ? (
-        <p className="text-center text-slate-400 py-8 text-sm">No users found.</p>
-      ) : (
-        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-200">
-              <tr>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">User</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Email</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Role</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Source</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Joined</th>
-                <th className="px-4 py-3" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filtered.map(u => {
-                const rc = ROLE_CONFIG[u.role] || { label: u.role, badge: "bg-slate-100 text-slate-600" };
-                const isPlatformUser = !u._source;
-                return (
-                  <tr key={`${u._source || "platform"}-${u.id}`} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-[#1a3c5e] flex items-center justify-center text-white text-xs font-bold shrink-0">
-                          {(u.firstName || u.full_name || u.email || "?").charAt(0).toUpperCase()}
+      {/* Active Users list */}
+      {activeTab === "active" && (
+        isLoading ? (
+          <div className="flex justify-center py-12">
+            <div className="w-6 h-6 border-4 border-slate-200 border-t-[#1a3c5e] rounded-full animate-spin" />
+          </div>
+        ) : filtered.length === 0 ? (
+          <p className="text-center text-slate-400 py-8 text-sm">No users found.</p>
+        ) : (
+          <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">User</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Email</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Role</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Joined</th>
+                  <th className="px-4 py-3" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filtered.map(u => {
+                  const rc = ROLE_CONFIG[u.role] || { label: u.role, badge: "bg-slate-100 text-slate-600" };
+                  return (
+                    <tr key={u.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-full bg-[#1a3c5e] flex items-center justify-center text-white text-xs font-bold shrink-0">
+                            {(u.firstName || u.email || "?").charAt(0).toUpperCase()}
+                          </div>
+                          <span className="font-medium text-slate-800">
+                            {u.firstName ? `${u.firstName} ${u.lastName || ""}`.trim() : u.email}
+                          </span>
                         </div>
-                        <span className="font-medium text-slate-800">
-                          {u.firstName ? `${u.firstName} ${u.lastName || ""}`.trim() : (u.full_name || u.email || "—")}
+                      </td>
+                      <td className="px-4 py-3 text-slate-500">{u.email}</td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${rc.badge}`}>
+                          {rc.label}
                         </span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-slate-500">{u.email}</td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${rc.badge}`}>
-                        {rc.label}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      {isPlatformUser ? (
-                        <span className="text-xs text-green-600 font-medium">● Registered</span>
-                      ) : (
-                        <span className="text-xs text-yellow-600 font-medium">○ Not yet registered</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-slate-400 text-xs">
-                      {(u.createdAt || u.created_date) ? new Date(u.createdAt || u.created_date).toLocaleDateString() : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {isPlatformUser ? (
+                      </td>
+                      <td className="px-4 py-3">
+                        {u.status === 'active' ? (
+                          <span className="text-xs text-green-600 font-medium">● Active</span>
+                        ) : u.status === 'invited' ? (
+                          <span className="text-xs text-yellow-600 font-medium">○ Invited</span>
+                        ) : (
+                          <span className="text-xs text-slate-400 font-medium">{u.status}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-slate-400 text-xs">
+                        {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-right">
                         <button
                           onClick={() => setSelected(u)}
                           className="text-xs text-[#1a3c5e] hover:underline font-medium"
                         >
                           Manage
                         </button>
-                      ) : (
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )
+      )}
+
+      {/* Archived Users list */}
+      {activeTab === "archived" && (
+        loadingArchived ? (
+          <div className="flex justify-center py-12">
+            <div className="w-6 h-6 border-4 border-slate-200 border-t-[#1a3c5e] rounded-full animate-spin" />
+          </div>
+        ) : filteredArchived.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-slate-400 text-sm">{search ? "No archived users match your search." : "No archived users."}</p>
+          </div>
+        ) : (
+          <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">User</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Email</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Role</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Joined</th>
+                  <th className="px-4 py-3" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredArchived.map(u => {
+                  const rc = ROLE_CONFIG[u.role] || { label: u.role, badge: "bg-slate-100 text-slate-600" };
+                  const displayName = u.firstName ? `${u.firstName} ${u.lastName || ""}`.trim() : u.email;
+                  return (
+                    <tr key={u.id} className="bg-slate-50/50 hover:bg-slate-50 transition-colors opacity-75">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-full bg-slate-400 flex items-center justify-center text-white text-xs font-bold shrink-0">
+                            {(u.firstName || u.email || "?").charAt(0).toUpperCase()}
+                          </div>
+                          <span className="font-medium text-slate-600">{displayName}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-slate-400">{u.email}</td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${rc.badge} opacity-60`}>
+                          {rc.label}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-400 text-xs">
+                        {u.createdAt ? new Date(u.createdAt).toLocaleDateString() : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-right">
                         <button
-                          onClick={async () => {
-                            try {
-                              await base44.functions.invoke("inviteUser", { email: u.email, role: u.role || "parent" });
-                              alert(`Invite sent to ${u.email}`);
-                            } catch (err) {
-                              alert(`Failed: ${err.message}`);
-                            }
-                          }}
-                          className="text-xs text-purple-600 hover:underline font-medium"
+                          onClick={() => handleRestore(u.id, displayName)}
+                          className="text-xs text-green-600 hover:underline font-medium flex items-center gap-1 ml-auto"
                         >
-                          Send Invite
+                          <ArchiveRestore className="w-3.5 h-3.5" /> Restore
                         </button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )
       )}
 
       {selected && (
@@ -257,6 +304,7 @@ export default function UserManagement() {
           onClose={() => setSelected(null)}
           onUpdated={() => {
             qc.invalidateQueries({ queryKey: ["admin-all-users"] });
+            qc.invalidateQueries({ queryKey: ["admin-archived-users"] });
             setSelected(null);
           }}
         />

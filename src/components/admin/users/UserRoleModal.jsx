@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { base44 } from "@/api/base44Client";
-import { apiPost } from "@/api/apiClient";
+import { apiPost, apiPatch, apiDelete } from "@/api/apiClient";
 import { useQuery } from "@tanstack/react-query";
-import { X, Loader2, BookOpen, Activity, Save, Plus, Trash2, Users, GraduationCap, Send } from "lucide-react";
+import { X, Loader2, BookOpen, Activity, Save, Plus, Trash2, Users, GraduationCap, Send, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -21,6 +21,8 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
   const [saving, setSaving] = useState(false);
   const [resending, setResending] = useState(false);
   const [inviteUrl, setInviteUrl] = useState(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [assignTab, setAssignTab] = useState("individual"); // "individual" | "program"
 
   // Individual tab state
@@ -159,13 +161,26 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await base44.entities.User.patch(user.id, { role });
+      await apiPatch(`/users/${user.id}`, { role });
       toast({ title: "Role updated", description: `${user.firstName ? `${user.firstName} ${user.lastName}` : user.email} is now ${role}.` });
       onUpdated();
     } catch (err) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     }
     setSaving(false);
+  };
+
+  const handleArchive = async () => {
+    setDeleting(true);
+    try {
+      await apiDelete(`/users/${user.id}`);
+      toast({ title: "User archived", description: `${user.firstName ? `${user.firstName} ${user.lastName}` : user.email} has been archived.` });
+      onUpdated();
+    } catch (err) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+      setDeleting(false);
+      setShowDeleteConfirm(false);
+    }
   };
 
   return (
@@ -418,6 +433,45 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
               <p className="text-xs text-amber-600">This link expires in 7 days.</p>
             </div>
           )}
+
+          {/* Delete / Archive */}
+          {!showDeleteConfirm ? (
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="w-full py-2.5 rounded-xl border border-red-200 text-sm text-red-500 hover:bg-red-50 flex items-center justify-center gap-2"
+            >
+              <Trash2 className="w-4 h-4" /> Delete User
+            </button>
+          ) : (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-3">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold text-red-700">Archive this user?</p>
+                  <p className="text-xs text-red-600 mt-0.5">
+                    {user.firstName ? `${user.firstName} ${user.lastName}` : user.email} will be archived and can no longer log in. Their data is preserved and an admin can restore them later.
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="flex-1 py-2 rounded-lg border border-slate-200 text-sm text-slate-600 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleArchive}
+                  disabled={deleting}
+                  className="flex-1 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-60"
+                >
+                  {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                  Yes, Archive
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-3">
             <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">
               Cancel

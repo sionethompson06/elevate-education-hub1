@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, ne } from 'drizzle-orm';
 import { Resend } from 'resend';
 import db from '../db-postgres.js';
 import { users, staffProfiles, guardianStudents, students } from '../schema.js';
@@ -17,7 +17,8 @@ const router = Router();
 
 router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
   try {
-    const allUsers = await db.select({
+    const showArchived = req.query.archived === 'true';
+    const query = db.select({
       id: users.id,
       email: users.email,
       role: users.role,
@@ -26,6 +27,11 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
       status: users.status,
       createdAt: users.createdAt,
     }).from(users).orderBy(desc(users.createdAt));
+
+    const allUsers = showArchived
+      ? await query.where(eq(users.status, 'archived'))
+      : await query.where(ne(users.status, 'archived'));
+
     res.json({ success: true, users: allUsers });
   } catch (err) {
     console.error('List users error:', err);
@@ -282,12 +288,30 @@ router.delete('/:id', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     if (id === req.user.id) {
-      return res.status(400).json({ success: false, error: 'Cannot delete your own account' });
+      return res.status(400).json({ success: false, error: 'Cannot archive your own account' });
     }
-    await db.update(users).set({ status: 'inactive' }).where(eq(users.id, id));
+    await db.update(users).set({ status: 'archived' }).where(eq(users.id, id));
     await logAudit({
       userId: req.user.id,
-      action: 'delete',
+      action: 'archive',
+      entityType: 'user',
+      entityId: id,
+      ipAddress: req.ip,
+    });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.patch('/:id/restore', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const [updated] = await db.update(users).set({ status: 'active' }).where(eq(users.id, id)).returning();
+    if (!updated) return res.status(404).json({ success: false, error: 'User not found' });
+    await logAudit({
+      userId: req.user.id,
+      action: 'restore',
       entityType: 'user',
       entityId: id,
       ipAddress: req.ip,
