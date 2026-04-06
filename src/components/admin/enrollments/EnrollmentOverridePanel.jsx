@@ -25,11 +25,15 @@ export default function EnrollmentOverridePanel({ enrollment }) {
 
   const load = async () => {
     setLoading(true);
-    const res = await base44.functions.invoke("adminOverride", {
-      action: "list",
-      enrollment_id: enrollment.id,
-    });
-    setOverrides(res.data?.overrides || []);
+    try {
+      const res = await base44.functions.invoke("adminOverride", {
+        action: "list",
+        enrollment_id: enrollment.id,
+      });
+      setOverrides(res.data?.overrides || []);
+    } catch {
+      setOverrides([]);
+    }
     setLoading(false);
   };
 

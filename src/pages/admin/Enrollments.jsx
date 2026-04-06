@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { base44 } from "@/api/base44Client";
+import { apiGet } from "@/api/apiClient";
 import { Users } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { format } from "date-fns";
@@ -22,20 +22,14 @@ export default function Enrollments() {
   const [selected, setSelected] = useState(null);
   const qc = useQueryClient();
 
-  const { data: enrollments = [], isLoading } = useQuery({
-    queryKey: ["admin-enrollments", statusFilter],
-    queryFn: () =>
-      statusFilter === "all"
-        ? base44.entities.Enrollment.list("-enrolled_date", 100)
-        : base44.entities.Enrollment.filter({ status: statusFilter }, "-enrolled_date", 100),
+  const { data: allEnrollments = [], isLoading } = useQuery({
+    queryKey: ["admin-enrollments"],
+    queryFn: () => apiGet("/enrollments").then(d => d.enrollments || []),
   });
 
-  const { data: students = [] } = useQuery({
-    queryKey: ["admin-all-students-enroll"],
-    queryFn: () => base44.entities.Student.list("-created_date", 500),
-  });
-
-  const studentMap = Object.fromEntries(students.map(s => [s.id, s]));
+  const enrollments = statusFilter === "all"
+    ? allEnrollments
+    : allEnrollments.filter(e => e.status === statusFilter);
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -59,6 +53,11 @@ export default function Enrollments() {
             }`}
           >
             {s === "all" ? "All" : s.replace(/_/g, " ")}
+            {s !== "all" && (
+              <span className="ml-1 opacity-60">
+                ({allEnrollments.filter(e => e.status === s).length})
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -75,8 +74,12 @@ export default function Enrollments() {
             <div className="divide-y">
               {enrollments.map((e) => {
                 const sc = STATUS_COLORS[e.status] || "bg-slate-100 text-slate-500";
-                const student = studentMap[e.student_id];
-                const studentName = student?.full_name || e.student_email || e.student_id;
+                const studentName = e.studentFirstName
+                  ? `${e.studentFirstName} ${e.studentLastName || ""}`.trim()
+                  : `Student #${e.studentId}`;
+                const parentLabel = e.parentFirstName
+                  ? `${e.parentFirstName} ${e.parentLastName || ""}`.trim()
+                  : e.parentEmail || null;
                 return (
                   <button
                     key={e.id}
@@ -86,24 +89,27 @@ export default function Enrollments() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap mb-1">
                         <p className="font-bold text-slate-900">{studentName}</p>
-                        {e.enrolled_date && (
-                          <p className="text-xs text-slate-400">· Enrolled {format(new Date(e.enrolled_date), "MMM d, yyyy")}</p>
+                        {parentLabel && (
+                          <p className="text-xs text-slate-400">· Parent: {parentLabel}</p>
+                        )}
+                        {e.createdAt && (
+                          <p className="text-xs text-slate-400">· Enrolled {format(new Date(e.createdAt), "MMM d, yyyy")}</p>
                         )}
                       </div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm text-slate-600">{e.program_name}</p>
+                        <p className="text-sm text-slate-600">{e.programName || `Program #${e.programId}`}</p>
                         <span className={`px-2 py-0.5 rounded-full text-xs font-semibold capitalize ${sc}`}>
                           {e.status?.replace(/_/g, " ")}
                         </span>
-                        {e.payment_status && (
+                        {e.invoiceStatus && (
                           <span className="px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-500">
-                            {e.payment_status}
+                            Invoice: {e.invoiceStatus}
                           </span>
                         )}
                       </div>
                     </div>
                     <div className="text-sm font-semibold text-slate-700 shrink-0">
-                      {e.amount_due != null ? `$${e.amount_due.toLocaleString()} due` : ""}
+                      {e.invoiceAmount != null ? `$${parseFloat(e.invoiceAmount).toLocaleString()} due` : ""}
                     </div>
                   </button>
                 );

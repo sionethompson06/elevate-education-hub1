@@ -62,12 +62,39 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
       studentFirstName: students.firstName,
       studentLastName: students.lastName,
       programName: programs.name,
+      programTuition: programs.tuitionAmount,
+      programBillingCycle: programs.billingCycle,
+      parentFirstName: users.firstName,
+      parentLastName: users.lastName,
+      parentEmail: users.email,
     }).from(enrollments)
       .leftJoin(students, eq(enrollments.studentId, students.id))
       .leftJoin(programs, eq(enrollments.programId, programs.id))
+      .leftJoin(users, eq(enrollments.enrolledBy, users.id))
       .orderBy(desc(enrollments.createdAt));
-    res.json({ success: true, enrollments: result });
+
+    // Fetch all invoices and map to the latest per enrollment
+    const allInvoices = await db.select().from(invoices).orderBy(desc(invoices.createdAt));
+    const invoiceMap = {};
+    for (const inv of allInvoices) {
+      if (inv.enrollmentId && !invoiceMap[inv.enrollmentId]) {
+        invoiceMap[inv.enrollmentId] = inv;
+      }
+    }
+
+    const enriched = result.map(e => ({
+      ...e,
+      invoiceId: invoiceMap[e.id]?.id || null,
+      invoiceAmount: invoiceMap[e.id]?.amount || null,
+      invoiceStatus: invoiceMap[e.id]?.status || null,
+      invoiceDueDate: invoiceMap[e.id]?.dueDate || null,
+      invoicePaidDate: invoiceMap[e.id]?.paidDate || null,
+      invoiceDescription: invoiceMap[e.id]?.description || null,
+    }));
+
+    res.json({ success: true, enrollments: enriched });
   } catch (err) {
+    console.error('List enrollments error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
