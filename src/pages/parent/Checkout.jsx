@@ -27,17 +27,19 @@ export default function Checkout() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Load enrollment with student + program details
-  const { data: enrollmentData, isLoading: enrollmentLoading } = useQuery({
+  const { data: enrollment, isLoading: enrollmentLoading } = useQuery({
     queryKey: ["enrollment-detail", enrollmentId],
-    queryFn: () => apiFetch(`/enrollments/my-students`).then(d => {
+    queryFn: () => apiFetch("/enrollments/my-students").then(d => {
       const found = (d.enrollments || []).find(e => String(e.id) === String(enrollmentId));
       return found || null;
     }),
     enabled: !!enrollmentId && !!user,
   });
 
-  const enrollment = enrollmentData;
+  const programName = enrollment?.programName || enrollment?.program_name || "Program";
+  const studentName = enrollment?.studentFirstName
+    ? `${enrollment.studentFirstName} ${enrollment.studentLastName || ""}`.trim()
+    : null;
 
   const handleCheckout = async () => {
     setLoading(true);
@@ -55,7 +57,7 @@ export default function Checkout() {
       if (res.url) {
         window.location.href = res.url;
       } else {
-        setError(res.error || "Failed to create checkout session. Check Stripe keys are configured.");
+        setError(res.error || "Failed to create checkout session. Please ensure Stripe keys are configured.");
         setLoading(false);
       }
     } catch (err) {
@@ -83,8 +85,9 @@ export default function Checkout() {
     <div className="min-h-screen flex items-center justify-center">
       <div className="text-center">
         <AlertCircle className="w-10 h-10 text-red-400 mx-auto mb-3" />
-        <p className="text-slate-600">Enrollment not found.</p>
-        <Link to="/parent/programs" className="text-[#1a3c5e] underline text-sm mt-2 block">Back to Programs</Link>
+        <p className="text-slate-600 font-semibold">Enrollment not found.</p>
+        <p className="text-slate-400 text-sm mb-3">This enrollment may not be linked to your account.</p>
+        <Link to="/parent/programs" className="text-[#1a3c5e] underline text-sm">Back to Programs</Link>
       </div>
     </div>
   );
@@ -101,7 +104,6 @@ export default function Checkout() {
       </div>
     </div>
   );
-
 
   return (
     <div className="min-h-screen bg-slate-50 py-10 px-4">
@@ -120,19 +122,14 @@ export default function Checkout() {
           </div>
         </div>
 
-        {/* Iframe warning */}
-        {isInIframe() && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3 text-sm text-yellow-800 mb-5 flex items-start gap-2">
-            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-            Payment checkout requires the published app. Please open this page in a new browser tab to complete payment.
-          </div>
-        )}
-
         <div className="space-y-5">
-          {/* Program info */}
+          {/* Program + student info */}
           <div className="bg-white rounded-2xl border border-slate-200 p-5">
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">Program</p>
-            <p className="text-lg font-bold text-slate-800">{enrollment.program_name}</p>
+            <p className="text-lg font-bold text-slate-800">{programName}</p>
+            {studentName && (
+              <p className="text-sm text-slate-500 mt-1">Student: <span className="font-medium text-slate-700">{studentName}</span></p>
+            )}
             <div className="flex gap-2 mt-2">
               <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${enrollment.status === "payment_failed" ? "bg-red-100 text-red-700" : "bg-yellow-100 text-yellow-700"}`}>
                 {enrollment.status === "payment_failed" ? "Payment Failed — Retry" : "Pending Payment"}
@@ -140,17 +137,14 @@ export default function Checkout() {
             </div>
           </div>
 
-          {/* Billing cycle */}
           <BillingCycleSelector
             value={billingCycle}
             onChange={(cycle) => { setBillingCycle(cycle); setError(null); }}
-            programName={enrollment.program_name}
+            programName={programName}
           />
 
-          {/* Order summary */}
-          <TuitionSummary billingCycle={billingCycle} programName={enrollment.program_name} />
+          <TuitionSummary billingCycle={billingCycle} programName={programName} />
 
-          {/* Terms */}
           <TermsCheckbox accepted={termsAccepted} onChange={setTermsAccepted} />
 
           {error && (
@@ -162,14 +156,12 @@ export default function Checkout() {
 
           <Button
             className="w-full bg-[#1a3c5e] hover:bg-[#0d2540] h-12 text-base"
-            disabled={!termsAccepted || loading || isInIframe()}
+            disabled={!termsAccepted || loading}
             onClick={handleCheckout}
           >
-            {loading ? (
-              <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Redirecting to Stripe…</>
-            ) : (
-              <><Lock className="w-4 h-4 mr-2" />Continue to Secure Payment</>
-            )}
+            {loading
+              ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Redirecting to Stripe…</>
+              : <><Lock className="w-4 h-4 mr-2" />Continue to Secure Payment</>}
           </Button>
 
           <p className="text-center text-xs text-slate-400">
