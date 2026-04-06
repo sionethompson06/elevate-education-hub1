@@ -33,7 +33,7 @@ router.post('/checkout', requireAuth, requireRole('parent', 'admin'), async (req
       : [null];
 
     // Get or create billing account and Stripe customer
-    let [billingAccount] = await db.select().from(billingAccounts).where(eq(billingAccounts.userId, req.user.id));
+    let [billingAccount] = await db.select().from(billingAccounts).where(eq(billingAccounts.parentUserId, req.user.id));
     let stripeCustomerId = billingAccount?.stripeCustomerId;
 
     if (!stripeCustomerId) {
@@ -43,7 +43,7 @@ router.post('/checkout', requireAuth, requireRole('parent', 'admin'), async (req
         await db.update(billingAccounts).set({ stripeCustomerId }).where(eq(billingAccounts.id, billingAccount.id));
       } else {
         [billingAccount] = await db.insert(billingAccounts).values({
-          userId: req.user.id,
+          parentUserId: req.user.id,
           stripeCustomerId,
           balance: '0',
         }).returning();

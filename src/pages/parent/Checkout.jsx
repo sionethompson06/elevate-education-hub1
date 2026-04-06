@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { useNavigate, useSearchParams, Link } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { useSearchParams, Link } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -9,55 +8,58 @@ import BillingCycleSelector from "@/components/parent/BillingCycleSelector";
 import TuitionSummary from "@/components/parent/TuitionSummary";
 import TermsCheckbox from "@/components/parent/TermsCheckbox";
 
-const isInIframe = () => { try { return window.self !== window.top; } catch { return true; } };
+async function apiFetch(path, opts = {}) {
+  const token = localStorage.getItem("elevate_auth_token");
+  const res = await fetch("/api" + path, {
+    ...opts,
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...opts.headers },
+  });
+  return res.json();
+}
 
 export default function Checkout() {
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
   const enrollmentId = searchParams.get("enrollment_id");
-  const navigate = useNavigate();
 
   const [billingCycle, setBillingCycle] = useState("monthly");
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const { data: enrollment, isLoading: enrollmentLoading } = useQuery({
+  // Load enrollment with student + program details
+  const { data: enrollmentData, isLoading: enrollmentLoading } = useQuery({
     queryKey: ["enrollment-detail", enrollmentId],
-    queryFn: () => base44.entities.Enrollment.filter({ id: enrollmentId }).then(r => r[0]),
-    enabled: !!enrollmentId,
+    queryFn: () => apiFetch(`/enrollments/my-students`).then(d => {
+      const found = (d.enrollments || []).find(e => String(e.id) === String(enrollmentId));
+      return found || null;
+    }),
+    enabled: !!enrollmentId && !!user,
   });
 
-  // Validate parent owns this enrollment
-  const { data: parents = [] } = useQuery({
-    queryKey: ["parent-record", user?.email],
-    queryFn: () => base44.entities.Parent.filter({ user_email: user.email }),
-    enabled: !!user?.email,
-  });
-  const parent = parents[0];
-  const ownsEnrollment = !enrollment || !parent || parent.student_ids?.includes(enrollment.student_id);
+  const enrollment = enrollmentData;
 
   const handleCheckout = async () => {
-    if (isInIframe()) {
-      alert("Payment checkout is only available from the published app. Please open the app in a new tab.");
-      return;
-    }
-    if (!ownsEnrollment) {
-      setError("You do not have permission to pay for this enrollment.");
-      return;
-    }
     setLoading(true);
     setError(null);
-    const res = await base44.functions.invoke("stripeCheckout", {
-      enrollment_id: enrollmentId,
-      billing_cycle: billingCycle,
-      success_url: `${window.location.origin}/parent/dashboard?payment=success&enrollment=${enrollmentId}`,
-      cancel_url: `${window.location.origin}/parent/checkout?enrollment_id=${enrollmentId}`,
-    });
-    if (res.data?.url) {
-      window.location.href = res.data.url;
-    } else {
-      setError(res.data?.error || "Failed to create checkout session.");
+    try {
+      const res = await apiFetch("/stripe/checkout", {
+        method: "POST",
+        body: JSON.stringify({
+          enrollment_id: Number(enrollmentId),
+          billing_cycle: billingCycle,
+          success_url: `${window.location.origin}/parent/dashboard?payment=success&enrollment=${enrollmentId}`,
+          cancel_url: `${window.location.origin}/parent/checkout?enrollment_id=${enrollmentId}`,
+        }),
+      });
+      if (res.url) {
+        window.location.href = res.url;
+      } else {
+        setError(res.error || "Failed to create checkout session. Check Stripe keys are configured.");
+        setLoading(false);
+      }
+    } catch (err) {
+      setError("Network error. Please try again.");
       setLoading(false);
     }
   };
@@ -100,16 +102,6 @@ export default function Checkout() {
     </div>
   );
 
-  if (!ownsEnrollment) return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="text-center">
-        <AlertCircle className="w-10 h-10 text-red-400 mx-auto mb-3" />
-        <p className="text-slate-600 font-semibold">Access Denied</p>
-        <p className="text-slate-400 text-sm">This enrollment doesn't belong to your account.</p>
-        <Link to="/parent/dashboard" className="text-[#1a3c5e] underline text-sm mt-2 block">Back to Dashboard</Link>
-      </div>
-    </div>
-  );
 
   return (
     <div className="min-h-screen bg-slate-50 py-10 px-4">

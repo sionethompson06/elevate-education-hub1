@@ -31,8 +31,11 @@ router.get('/my-students', requireAuth, async (req, res) => {
         status: enrollments.status,
         createdAt: enrollments.createdAt,
         programName: programs.name,
+        studentFirstName: students.firstName,
+        studentLastName: students.lastName,
       }).from(enrollments)
         .leftJoin(programs, eq(enrollments.programId, programs.id))
+        .leftJoin(students, eq(enrollments.studentId, students.id))
         .where(eq(enrollments.studentId, sid));
       myEnrollments.push(...enrs);
     }
@@ -90,8 +93,18 @@ router.post('/', requireAuth, async (req, res) => {
     const [program] = await db.select().from(programs).where(eq(programs.id, parseInt(programId)));
     if (!program) return res.status(404).json({ success: false, error: 'Program not found' });
 
-    const [currentYear] = await db.select().from(schoolYears).where(eq(schoolYears.isCurrent, true));
-    if (!currentYear) return res.status(400).json({ success: false, error: 'No active school year' });
+    // Get or auto-create current school year
+    let [currentYear] = await db.select().from(schoolYears).where(eq(schoolYears.isCurrent, true));
+    if (!currentYear) {
+      const now = new Date();
+      const yearLabel = `${now.getFullYear()}-${now.getFullYear() + 1}`;
+      [currentYear] = await db.insert(schoolYears).values({
+        name: yearLabel,
+        startDate: `${now.getFullYear()}-08-01`,
+        endDate: `${now.getFullYear() + 1}-06-30`,
+        isCurrent: true,
+      }).returning();
+    }
 
     const existingEnrollment = await db.select().from(enrollments)
       .where(and(
@@ -108,7 +121,7 @@ router.post('/', requireAuth, async (req, res) => {
       studentId: parseInt(studentId),
       programId: parseInt(programId),
       schoolYearId: currentYear.id,
-      status: 'pending',
+      status: 'pending_payment',
       enrolledBy: req.user.id,
     }).returning();
 
