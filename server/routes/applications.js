@@ -120,60 +120,55 @@ router.post('/:id/approve', requireAuth, requireRole('admin'), async (req, res) 
     const [app] = await db.select().from(applications).where(eq(applications.id, id));
     if (!app) return res.status(404).json({ success: false, error: 'Application not found' });
 
-    const txResult = await db.transaction(async (tx) => {
-      await tx.update(applications).set({ status: 'accepted' }).where(eq(applications.id, id));
+    // Sequential queries — neon-http driver does not support transactions
+    await db.update(applications).set({ status: 'accepted' }).where(eq(applications.id, id));
 
-      let parentUser;
-      const [existingUser] = await tx.select().from(users).where(eq(users.email, app.email.toLowerCase().trim()));
-      if (existingUser) {
-        parentUser = existingUser;
-      } else {
-        [parentUser] = await tx.insert(users).values({
-          email: app.email.toLowerCase().trim(),
-          role: 'parent',
-          firstName: app.parentFirstName,
-          lastName: app.parentLastName,
-          status: 'active',
-        }).returning();
-      }
+    let parentUser;
+    const [existingUser] = await db.select().from(users).where(eq(users.email, app.email.toLowerCase().trim()));
+    if (existingUser) {
+      parentUser = existingUser;
+    } else {
+      [parentUser] = await db.insert(users).values({
+        email: app.email.toLowerCase().trim(),
+        role: 'parent',
+        firstName: app.parentFirstName,
+        lastName: app.parentLastName,
+        status: 'active',
+      }).returning();
+    }
 
-      let studentRecord;
-      const [matchingStudent] = await tx.select().from(students)
-        .where(and(
-          eq(students.firstName, app.studentFirstName),
-          eq(students.lastName, app.studentLastName)
-        ));
+    let studentRecord;
+    const [matchingStudent] = await db.select().from(students)
+      .where(and(
+        eq(students.firstName, app.studentFirstName),
+        eq(students.lastName, app.studentLastName)
+      ));
 
-      if (matchingStudent) {
-        studentRecord = matchingStudent;
-      } else {
-        [studentRecord] = await tx.insert(students).values({
-          firstName: app.studentFirstName,
-          lastName: app.studentLastName,
-          grade: app.studentGrade || null,
-          dateOfBirth: app.studentBirthDate || null,
-          status: 'intake',
-        }).returning();
-      }
+    if (matchingStudent) {
+      studentRecord = matchingStudent;
+    } else {
+      [studentRecord] = await db.insert(students).values({
+        firstName: app.studentFirstName,
+        lastName: app.studentLastName,
+        grade: app.studentGrade || null,
+        dateOfBirth: app.studentBirthDate || null,
+        status: 'intake',
+      }).returning();
+    }
 
-      const existingLink = await tx.select().from(guardianStudents)
-        .where(and(
-          eq(guardianStudents.guardianUserId, parentUser.id),
-          eq(guardianStudents.studentId, studentRecord.id)
-        ));
-      if (existingLink.length === 0) {
-        await tx.insert(guardianStudents).values({
-          guardianUserId: parentUser.id,
-          studentId: studentRecord.id,
-          relationship: 'parent',
-          isPrimary: true,
-        });
-      }
-
-      return { parentUser, studentRecord };
-    });
-
-    const { parentUser, studentRecord } = txResult;
+    const existingLink = await db.select().from(guardianStudents)
+      .where(and(
+        eq(guardianStudents.guardianUserId, parentUser.id),
+        eq(guardianStudents.studentId, studentRecord.id)
+      ));
+    if (existingLink.length === 0) {
+      await db.insert(guardianStudents).values({
+        guardianUserId: parentUser.id,
+        studentId: studentRecord.id,
+        relationship: 'parent',
+        isPrimary: true,
+      });
+    }
 
     await logAudit({
       userId: req.user.id,

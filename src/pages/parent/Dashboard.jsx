@@ -12,6 +12,15 @@ import StudentGradebook from "@/components/parent/StudentGradebook";
 import ParentRewardsSummary from "@/components/parent/ParentRewardsSummary";
 import AddStudentModal from "@/components/parent/AddStudentModal";
 
+async function fetchMyStudents() {
+  const token = localStorage.getItem("elevate_auth_token");
+  const res = await fetch("/api/enrollments/my-students", {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error("Failed to load students");
+  return res.json(); // { students: [...], enrollments: [...] }
+}
+
 export default function ParentDashboard() {
   const { user } = useAuth();
   const qc = useQueryClient();
@@ -20,41 +29,21 @@ export default function ParentDashboard() {
   const paymentStatus = searchParams.get("payment");
   const enrollmentId = searchParams.get("enrollment");
 
-  const { data: parents = [] } = useQuery({
-    queryKey: ["parent-record", user?.email],
-    queryFn: () => base44.entities.Parent.filter({ user_email: user.email }),
-    enabled: !!user?.email,
-  });
-  const parent = parents[0];
-  const studentIds = parent?.student_ids || [];
-
-  const { data: students = [] } = useQuery({
-    queryKey: ["parent-students-dash", studentIds],
-    queryFn: async () => {
-      if (!studentIds.length) return [];
-      const all = await Promise.all(studentIds.map(sid => base44.entities.Student.filter({ id: sid })));
-      return all.flat();
-    },
-    enabled: studentIds.length > 0,
+  const { data: myData = { students: [], enrollments: [] }, isLoading: enrollLoading } = useQuery({
+    queryKey: ["parent-my-students", user?.id],
+    queryFn: fetchMyStudents,
+    enabled: !!user?.id,
   });
 
-  const { data: enrollments = [], isLoading: enrollLoading } = useQuery({
-    queryKey: ["all-enrollments", studentIds],
-    queryFn: async () => {
-      if (!studentIds.length) return [];
-      const all = await Promise.all(studentIds.map(sid => base44.entities.Enrollment.filter({ student_id: sid })));
-      return all.flat();
-    },
-    enabled: studentIds.length > 0,
-  });
+  const students = myData.students || [];
+  const enrollments = myData.enrollments || [];
 
   const pendingPayment = enrollments.filter(e => ["pending_payment", "payment_failed"].includes(e.status));
   const activeEnrollments = enrollments.filter(e => ["active", "active_override"].includes(e.status));
 
   const handleStudentAdded = () => {
     setShowAddStudent(false);
-    qc.invalidateQueries({ queryKey: ["parent-record"] });
-    qc.invalidateQueries({ queryKey: ["parent-students-dash"] });
+    qc.invalidateQueries({ queryKey: ["parent-my-students"] });
   };
 
   return (
@@ -145,7 +134,7 @@ export default function ParentDashboard() {
       )}
 
       {/* Student snapshots */}
-      {studentIds.length > 0 && (
+      {students.length > 0 && (
         <div className="space-y-6">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-semibold text-slate-600 uppercase tracking-wide flex items-center gap-2">
@@ -158,19 +147,17 @@ export default function ParentDashboard() {
               <UserPlus className="w-3.5 h-3.5" /> Add another student
             </button>
           </div>
-          {studentIds.map((sid, i) => {
-            const student = students.find(s => s.id === sid);
-            const studentName = student?.full_name || `Student ${i + 1}`;
+          {students.map((student) => {
+            const studentName = `${student.firstName} ${student.lastName}`;
             return (
-              <div key={sid} className="space-y-4">
+              <div key={student.id} className="space-y-4">
                 <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
                   {studentName}
-                  {student?.grade_level && <span className="font-normal text-slate-400">· Grade {student.grade_level}</span>}
-                  {student?.sport && <span className="font-normal text-slate-400">· {student.sport}</span>}
+                  {student.grade && <span className="font-normal text-slate-400">· Grade {student.grade}</span>}
                 </h3>
                 <div className="grid md:grid-cols-2 gap-4">
-                  <StudentGradebook studentId={sid} studentName={studentName} />
-                  <ParentRewardsSummary studentId={sid} studentName={studentName} />
+                  <StudentGradebook studentId={student.id} studentName={studentName} />
+                  <ParentRewardsSummary studentId={student.id} studentName={studentName} />
                 </div>
               </div>
             );
@@ -201,7 +188,6 @@ export default function ParentDashboard() {
 
       {showAddStudent && (
         <AddStudentModal
-          parent={parent}
           onClose={() => setShowAddStudent(false)}
           onAdded={handleStudentAdded}
         />

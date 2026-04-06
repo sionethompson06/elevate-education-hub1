@@ -103,36 +103,35 @@ router.post('/', requireAuth, async (req, res) => {
       return res.status(400).json({ success: false, error: 'Student is already enrolled in this program for the current year' });
     }
 
-    const result = await db.transaction(async (tx) => {
-      const [enrollment] = await tx.insert(enrollments).values({
-        studentId: parseInt(studentId),
-        programId: parseInt(programId),
-        schoolYearId: currentYear.id,
-        status: 'pending',
-        enrolledBy: req.user.id,
+    // Sequential inserts — neon-http driver does not support transactions
+    const [enrollment] = await db.insert(enrollments).values({
+      studentId: parseInt(studentId),
+      programId: parseInt(programId),
+      schoolYearId: currentYear.id,
+      status: 'pending',
+      enrolledBy: req.user.id,
+    }).returning();
+
+    let [billingAccount] = await db.select().from(billingAccounts)
+      .where(eq(billingAccounts.parentUserId, req.user.id));
+    if (!billingAccount) {
+      [billingAccount] = await db.insert(billingAccounts).values({
+        parentUserId: req.user.id,
       }).returning();
+    }
 
-      let [billingAccount] = await tx.select().from(billingAccounts)
-        .where(eq(billingAccounts.parentUserId, req.user.id));
-      if (!billingAccount) {
-        [billingAccount] = await tx.insert(billingAccounts).values({
-          parentUserId: req.user.id,
-        }).returning();
-      }
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + 30);
 
-      const dueDate = new Date();
-      dueDate.setDate(dueDate.getDate() + 30);
+    const [invoice] = await db.insert(invoices).values({
+      billingAccountId: billingAccount.id,
+      enrollmentId: enrollment.id,
+      description: `Tuition - ${program.name}`,
+      amount: program.tuitionAmount,
+      dueDate: dueDate.toISOString().split('T')[0],
+    }).returning();
 
-      const [invoice] = await tx.insert(invoices).values({
-        billingAccountId: billingAccount.id,
-        enrollmentId: enrollment.id,
-        description: `Tuition - ${program.name}`,
-        amount: program.tuitionAmount,
-        dueDate: dueDate.toISOString().split('T')[0],
-      }).returning();
-
-      return { enrollment, invoice, billingAccount };
-    });
+    const result = { enrollment, invoice, billingAccount };
 
     await logAudit({
       userId: req.user.id,

@@ -112,34 +112,31 @@ router.post('/pay', requireAuth, async (req, res) => {
       return res.status(403).json({ success: false, error: 'Not authorized to pay this invoice' });
     }
 
-    const payment = await db.transaction(async (tx) => {
-      const [pay] = await tx.insert(payments).values({
-        billingAccountId: account.id,
-        invoiceId: invoice.id,
-        amount: invoice.amount,
-        method: 'manual',
-        status: 'completed',
-        processedAt: new Date(),
-      }).returning();
+    // Sequential inserts — neon-http driver does not support transactions
+    const [payment] = await db.insert(payments).values({
+      billingAccountId: account.id,
+      invoiceId: invoice.id,
+      amount: invoice.amount,
+      method: 'manual',
+      status: 'completed',
+      processedAt: new Date(),
+    }).returning();
 
-      await tx.update(invoices).set({
-        status: 'paid',
-        paidDate: new Date().toISOString().split('T')[0],
-      }).where(eq(invoices.id, invoice.id));
+    await db.update(invoices).set({
+      status: 'paid',
+      paidDate: new Date().toISOString().split('T')[0],
+    }).where(eq(invoices.id, invoice.id));
 
-      if (invoice.enrollmentId) {
-        await tx.update(enrollments).set({ status: 'active' })
-          .where(eq(enrollments.id, invoice.enrollmentId));
+    if (invoice.enrollmentId) {
+      await db.update(enrollments).set({ status: 'active' })
+        .where(eq(enrollments.id, invoice.enrollmentId));
 
-        const [enrollment] = await tx.select().from(enrollments).where(eq(enrollments.id, invoice.enrollmentId));
-        if (enrollment) {
-          await tx.update(students).set({ status: 'active' })
-            .where(eq(students.id, enrollment.studentId));
-        }
+      const [enrollment] = await db.select().from(enrollments).where(eq(enrollments.id, invoice.enrollmentId));
+      if (enrollment) {
+        await db.update(students).set({ status: 'active' })
+          .where(eq(students.id, enrollment.studentId));
       }
-
-      return pay;
-    });
+    }
 
     await logAudit({
       userId: req.user.id,
