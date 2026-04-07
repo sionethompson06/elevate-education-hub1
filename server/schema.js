@@ -439,6 +439,8 @@ export const enrollmentOverrides = pgTable('enrollment_overrides', {
   notes: text('notes'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
+
+export const rewardRedemptions = pgTable('reward_redemptions', {
   id: serial('id').primaryKey(),
   studentId: integer('student_id').notNull().references(() => students.id),
   catalogItemId: integer('catalog_item_id').references(() => rewardCatalog.id),
