@@ -144,7 +144,7 @@ export default function ParentDashboard() {
           { label: "Progress",  href: "/parent/progress",  icon: TrendingUp,     color: "text-green-600",  bg: "bg-green-50" },
           { label: "Messages",  href: "/parent/messages",  icon: MessageCircle,  color: "text-blue-600",   bg: "bg-blue-50" },
           { label: "Resources", href: "/parent/resources", icon: FileText,       color: "text-orange-600", bg: "bg-orange-50" },
-          { label: "Billing",   href: "/parent/billing",   icon: CreditCard,     color: "text-red-600",    bg: "bg-red-50" },
+          { label: "Billing",   href: "/parent/payments",  icon: CreditCard,     color: "text-red-600",    bg: "bg-red-50" },
         ].map(({ label, href, icon: Icon, color, bg }) => (
           <Link key={href} to={href}>
             <div className="bg-white rounded-xl border border-slate-100 p-4 hover:shadow-sm hover:border-[#1a3c5e] transition-all text-center">
