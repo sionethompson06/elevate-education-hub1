@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
-import { eq, desc, ne } from 'drizzle-orm';
+import { eq, desc, ne, and } from 'drizzle-orm';
 import { Resend } from 'resend';
 import db from '../db-postgres.js';
 import { users, staffProfiles, guardianStudents, students } from '../schema.js';
@@ -36,6 +36,171 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
   } catch (err) {
     console.error('List users error:', err);
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/users/parents — all parent users with their linked students
+router.get('/parents', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const parentUsers = await db.select({
+      id: users.id,
+      email: users.email,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      status: users.status,
+      createdAt: users.createdAt,
+    }).from(users)
+      .where(and(eq(users.role, 'parent'), ne(users.status, 'archived')))
+      .orderBy(desc(users.createdAt));
+
+    if (parentUsers.length === 0) {
+      return res.json({ success: true, parents: [] });
+    }
+
+    // Fetch all guardian-student links with student details in one query
+    const allLinks = await db.select({
+      guardianUserId: guardianStudents.guardianUserId,
+      studentId: guardianStudents.studentId,
+      relationship: guardianStudents.relationship,
+      isPrimary: guardianStudents.isPrimary,
+      studentFirstName: students.firstName,
+      studentLastName: students.lastName,
+      studentGrade: students.grade,
+      studentStatus: students.status,
+    }).from(guardianStudents)
+      .innerJoin(students, eq(guardianStudents.studentId, students.id));
+
+    // Build guardianUserId → student list map
+    const parentIdSet = new Set(parentUsers.map(p => p.id));
+    const linkMap = {};
+    for (const link of allLinks) {
+      if (!parentIdSet.has(link.guardianUserId)) continue;
+      if (!linkMap[link.guardianUserId]) linkMap[link.guardianUserId] = [];
+      linkMap[link.guardianUserId].push({
+        id: link.studentId,
+        firstName: link.studentFirstName,
+        lastName: link.studentLastName,
+        fullName: `${link.studentFirstName} ${link.studentLastName}`.trim(),
+        grade: link.studentGrade,
+        status: link.studentStatus,
+        relationship: link.relationship,
+        isPrimary: link.isPrimary,
+      });
+    }
+
+    const parents = parentUsers.map(p => ({
+      id: p.id,
+      email: p.email,
+      firstName: p.firstName,
+      lastName: p.lastName,
+      fullName: `${p.firstName} ${p.lastName}`.trim(),
+      status: p.status,
+      createdAt: p.createdAt,
+      linkedStudents: linkMap[p.id] || [],
+      studentIds: (linkMap[p.id] || []).map(s => s.id),
+    }));
+
+    res.json({ success: true, parents });
+  } catch (err) {
+    console.error('List parents error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/users/:id/link-student — link a student to a parent
+router.post('/:id/link-student', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const guardianUserId = parseInt(req.params.id);
+    if (isNaN(guardianUserId)) return res.status(400).json({ success: false, error: 'Invalid user ID' });
+    const { studentId, relationship = 'parent' } = req.body;
+    if (!studentId) return res.status(400).json({ success: false, error: 'studentId required' });
+
+    const sid = parseInt(studentId);
+    const [existing] = await db.select().from(guardianStudents)
+      .where(and(eq(guardianStudents.guardianUserId, guardianUserId), eq(guardianStudents.studentId, sid)));
+    if (existing) return res.json({ success: true, message: 'Already linked' });
+
+    const existingLinks = await db.select().from(guardianStudents)
+      .where(eq(guardianStudents.guardianUserId, guardianUserId));
+
+    await db.insert(guardianStudents).values({
+      guardianUserId,
+      studentId: sid,
+      relationship,
+      isPrimary: existingLinks.length === 0,
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Link student error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// DELETE /api/users/:id/unlink-student/:studentId — remove a guardian-student link
+router.delete('/:id/unlink-student/:studentId', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const guardianUserId = parseInt(req.params.id);
+    const studentId = parseInt(req.params.studentId);
+    if (isNaN(guardianUserId) || isNaN(studentId)) {
+      return res.status(400).json({ success: false, error: 'Invalid IDs' });
+    }
+
+    await db.delete(guardianStudents)
+      .where(and(
+        eq(guardianStudents.guardianUserId, guardianUserId),
+        eq(guardianStudents.studentId, studentId)
+      ));
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Unlink student error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/users/my-profile — returns current user's profile with linked students (for parents)
+router.get('/my-profile', requireAuth, async (req, res) => {
+  try {
+    const [user] = await db.select().from(users).where(eq(users.id, req.user.id));
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    let linkedStudents = [];
+    if (user.role === 'parent') {
+      linkedStudents = await db.select({
+        id: students.id,
+        firstName: students.firstName,
+        lastName: students.lastName,
+        grade: students.grade,
+        status: students.status,
+      }).from(guardianStudents)
+        .innerJoin(students, eq(guardianStudents.studentId, students.id))
+        .where(eq(guardianStudents.guardianUserId, user.id));
+    }
+
+    res.json({
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      full_name: `${user.firstName} ${user.lastName}`,
+      student_ids: linkedStudents.map(s => s.id),
+      students: linkedStudents,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/users/invite — list pending/invited users
+router.get('/invite', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const pending = await db.select({ id: users.id, email: users.email, role: users.role, firstName: users.firstName, lastName: users.lastName })
+      .from(users).where(eq(users.status, 'invited'));
+    res.json(pending);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -322,40 +487,6 @@ router.patch('/:id/restore', requireAuth, requireRole('admin'), async (req, res)
   }
 });
 
-// GET /api/users/my-profile — returns current user's profile with linked students (for parents)
-router.get('/my-profile', requireAuth, async (req, res) => {
-  try {
-    const [user] = await db.select().from(users).where(eq(users.id, req.user.id));
-    if (!user) return res.status(404).json({ error: 'User not found' });
-
-    let linkedStudents = [];
-    if (user.role === 'parent') {
-      linkedStudents = await db.select({
-        id: students.id,
-        firstName: students.firstName,
-        lastName: students.lastName,
-        grade: students.grade,
-        status: students.status,
-      }).from(guardianStudents)
-        .innerJoin(students, eq(guardianStudents.studentId, students.id))
-        .where(eq(guardianStudents.guardianUserId, user.id));
-    }
-
-    res.json({
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      full_name: `${user.firstName} ${user.lastName}`,
-      student_ids: linkedStudents.map(s => s.id),
-      students: linkedStudents,
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // POST /api/users/add-student — link an existing student to the current parent
 router.post('/add-student', requireAuth, requireRole('parent', 'admin'), async (req, res) => {
   try {
@@ -374,17 +505,6 @@ router.post('/add-student', requireAuth, requireRole('parent', 'admin'), async (
     }).onConflictDoNothing();
 
     res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// GET /api/users/invite — list pending/invited users
-router.get('/invite', requireAuth, requireRole('admin'), async (req, res) => {
-  try {
-    const pending = await db.select({ id: users.id, email: users.email, role: users.role, firstName: users.firstName, lastName: users.lastName })
-      .from(users).where(eq(users.status, 'invited'));
-    res.json(pending);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
