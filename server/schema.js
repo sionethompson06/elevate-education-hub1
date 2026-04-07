@@ -129,7 +129,7 @@ export const enrollments = pgTable('enrollments', {
   programId: integer('program_id').notNull().references(() => programs.id),
   sectionId: integer('section_id').references(() => sections.id),
   schoolYearId: integer('school_year_id').notNull().references(() => schoolYears.id),
-  status: varchar('status', { length: 20 }).notNull().default('pending'),
+  status: varchar('status', { length: 20 }).notNull().default('pending_payment'),
   startDate: date('start_date'),
   endDate: date('end_date'),
   enrolledBy: integer('enrolled_by').references(() => users.id),

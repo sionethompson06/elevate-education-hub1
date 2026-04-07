@@ -29,7 +29,7 @@ export default function Billing() {
     enabled: studentIds.length > 0,
   });
 
-  const pending = enrollments.filter(e => ["pending_payment", "payment_failed"].includes(e.status));
+  const pending = enrollments.filter(e => ["pending_payment", "pending", "payment_failed"].includes(e.status));
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">

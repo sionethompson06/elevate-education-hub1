@@ -37,7 +37,7 @@ export default function Programs() {
   const myEnrollments = enrollmentData?.enrollments || [];
 
   const getEnrollmentStatus = (programId) => {
-    return myEnrollments.find(e => e.program_id === programId && ["active", "active_override", "pending_payment"].includes(e.status));
+    return myEnrollments.find(e => e.program_id === programId && ["active", "active_override", "pending_payment", "pending"].includes(e.status));
   };
 
   const getBillingCycle = (program) => billingChoice[program.id] || "monthly";

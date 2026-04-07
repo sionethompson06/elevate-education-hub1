@@ -8,14 +8,22 @@ import EnrollmentDetailPanel from "@/components/admin/enrollments/EnrollmentDeta
 
 const STATUS_COLORS = {
   pending_payment: "bg-yellow-100 text-yellow-700",
-  active: "bg-green-100 text-green-700",
+  pending:         "bg-yellow-100 text-yellow-700", // legacy alias — normalized to pending_payment at startup
+  active:          "bg-green-100 text-green-700",
   active_override: "bg-purple-100 text-purple-700",
-  payment_failed: "bg-red-100 text-red-700",
-  paused: "bg-slate-100 text-slate-500",
-  cancelled: "bg-slate-100 text-slate-400",
+  payment_failed:  "bg-red-100 text-red-700",
+  paused:          "bg-slate-100 text-slate-500",
+  cancelled:       "bg-slate-100 text-slate-400",
 };
 
+// 'pending_payment' filter also catches legacy 'pending' records
 const STATUS_FILTERS = ["all", "pending_payment", "active", "active_override", "payment_failed", "paused", "cancelled"];
+
+// Normalize display label for status values
+function statusLabel(status) {
+  if (status === "pending" || status === "pending_payment") return "Pending Payment";
+  return status?.replace(/_/g, " ") ?? "";
+}
 
 export default function Enrollments() {
   const [statusFilter, setStatusFilter] = useState("all");
@@ -27,9 +35,12 @@ export default function Enrollments() {
     queryFn: () => apiGet("/enrollments").then(d => d.enrollments || []),
   });
 
+  // Treat 'pending' as 'pending_payment' for filtering purposes
   const enrollments = statusFilter === "all"
     ? allEnrollments
-    : allEnrollments.filter(e => e.status === statusFilter);
+    : statusFilter === "pending_payment"
+      ? allEnrollments.filter(e => e.status === "pending_payment" || e.status === "pending")
+      : allEnrollments.filter(e => e.status === statusFilter);
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -52,10 +63,12 @@ export default function Enrollments() {
                 : "bg-white text-slate-600 border border-slate-200 hover:border-[#1a3c5e]"
             }`}
           >
-            {s === "all" ? "All" : s.replace(/_/g, " ")}
+            {s === "all" ? "All" : statusLabel(s)}
             {s !== "all" && (
               <span className="ml-1 opacity-60">
-                ({allEnrollments.filter(e => e.status === s).length})
+                ({s === "pending_payment"
+                  ? allEnrollments.filter(e => e.status === "pending_payment" || e.status === "pending").length
+                  : allEnrollments.filter(e => e.status === s).length})
               </span>
             )}
           </button>
@@ -99,7 +112,7 @@ export default function Enrollments() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-sm text-slate-600">{e.programName || `Program #${e.programId}`}</p>
                         <span className={`px-2 py-0.5 rounded-full text-xs font-semibold capitalize ${sc}`}>
-                          {e.status?.replace(/_/g, " ")}
+                          {statusLabel(e.status)}
                         </span>
                         {e.invoiceStatus && (
                           <span className="px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-500">

@@ -15,6 +15,7 @@ const STATUS_CONFIG = {
   active:          { label: "Active",    color: "bg-green-100 text-green-700 border-green-200",    icon: CheckCircle },
   active_override: { label: "Active",    color: "bg-green-100 text-green-700 border-green-200",    icon: CheckCircle },
   pending_payment: { label: "Pending",   color: "bg-yellow-100 text-yellow-700 border-yellow-200", icon: Clock },
+  pending:         { label: "Pending",   color: "bg-yellow-100 text-yellow-700 border-yellow-200", icon: Clock },
   payment_failed:  { label: "Past Due",  color: "bg-red-100 text-red-700 border-red-200",           icon: AlertCircle },
   cancelled:       { label: "Cancelled", color: "bg-slate-100 text-slate-500 border-slate-200",    icon: XCircle },
   paused:          { label: "Paused",    color: "bg-orange-100 text-orange-600 border-orange-200", icon: Clock },
@@ -70,7 +71,7 @@ export default function PaymentsBilling() {
     const statusMatch =
       statusFilter === "all" ||
       (statusFilter === "active"    && ["active", "active_override"].includes(e.status)) ||
-      (statusFilter === "pending"   && e.status === "pending_payment") ||
+      (statusFilter === "pending"   && ["pending_payment", "pending"].includes(e.status)) ||
       (statusFilter === "past_due"  && e.status === "payment_failed") ||
       (statusFilter === "cancelled" && e.status === "cancelled");
     const studentMatch = studentFilter === "all" || e.studentId === studentFilter;

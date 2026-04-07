@@ -4,9 +4,26 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcryptjs';
-import { eq } from 'drizzle-orm';
+import { eq, ne } from 'drizzle-orm';
 import db from './db-postgres.js';
-import { users } from './schema.js';
+import { users, enrollments } from './schema.js';
+
+// One-time data migration: normalize legacy 'pending' enrollment status → 'pending_payment'
+// Safe to run on every startup — no-op once all records are already normalized.
+async function normalizeEnrollmentStatuses() {
+  try {
+    const result = await db.update(enrollments)
+      .set({ status: 'pending_payment' })
+      .where(eq(enrollments.status, 'pending'))
+      .returning({ id: enrollments.id });
+    if (result.length > 0) {
+      console.log(`[migration] Normalized ${result.length} enrollment(s): 'pending' → 'pending_payment'`);
+    }
+  } catch (err) {
+    console.error('[migration] normalizeEnrollmentStatuses error:', err.message);
+  }
+}
+normalizeEnrollmentStatuses();
 import applicationsRouter from './routes/applications.js';
 import authRouter from './routes/auth.js';
 import contactRouter from './routes/contact.js';

@@ -103,7 +103,7 @@ function EnrollmentBadge({ enrollment }) {
 // ── Academic card (Hybrid Microschool) ────────────────────────────────────────
 function AcademicCard({ program, enrollments, onEnroll }) {
   const colors = CATEGORY_COLORS.academic;
-  const enrolled = enrollments.find(e => e.programId === program.id && ["active","active_override","pending_payment"].includes(e.status));
+  const enrolled = enrollments.find(e => e.programId === program.id && ["active","active_override","pending_payment","pending"].includes(e.status));
   return (
     <div className="rounded-2xl bg-white border border-slate-200 shadow-sm overflow-hidden">
       <div className={`h-1.5 ${colors.bar}`} />
@@ -136,8 +136,8 @@ function AcademicCard({ program, enrollments, onEnroll }) {
 // ── Virtual Homeschool card ───────────────────────────────────────────────────
 function VirtualCard({ program, enrollments, onEnroll }) {
   const colors = CATEGORY_COLORS.virtual_homeschool;
-  const enrolled1x = enrollments.find(e => e.programId === program.id && e.program_variant === '1x' && ["active","active_override","pending_payment"].includes(e.status));
-  const enrolled2x = enrollments.find(e => e.programId === program.id && e.program_variant === '2x' && ["active","active_override","pending_payment"].includes(e.status));
+  const enrolled1x = enrollments.find(e => e.programId === program.id && e.program_variant === '1x' && ["active","active_override","pending_payment","pending"].includes(e.status));
+  const enrolled2x = enrollments.find(e => e.programId === program.id && e.program_variant === '2x' && ["active","active_override","pending_payment","pending"].includes(e.status));
   return (
     <div className="rounded-2xl bg-white border border-slate-200 shadow-sm overflow-hidden">
       <div className={`h-1.5 ${colors.bar}`} />
@@ -176,7 +176,7 @@ function VirtualCard({ program, enrollments, onEnroll }) {
 // ── Athletic / Performance card ───────────────────────────────────────────────
 function AthleticCard({ program, enrollments, onEnroll }) {
   const colors = CATEGORY_COLORS.athletic;
-  const enrolled = enrollments.find(e => e.programId === program.id && ["active","active_override","pending_payment"].includes(e.status));
+  const enrolled = enrollments.find(e => e.programId === program.id && ["active","active_override","pending_payment","pending"].includes(e.status));
   return (
     <div className="rounded-2xl bg-white border border-slate-200 shadow-sm overflow-hidden">
       <div className={`h-1.5 ${colors.bar}`} />
