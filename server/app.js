@@ -4,8 +4,8 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcryptjs';
-import { eq, sql } from 'drizzle-orm';
-import db from './db-postgres.js';
+import { eq } from 'drizzle-orm';
+import db, { rawSql } from './db-postgres.js';
 import { users, enrollments } from './schema.js';
 
 // ── Startup migrations (idempotent — safe to run on every boot) ────────────────
@@ -28,27 +28,27 @@ async function normalizeEnrollmentStatuses() {
 // 2. Create enrollment_overrides table if it doesn't exist
 async function ensureOverridesTable() {
   try {
-    await db.execute(sql`
+    await rawSql`
       CREATE TABLE IF NOT EXISTS enrollment_overrides (
-        id                  SERIAL PRIMARY KEY,
-        enrollment_id       INTEGER NOT NULL REFERENCES enrollments(id),
-        override_type       VARCHAR(50) NOT NULL,
-        reason              TEXT NOT NULL,
-        amount_waived_cents INTEGER NOT NULL DEFAULT 0,
+        id                    SERIAL PRIMARY KEY,
+        enrollment_id         INTEGER NOT NULL REFERENCES enrollments(id),
+        override_type         VARCHAR(50) NOT NULL,
+        reason                TEXT NOT NULL,
+        amount_waived_cents   INTEGER NOT NULL DEFAULT 0,
         amount_deferred_cents INTEGER NOT NULL DEFAULT 0,
         amount_due_now_cents  INTEGER NOT NULL DEFAULT 0,
-        effective_start_at  DATE,
-        effective_end_at    DATE,
-        is_active           BOOLEAN NOT NULL DEFAULT TRUE,
-        approved_by_user_id INTEGER REFERENCES users(id),
-        approved_by_name    VARCHAR(200),
-        approved_at         TIMESTAMP NOT NULL DEFAULT NOW(),
-        revoked_at          TIMESTAMP,
-        revoke_reason       TEXT,
-        notes               TEXT,
-        created_at          TIMESTAMP NOT NULL DEFAULT NOW()
+        effective_start_at    DATE,
+        effective_end_at      DATE,
+        is_active             BOOLEAN NOT NULL DEFAULT TRUE,
+        approved_by_user_id   INTEGER REFERENCES users(id),
+        approved_by_name      VARCHAR(200),
+        approved_at           TIMESTAMP NOT NULL DEFAULT NOW(),
+        revoked_at            TIMESTAMP,
+        revoke_reason         TEXT,
+        notes                 TEXT,
+        created_at            TIMESTAMP NOT NULL DEFAULT NOW()
       )
-    `);
+    `;
     console.log('[migration] enrollment_overrides table ready');
   } catch (err) {
     console.error('[migration] ensureOverridesTable error:', err.message);

@@ -13,6 +13,11 @@ if (!connectionString) {
   console.error('[DB] ERROR: DATABASE_URL environment variable is not set.');
 }
 
+// rawSql is the low-level executor for DDL/raw queries (bypasses Drizzle adapter quirks)
+// For Neon: the neon() tagged-template function
+// For local pg: a thin wrapper around pool.query
+export let rawSql = null;
+
 // Use Neon serverless HTTP driver for cloud/serverless (Vercel, Replit)
 // Fall back to standard pg pool for local development
 function createDb() {
@@ -21,11 +26,17 @@ function createDb() {
   }
   // Neon URLs contain "neon.tech" — use the serverless HTTP driver
   if (connectionString.includes('neon.tech') || connectionString.includes('neondb')) {
-    const sql = neon(connectionString);
-    return drizzleNeon(sql, { schema });
+    const neonClient = neon(connectionString);
+    rawSql = neonClient;
+    return drizzleNeon(neonClient, { schema });
   }
   // Local PostgreSQL — use standard pg pool
   const pool = new Pool({ connectionString });
+  rawSql = async (strings, ...values) => {
+    const text = strings.reduce((acc, str, i) => acc + str + (i < values.length ? `$${i + 1}` : ''), '');
+    const result = await pool.query(text, values);
+    return result.rows;
+  };
   return drizzlePg(pool, { schema });
 }
 

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { eq, desc, and, sql } from 'drizzle-orm';
+import { eq, desc, and, ne } from 'drizzle-orm';
 import db from '../db-postgres.js';
 import { enrollments, programs, students, users, billingAccounts, invoices, schoolYears, sections, guardianStudents, enrollmentOverrides } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
@@ -257,34 +257,35 @@ router.get('/:id/overrides', requireAuth, requireRole('admin'), async (req, res)
     const enrollmentId = parseInt(req.params.id);
     if (isNaN(enrollmentId)) return res.status(400).json({ success: false, error: 'Invalid enrollment ID' });
 
-    // Query via raw SQL since the table may have been created post-startup
-    const rows = await db.execute(sql`
-      SELECT eo.*,
-             u.first_name || ' ' || u.last_name AS approved_by_full_name
-      FROM enrollment_overrides eo
-      LEFT JOIN users u ON u.id = eo.approved_by_user_id
-      WHERE eo.enrollment_id = ${enrollmentId}
-      ORDER BY eo.created_at DESC
-    `);
+    const rows = await db.select({
+      id: enrollmentOverrides.id,
+      enrollmentId: enrollmentOverrides.enrollmentId,
+      overrideType: enrollmentOverrides.overrideType,
+      reason: enrollmentOverrides.reason,
+      amountWaivedCents: enrollmentOverrides.amountWaivedCents,
+      amountDeferredCents: enrollmentOverrides.amountDeferredCents,
+      amountDueNowCents: enrollmentOverrides.amountDueNowCents,
+      effectiveStartAt: enrollmentOverrides.effectiveStartAt,
+      effectiveEndAt: enrollmentOverrides.effectiveEndAt,
+      isActive: enrollmentOverrides.isActive,
+      approvedByUserId: enrollmentOverrides.approvedByUserId,
+      approvedByName: enrollmentOverrides.approvedByName,
+      approvedAt: enrollmentOverrides.approvedAt,
+      revokedAt: enrollmentOverrides.revokedAt,
+      revokeReason: enrollmentOverrides.revokeReason,
+      notes: enrollmentOverrides.notes,
+      createdAt: enrollmentOverrides.createdAt,
+      approverFirstName: users.firstName,
+      approverLastName: users.lastName,
+    }).from(enrollmentOverrides)
+      .leftJoin(users, eq(enrollmentOverrides.approvedByUserId, users.id))
+      .where(eq(enrollmentOverrides.enrollmentId, enrollmentId))
+      .orderBy(desc(enrollmentOverrides.createdAt));
 
-    const overrides = (rows.rows || rows).map(o => ({
-      id: o.id,
-      enrollmentId: o.enrollment_id,
-      overrideType: o.override_type,
-      reason: o.reason,
-      amountWaivedCents: o.amount_waived_cents,
-      amountDeferredCents: o.amount_deferred_cents,
-      amountDueNowCents: o.amount_due_now_cents,
-      effectiveStartAt: o.effective_start_at,
-      effectiveEndAt: o.effective_end_at,
-      isActive: o.is_active,
-      approvedByUserId: o.approved_by_user_id,
-      approvedByName: o.approved_by_name || o.approved_by_full_name || 'Admin',
-      approvedAt: o.approved_at,
-      revokedAt: o.revoked_at,
-      revokeReason: o.revoke_reason,
-      notes: o.notes,
-      createdAt: o.created_at,
+    const overrides = rows.map(o => ({
+      ...o,
+      approvedByName: o.approvedByName ||
+        (o.approverFirstName ? `${o.approverFirstName} ${o.approverLastName || ''}`.trim() : 'Admin'),
     }));
 
     res.json({ success: true, overrides });
@@ -320,28 +321,29 @@ router.post('/:id/override', requireAuth, requireRole('admin'), async (req, res)
     const adminName = admin ? `${admin.firstName} ${admin.lastName}`.trim() : 'Admin';
 
     // Deactivate any prior active override on this enrollment
-    await db.execute(sql`
-      UPDATE enrollment_overrides
-      SET is_active = FALSE, revoked_at = NOW(), revoke_reason = 'Superseded by new override'
-      WHERE enrollment_id = ${enrollmentId} AND is_active = TRUE
-    `);
+    await db.update(enrollmentOverrides)
+      .set({ isActive: false, revokedAt: new Date(), revokeReason: 'Superseded by new override' })
+      .where(and(
+        eq(enrollmentOverrides.enrollmentId, enrollmentId),
+        eq(enrollmentOverrides.isActive, true)
+      ));
 
     // Insert the new override record
-    const inserted = await db.execute(sql`
-      INSERT INTO enrollment_overrides
-        (enrollment_id, override_type, reason,
-         amount_waived_cents, amount_deferred_cents, amount_due_now_cents,
-         effective_start_at, effective_end_at,
-         is_active, approved_by_user_id, approved_by_name, approved_at, notes)
-      VALUES
-        (${enrollmentId}, ${overrideType}, ${reason.trim()},
-         ${Number(amountWaivedCents)}, ${Number(amountDeferredCents)}, ${Number(amountDueNowCents)},
-         ${effectiveStartAt || null}, ${effectiveEndAt || null},
-         TRUE, ${req.user.id}, ${adminName}, NOW(),
-         ${notes || null})
-      RETURNING *
-    `);
-    const newOverride = (inserted.rows || inserted)[0];
+    const [newOverride] = await db.insert(enrollmentOverrides).values({
+      enrollmentId,
+      overrideType,
+      reason: reason.trim(),
+      amountWaivedCents: Number(amountWaivedCents),
+      amountDeferredCents: Number(amountDeferredCents),
+      amountDueNowCents: Number(amountDueNowCents),
+      effectiveStartAt: effectiveStartAt || null,
+      effectiveEndAt: effectiveEndAt || null,
+      isActive: true,
+      approvedByUserId: req.user.id,
+      approvedByName: adminName,
+      approvedAt: new Date(),
+      notes: notes || null,
+    }).returning();
 
     // Update enrollment status → active_override
     await db.update(enrollments)
@@ -358,9 +360,12 @@ router.post('/:id/override', requireAuth, requireRole('admin'), async (req, res)
     // If comped or scholarship: mark linked invoice as waived (status = 'waived')
     // If deferred: leave invoice pending, just activate the enrollment
     if (['comped', 'scholarship'].includes(overrideType)) {
-      await db.execute(sql`
-        UPDATE invoices SET status = 'waived' WHERE enrollment_id = ${enrollmentId} AND status != 'paid'
-      `);
+      await db.update(invoices)
+        .set({ status: 'waived' })
+        .where(and(
+          eq(invoices.enrollmentId, enrollmentId),
+          ne(invoices.status, 'paid')
+        ));
     }
 
     await logAudit({
@@ -389,36 +394,35 @@ router.patch('/overrides/:overrideId/revoke', requireAuth, requireRole('admin'),
     const { revokeReason } = req.body;
     if (!revokeReason?.trim()) return res.status(400).json({ success: false, error: 'revokeReason is required' });
 
-    // Fetch override to get enrollment_id
-    const rows = await db.execute(sql`
-      SELECT * FROM enrollment_overrides WHERE id = ${overrideId}
-    `);
-    const override = (rows.rows || rows)[0];
+    // Fetch override to get enrollmentId
+    const [override] = await db.select().from(enrollmentOverrides)
+      .where(eq(enrollmentOverrides.id, overrideId));
     if (!override) return res.status(404).json({ success: false, error: 'Override not found' });
-    if (!override.is_active) return res.status(400).json({ success: false, error: 'Override is already revoked' });
+    if (!override.isActive) return res.status(400).json({ success: false, error: 'Override is already revoked' });
 
     // Deactivate the override
-    await db.execute(sql`
-      UPDATE enrollment_overrides
-      SET is_active = FALSE, revoked_at = NOW(), revoke_reason = ${revokeReason.trim()}
-      WHERE id = ${overrideId}
-    `);
+    await db.update(enrollmentOverrides)
+      .set({ isActive: false, revokedAt: new Date(), revokeReason: revokeReason.trim() })
+      .where(eq(enrollmentOverrides.id, overrideId));
 
     // Revert enrollment to pending_payment
     await db.update(enrollments)
       .set({ status: 'pending_payment' })
-      .where(eq(enrollments.id, override.enrollment_id));
+      .where(eq(enrollments.id, override.enrollmentId));
 
     // Re-open waived invoices if any
-    await db.execute(sql`
-      UPDATE invoices SET status = 'pending' WHERE enrollment_id = ${override.enrollment_id} AND status = 'waived'
-    `);
+    await db.update(invoices)
+      .set({ status: 'pending' })
+      .where(and(
+        eq(invoices.enrollmentId, override.enrollmentId),
+        eq(invoices.status, 'waived')
+      ));
 
     await logAudit({
       userId: req.user.id,
       action: 'override_revoke',
       entityType: 'enrollment',
-      entityId: override.enrollment_id,
+      entityId: override.enrollmentId,
       details: { overrideId, revokeReason },
       ipAddress: req.ip,
     });
