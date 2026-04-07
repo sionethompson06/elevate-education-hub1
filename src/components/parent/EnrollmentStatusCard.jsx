@@ -11,6 +11,15 @@ const STATUS_CONFIG = {
     label: "Pending Payment",
     showPay: true,
   },
+  // Legacy: 'pending' maps to pending_payment
+  pending: {
+    icon: Clock,
+    bg: "border-yellow-200 bg-yellow-50",
+    iconColor: "text-yellow-600",
+    badge: "bg-yellow-100 text-yellow-700",
+    label: "Pending Payment",
+    showPay: true,
+  },
   active: {
     icon: CheckCircle,
     bg: "border-green-200 bg-green-50",
@@ -24,7 +33,7 @@ const STATUS_CONFIG = {
     bg: "border-purple-200 bg-purple-50",
     iconColor: "text-purple-600",
     badge: "bg-purple-100 text-purple-700",
-    label: "Admin Approved Enrollment",
+    label: "Admin Approved",
     showPay: false,
   },
   payment_failed: {
@@ -61,10 +70,36 @@ const PAYMENT_STATUS_LABELS = {
   unpaid: null,
 };
 
+// Derive a payment status proxy from invoice data when an explicit payment_status is absent
+function derivePaymentStatus(enrollment) {
+  if (enrollment.payment_status) return enrollment.payment_status;
+  if (enrollment.invoiceStatus === "waived") return "waived";
+  if (enrollment.invoiceStatus === "paid") return "paid";
+  return null;
+}
+
+// Derive amount due from invoice data when an explicit amount_due is absent
+function deriveAmountDue(enrollment) {
+  if (enrollment.amount_due != null) return enrollment.amount_due;
+  if (enrollment.invoiceAmount) return enrollment.invoiceAmount / 100; // cents → dollars if needed
+  return 0;
+}
+
 export default function EnrollmentStatusCard({ enrollment }) {
   const sc = STATUS_CONFIG[enrollment.status] || STATUS_CONFIG.pending_payment;
   const Icon = sc.icon;
-  const paymentLabel = PAYMENT_STATUS_LABELS[enrollment.payment_status];
+
+  // Support both legacy snake_case fields and new camelCase API fields
+  const programName = enrollment.programName || enrollment.program_name || "—";
+  const billingCycle = enrollment.programBillingCycle || enrollment.billing_cycle;
+  const enrolledDate = enrollment.createdAt || enrollment.enrolled_date;
+  const paymentStatus = derivePaymentStatus(enrollment);
+  const amountDue = deriveAmountDue(enrollment);
+  const paymentLabel = PAYMENT_STATUS_LABELS[paymentStatus];
+
+  const formattedDate = enrolledDate
+    ? new Date(enrolledDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    : null;
 
   return (
     <div className={`rounded-2xl border-2 p-5 ${sc.bg}`}>
@@ -75,7 +110,7 @@ export default function EnrollmentStatusCard({ enrollment }) {
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <p className="font-semibold text-slate-800">{enrollment.program_name}</p>
+              <p className="font-semibold text-slate-800">{programName}</p>
               <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${sc.badge}`}>
                 {sc.label}
               </span>
@@ -86,13 +121,13 @@ export default function EnrollmentStatusCard({ enrollment }) {
               )}
             </div>
             <p className="text-xs text-slate-500 mt-1">
-              Enrolled {enrollment.enrolled_date}
-              {enrollment.billing_cycle ? ` · ${enrollment.billing_cycle.replace(/_/g, " ")}` : ""}
+              {formattedDate ? `Enrolled ${formattedDate}` : ""}
+              {billingCycle ? `${formattedDate ? " · " : ""}${billingCycle.replace(/_/g, " ")}` : ""}
             </p>
             {/* Show remaining due for partial/deferred */}
-            {["partial", "deferred"].includes(enrollment.payment_status) && enrollment.amount_due > 0 && (
+            {["partial", "deferred"].includes(paymentStatus) && amountDue > 0 && (
               <p className="text-sm font-semibold text-slate-700 mt-1">
-                Remaining balance: <span className="text-[#1a3c5e]">${enrollment.amount_due.toLocaleString()}</span>
+                Remaining balance: <span className="text-[#1a3c5e]">${amountDue.toLocaleString()}</span>
               </p>
             )}
           </div>

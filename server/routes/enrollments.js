@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { eq, desc, and, ne } from 'drizzle-orm';
 import db from '../db-postgres.js';
-import { enrollments, programs, students, users, billingAccounts, invoices, schoolYears, sections, guardianStudents, enrollmentOverrides } from '../schema.js';
+import { enrollments, programs, students, users, billingAccounts, invoices, schoolYears, sections, guardianStudents, enrollmentOverrides, coachAssignments, staffProfiles } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { logAudit } from '../services/audit.service.js';
 
@@ -58,6 +58,36 @@ router.get('/my-students', requireAuth, async (req, res) => {
         enr.invoiceStatus = inv?.status || null;
         enr.invoiceDueDate = inv?.dueDate || null;
         enr.invoiceDescription = inv?.description || null;
+      }
+    }
+
+    // Attach coach assignments (with coach user details) to each student
+    if (myStudents.length > 0) {
+      const allCoachRows = await db.select({
+        studentId: coachAssignments.studentId,
+        coachType: coachAssignments.coachType,
+        coachFirstName: users.firstName,
+        coachLastName: users.lastName,
+        coachTitle: staffProfiles.title,
+      }).from(coachAssignments)
+        .innerJoin(users, eq(coachAssignments.coachUserId, users.id))
+        .leftJoin(staffProfiles, eq(coachAssignments.coachUserId, staffProfiles.userId))
+        .where(eq(coachAssignments.isActive, true));
+
+      const studentIdSet = new Set(myStudents.map(s => s.id));
+      const coachMap = {};
+      for (const row of allCoachRows) {
+        if (!studentIdSet.has(row.studentId)) continue;
+        if (!coachMap[row.studentId]) coachMap[row.studentId] = [];
+        coachMap[row.studentId].push({
+          coachType: row.coachType,
+          coachFirstName: row.coachFirstName,
+          coachLastName: row.coachLastName,
+          coachTitle: row.coachTitle,
+        });
+      }
+      for (const s of myStudents) {
+        s.coaches = coachMap[s.id] || [];
       }
     }
 

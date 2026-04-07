@@ -61,6 +61,20 @@ export const emergencyContacts = pgTable('emergency_contacts', {
   priorityOrder: integer('priority_order').notNull().default(1),
 });
 
+export const studentMedicalInfo = pgTable('student_medical_info', {
+  id: serial('id').primaryKey(),
+  studentId: integer('student_id').notNull().unique().references(() => students.id),
+  allergies: text('allergies'),
+  medications: text('medications'),
+  medicalConditions: text('medical_conditions'),
+  doctorName: varchar('doctor_name', { length: 200 }),
+  doctorPhone: varchar('doctor_phone', { length: 30 }),
+  insuranceCarrier: varchar('insurance_carrier', { length: 200 }),
+  insurancePolicyNumber: varchar('insurance_policy_number', { length: 100 }),
+  notes: text('notes'),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
 export const schoolYears = pgTable('school_years', {
   id: serial('id').primaryKey(),
   name: varchar('name', { length: 50 }).notNull(),

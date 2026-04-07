@@ -55,8 +55,33 @@ async function ensureOverridesTable() {
   }
 }
 
+// 3. Create student_medical_info table if it doesn't exist
+async function ensureMedicalInfoTable() {
+  try {
+    await rawSql`
+      CREATE TABLE IF NOT EXISTS student_medical_info (
+        id                    SERIAL PRIMARY KEY,
+        student_id            INTEGER NOT NULL UNIQUE REFERENCES students(id),
+        allergies             TEXT,
+        medications           TEXT,
+        medical_conditions    TEXT,
+        doctor_name           VARCHAR(200),
+        doctor_phone          VARCHAR(30),
+        insurance_carrier     VARCHAR(200),
+        insurance_policy_number VARCHAR(100),
+        notes                 TEXT,
+        updated_at            TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `;
+    console.log('[migration] student_medical_info table ready');
+  } catch (err) {
+    console.error('[migration] ensureMedicalInfoTable error:', err.message);
+  }
+}
+
 normalizeEnrollmentStatuses();
 ensureOverridesTable();
+ensureMedicalInfoTable();
 import applicationsRouter from './routes/applications.js';
 import authRouter from './routes/auth.js';
 import contactRouter from './routes/contact.js';
