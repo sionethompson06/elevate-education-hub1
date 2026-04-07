@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import { eq, desc, and } from 'drizzle-orm';
+import { eq, desc, and, sql } from 'drizzle-orm';
 import db from '../db-postgres.js';
-import { enrollments, programs, students, users, billingAccounts, invoices, schoolYears, sections, guardianStudents } from '../schema.js';
+import { enrollments, programs, students, users, billingAccounts, invoices, schoolYears, sections, guardianStudents, enrollmentOverrides } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { logAudit } from '../services/audit.service.js';
 
@@ -245,6 +245,187 @@ router.patch('/:id', requireAuth, requireRole('admin'), async (req, res) => {
 
     res.json({ success: true, enrollment: updated });
   } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ── Override routes ───────────────────────────────────────────────────────────
+
+// GET /api/enrollments/:id/overrides — list all overrides for an enrollment
+router.get('/:id/overrides', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const enrollmentId = parseInt(req.params.id);
+    if (isNaN(enrollmentId)) return res.status(400).json({ success: false, error: 'Invalid enrollment ID' });
+
+    // Query via raw SQL since the table may have been created post-startup
+    const rows = await db.execute(sql`
+      SELECT eo.*,
+             u.first_name || ' ' || u.last_name AS approved_by_full_name
+      FROM enrollment_overrides eo
+      LEFT JOIN users u ON u.id = eo.approved_by_user_id
+      WHERE eo.enrollment_id = ${enrollmentId}
+      ORDER BY eo.created_at DESC
+    `);
+
+    const overrides = (rows.rows || rows).map(o => ({
+      id: o.id,
+      enrollmentId: o.enrollment_id,
+      overrideType: o.override_type,
+      reason: o.reason,
+      amountWaivedCents: o.amount_waived_cents,
+      amountDeferredCents: o.amount_deferred_cents,
+      amountDueNowCents: o.amount_due_now_cents,
+      effectiveStartAt: o.effective_start_at,
+      effectiveEndAt: o.effective_end_at,
+      isActive: o.is_active,
+      approvedByUserId: o.approved_by_user_id,
+      approvedByName: o.approved_by_name || o.approved_by_full_name || 'Admin',
+      approvedAt: o.approved_at,
+      revokedAt: o.revoked_at,
+      revokeReason: o.revoke_reason,
+      notes: o.notes,
+      createdAt: o.created_at,
+    }));
+
+    res.json({ success: true, overrides });
+  } catch (err) {
+    console.error('List overrides error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/enrollments/:id/override — apply an override
+// Sets enrollment → active_override, marks invoice waived (if comped/scholarship)
+// Makes student active for downstream workflows
+router.post('/:id/override', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const enrollmentId = parseInt(req.params.id);
+    if (isNaN(enrollmentId)) return res.status(400).json({ success: false, error: 'Invalid enrollment ID' });
+
+    const {
+      overrideType, reason,
+      amountWaivedCents = 0, amountDeferredCents = 0, amountDueNowCents = 0,
+      effectiveStartAt, effectiveEndAt, notes,
+    } = req.body;
+
+    if (!overrideType) return res.status(400).json({ success: false, error: 'overrideType is required' });
+    if (!reason?.trim()) return res.status(400).json({ success: false, error: 'reason is required' });
+
+    const [enrollment] = await db.select().from(enrollments).where(eq(enrollments.id, enrollmentId));
+    if (!enrollment) return res.status(404).json({ success: false, error: 'Enrollment not found' });
+
+    const [admin] = await db.select({
+      id: users.id, firstName: users.firstName, lastName: users.lastName,
+    }).from(users).where(eq(users.id, req.user.id));
+    const adminName = admin ? `${admin.firstName} ${admin.lastName}`.trim() : 'Admin';
+
+    // Deactivate any prior active override on this enrollment
+    await db.execute(sql`
+      UPDATE enrollment_overrides
+      SET is_active = FALSE, revoked_at = NOW(), revoke_reason = 'Superseded by new override'
+      WHERE enrollment_id = ${enrollmentId} AND is_active = TRUE
+    `);
+
+    // Insert the new override record
+    const inserted = await db.execute(sql`
+      INSERT INTO enrollment_overrides
+        (enrollment_id, override_type, reason,
+         amount_waived_cents, amount_deferred_cents, amount_due_now_cents,
+         effective_start_at, effective_end_at,
+         is_active, approved_by_user_id, approved_by_name, approved_at, notes)
+      VALUES
+        (${enrollmentId}, ${overrideType}, ${reason.trim()},
+         ${Number(amountWaivedCents)}, ${Number(amountDeferredCents)}, ${Number(amountDueNowCents)},
+         ${effectiveStartAt || null}, ${effectiveEndAt || null},
+         TRUE, ${req.user.id}, ${adminName}, NOW(),
+         ${notes || null})
+      RETURNING *
+    `);
+    const newOverride = (inserted.rows || inserted)[0];
+
+    // Update enrollment status → active_override
+    await db.update(enrollments)
+      .set({ status: 'active_override' })
+      .where(eq(enrollments.id, enrollmentId));
+
+    // Mark student as active so they're eligible for downstream assignment
+    if (enrollment.studentId) {
+      await db.update(students)
+        .set({ status: 'active' })
+        .where(eq(students.id, enrollment.studentId));
+    }
+
+    // If comped or scholarship: mark linked invoice as waived (status = 'waived')
+    // If deferred: leave invoice pending, just activate the enrollment
+    if (['comped', 'scholarship'].includes(overrideType)) {
+      await db.execute(sql`
+        UPDATE invoices SET status = 'waived' WHERE enrollment_id = ${enrollmentId} AND status != 'paid'
+      `);
+    }
+
+    await logAudit({
+      userId: req.user.id,
+      action: 'override_create',
+      entityType: 'enrollment',
+      entityId: enrollmentId,
+      details: { overrideType, reason, adminName },
+      ipAddress: req.ip,
+    });
+
+    res.json({ success: true, override: newOverride });
+  } catch (err) {
+    console.error('Apply override error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// PATCH /api/enrollments/overrides/:overrideId/revoke — revoke an override
+// Reverts enrollment to pending_payment
+router.patch('/overrides/:overrideId/revoke', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const overrideId = parseInt(req.params.overrideId);
+    if (isNaN(overrideId)) return res.status(400).json({ success: false, error: 'Invalid override ID' });
+
+    const { revokeReason } = req.body;
+    if (!revokeReason?.trim()) return res.status(400).json({ success: false, error: 'revokeReason is required' });
+
+    // Fetch override to get enrollment_id
+    const rows = await db.execute(sql`
+      SELECT * FROM enrollment_overrides WHERE id = ${overrideId}
+    `);
+    const override = (rows.rows || rows)[0];
+    if (!override) return res.status(404).json({ success: false, error: 'Override not found' });
+    if (!override.is_active) return res.status(400).json({ success: false, error: 'Override is already revoked' });
+
+    // Deactivate the override
+    await db.execute(sql`
+      UPDATE enrollment_overrides
+      SET is_active = FALSE, revoked_at = NOW(), revoke_reason = ${revokeReason.trim()}
+      WHERE id = ${overrideId}
+    `);
+
+    // Revert enrollment to pending_payment
+    await db.update(enrollments)
+      .set({ status: 'pending_payment' })
+      .where(eq(enrollments.id, override.enrollment_id));
+
+    // Re-open waived invoices if any
+    await db.execute(sql`
+      UPDATE invoices SET status = 'pending' WHERE enrollment_id = ${override.enrollment_id} AND status = 'waived'
+    `);
+
+    await logAudit({
+      userId: req.user.id,
+      action: 'override_revoke',
+      entityType: 'enrollment',
+      entityId: override.enrollment_id,
+      details: { overrideId, revokeReason },
+      ipAddress: req.ip,
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Revoke override error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

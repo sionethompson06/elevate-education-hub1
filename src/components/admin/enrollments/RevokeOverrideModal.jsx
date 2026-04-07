@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { apiPatch } from "@/api/apiClient";
 import { Button } from "@/components/ui/button";
 import { X, Loader2, AlertTriangle } from "lucide-react";
 
@@ -13,13 +13,15 @@ export default function RevokeOverrideModal({ override, onClose, onSuccess }) {
     if (!reason.trim()) { setError("Revoke reason is required."); return; }
     setSaving(true);
     setError(null);
-    const res = await base44.functions.invoke("adminOverride", {
-      action: "revoke",
-      override_id: override.id,
-      revoke_reason: reason,
-    });
-    if (res.data?.error) { setError(res.data.error); setSaving(false); return; }
-    onSuccess();
+    try {
+      await apiPatch(`/enrollments/overrides/${override.id}/revoke`, {
+        revokeReason: reason.trim(),
+      });
+      onSuccess();
+    } catch (err) {
+      setError(err.message || "Failed to revoke override.");
+      setSaving(false);
+    }
   };
 
   return (
@@ -29,11 +31,15 @@ export default function RevokeOverrideModal({ override, onClose, onSuccess }) {
           <h2 className="font-bold text-red-700 flex items-center gap-2">
             <AlertTriangle className="w-5 h-5" /> Revoke Override
           </h2>
-          <button onClick={onClose} className="p-1 rounded hover:bg-slate-100"><X className="w-5 h-5 text-slate-500" /></button>
+          <button onClick={onClose} className="p-1 rounded hover:bg-slate-100">
+            <X className="w-5 h-5 text-slate-500" />
+          </button>
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
-            Revoking this override will revert the enrollment to <strong>pending_payment</strong> and require the parent to complete payment.
+            Revoking this override will revert the enrollment to{" "}
+            <strong>Pending Payment</strong> and require the parent to complete payment.
+            Any waived invoices will be re-opened.
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Revoke Reason *</label>
@@ -41,11 +47,13 @@ export default function RevokeOverrideModal({ override, onClose, onSuccess }) {
               required
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-300 min-h-[80px]"
               value={reason}
-              onChange={(e) => setReason(e.target.value)}
+              onChange={e => setReason(e.target.value)}
               placeholder="Explain why this override is being revoked…"
             />
           </div>
-          {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">{error}</div>}
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">{error}</div>
+          )}
           <div className="flex justify-end gap-3 pt-2">
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
             <Button type="submit" disabled={saving} className="bg-red-600 hover:bg-red-700">

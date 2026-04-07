@@ -420,7 +420,25 @@ export const studentGoals = pgTable('student_goals', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
-export const rewardRedemptions = pgTable('reward_redemptions', {
+export const enrollmentOverrides = pgTable('enrollment_overrides', {
+  id: serial('id').primaryKey(),
+  enrollmentId: integer('enrollment_id').notNull().references(() => enrollments.id),
+  overrideType: varchar('override_type', { length: 50 }).notNull(),
+  reason: text('reason').notNull(),
+  amountWaivedCents: integer('amount_waived_cents').notNull().default(0),
+  amountDeferredCents: integer('amount_deferred_cents').notNull().default(0),
+  amountDueNowCents: integer('amount_due_now_cents').notNull().default(0),
+  effectiveStartAt: date('effective_start_at'),
+  effectiveEndAt: date('effective_end_at'),
+  isActive: boolean('is_active').notNull().default(true),
+  approvedByUserId: integer('approved_by_user_id').references(() => users.id),
+  approvedByName: varchar('approved_by_name', { length: 200 }),
+  approvedAt: timestamp('approved_at').defaultNow().notNull(),
+  revokedAt: timestamp('revoked_at'),
+  revokeReason: text('revoke_reason'),
+  notes: text('notes'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
   id: serial('id').primaryKey(),
   studentId: integer('student_id').notNull().references(() => students.id),
   catalogItemId: integer('catalog_item_id').references(() => rewardCatalog.id),
