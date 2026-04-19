@@ -113,13 +113,13 @@ router.get('/me', requireAuth, async (req, res) => {
   }
 });
 
-const DEV_ALLOWED_EMAILS = [
-  'admin@elevateperformance-academy.com',
-  'sarah.johnson@example.com',
-  'ethan.johnson@example.com',
-  'coach.martinez@elevateperformance-academy.com',
-  'coach.williams@elevateperformance-academy.com',
-];
+const DEMO_PROFILES = {
+  'admin@elevateperformance-academy.com':              { role: 'admin',              firstName: 'Admin',  lastName: 'EPA' },
+  'sarah.johnson@example.com':                         { role: 'parent',             firstName: 'Sarah',  lastName: 'Johnson' },
+  'ethan.johnson@example.com':                         { role: 'student',            firstName: 'Ethan',  lastName: 'Johnson' },
+  'coach.martinez@elevateperformance-academy.com':     { role: 'academic_coach',     firstName: 'Carlos', lastName: 'Martinez' },
+  'coach.williams@elevateperformance-academy.com':     { role: 'performance_coach',  firstName: 'Jordan', lastName: 'Williams' },
+};
 
 router.post('/dev-login', async (req, res) => {
   const { email } = req.body;
@@ -127,16 +127,24 @@ router.post('/dev-login', async (req, res) => {
     return res.status(400).json({ success: false, error: 'Email is required.' });
   }
   const normalizedEmail = email.toLowerCase().trim();
-  if (!DEV_ALLOWED_EMAILS.includes(normalizedEmail)) {
+  const profile = DEMO_PROFILES[normalizedEmail];
+  if (!profile) {
     return res.status(403).json({ success: false, error: 'This email is not authorized for demo login.' });
   }
   try {
-    const [user] = await db.select().from(users).where(eq(users.email, normalizedEmail));
+    let [user] = await db.select().from(users).where(eq(users.email, normalizedEmail));
     if (!user) {
-      return res.status(404).json({ success: false, error: 'User not found.' });
+      // Auto-create the demo user on first access — no seeding required
+      [user] = await db.insert(users).values({
+        email: normalizedEmail,
+        role: profile.role,
+        firstName: profile.firstName,
+        lastName: profile.lastName,
+        status: 'active',
+      }).returning();
     }
     const token = generateToken(user);
-    const roleForRoute = user.role.replace('_', '-');
+    const roleForRoute = user.role.replace(/_/g, '-');
     return res.json({
       success: true,
       token,
