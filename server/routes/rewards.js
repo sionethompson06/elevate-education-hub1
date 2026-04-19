@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import db from '../db-postgres.js';
 import { eq, desc } from 'drizzle-orm';
-import { rewardCatalog, studentPoints, pointTransactions } from '../schema.js';
+import { rewardCatalog, studentPoints, pointTransactions, rewardRedemptions } from '../schema.js';
 
 const router = Router();
 
@@ -52,6 +52,42 @@ router.post('/award', requireAuth, requireRole('admin', 'academic_coach', 'perfo
     } else {
       await db.insert(studentPoints).values({ studentId: Number(studentId), points: Number(points) });
     }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/redeem', requireAuth, async (req, res) => {
+  const { studentId, catalogItemId } = req.body;
+  if (!studentId || !catalogItemId) return res.status(400).json({ error: 'studentId and catalogItemId required' });
+  try {
+    const [item] = await db.select().from(rewardCatalog).where(eq(rewardCatalog.id, Number(catalogItemId)));
+    if (!item) return res.status(404).json({ error: 'Item not found' });
+
+    const [pts] = await db.select().from(studentPoints).where(eq(studentPoints.studentId, Number(studentId)));
+    const currentPts = pts?.points ?? 0;
+    if (currentPts < item.pointCost) return res.status(400).json({ error: 'Insufficient points' });
+
+    if (pts) {
+      await db.update(studentPoints).set({ points: currentPts - item.pointCost, updatedAt: new Date() })
+        .where(eq(studentPoints.studentId, Number(studentId)));
+    }
+
+    await db.insert(pointTransactions).values({
+      studentId: Number(studentId),
+      delta: -item.pointCost,
+      reason: `Redeemed: ${item.name}`,
+      catalogItemId: Number(catalogItemId),
+    });
+
+    await db.insert(rewardRedemptions).values({
+      studentId: Number(studentId),
+      catalogItemId: Number(catalogItemId),
+      pointsCost: item.pointCost,
+      status: 'pending',
+    });
+
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

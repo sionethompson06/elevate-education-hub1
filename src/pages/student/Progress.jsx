@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useAuth } from "@/lib/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { base44 } from "@/api/base44Client";
-import { BookOpen, CheckCircle, Clock, AlertCircle } from "lucide-react";
+import { apiGet } from "@/api/apiClient";
+import { BookOpen, CheckCircle, AlertCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import KPIBar from "@/components/gradebook/KPIBar";
 import LessonRow from "@/components/gradebook/LessonRow";
@@ -20,13 +20,17 @@ export default function StudentProgress() {
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["student-progress", user?.id, subject],
-    queryFn: () => base44.functions.invoke("gradebook", { action: "get_lessons", subject }).then(r => r.data),
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (subject !== "all") params.set("subject", subject);
+      const qs = params.toString();
+      return apiGet(`/gradebook/lessons${qs ? "?" + qs : ""}`);
+    },
     enabled: !!user,
   });
 
   const allLessons = data?.lessons || [];
   const kpis = data?.kpis;
-
   const filtered = allLessons.filter(l => statusTab === "all" || l.status === statusTab);
 
   return (
@@ -46,26 +50,19 @@ export default function StudentProgress() {
         </div>
       )}
 
-      {/* Filters */}
       <div className="flex flex-wrap gap-4 items-center">
         <div className="flex gap-1 flex-wrap">
           {SUBJECTS.map(s => (
-            <button
-              key={s}
-              onClick={() => setSubject(s)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors capitalize ${subject === s ? "bg-[#1a3c5e] text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
-            >
+            <button key={s} onClick={() => setSubject(s)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors capitalize ${subject === s ? "bg-[#1a3c5e] text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
               {s}
             </button>
           ))}
         </div>
         <div className="flex gap-1">
           {STATUS_TABS.map(s => (
-            <button
-              key={s}
-              onClick={() => setStatusTab(s)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors capitalize ${statusTab === s ? "bg-emerald-700 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
-            >
+            <button key={s} onClick={() => setStatusTab(s)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors capitalize ${statusTab === s ? "bg-emerald-700 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
               {s}
             </button>
           ))}

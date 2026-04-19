@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "@/lib/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { base44 } from "@/api/base44Client";
+import { apiGet } from "@/api/apiClient";
 import { Plus, Users, AlertTriangle, BookOpen } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,17 +22,19 @@ export default function AcademicCoachDashboard() {
 
   const { data: queueData, isLoading: queueLoading } = useQuery({
     queryKey: ["coach-queue", user?.id],
-    queryFn: () => base44.functions.invoke("gradebook", { action: "get_coach_queue" }).then(r => r.data),
+    queryFn: () => apiGet("/gradebook/queue"),
     enabled: !!user,
   });
 
   const { data: lessonsData, isLoading: lessonsLoading, refetch } = useQuery({
     queryKey: ["coach-lessons", user?.id, selectedStudent, subject],
-    queryFn: () => base44.functions.invoke("gradebook", {
-      action: "get_lessons",
-      student_id: selectedStudent || undefined,
-      subject,
-    }).then(r => r.data),
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (selectedStudent) params.set("student_id", selectedStudent);
+      if (subject !== "all") params.set("subject", subject);
+      const qs = params.toString();
+      return apiGet(`/gradebook/lessons${qs ? "?" + qs : ""}`);
+    },
     enabled: !!user,
   });
 
@@ -54,7 +56,7 @@ export default function AcademicCoachDashboard() {
             Academic Coach
           </div>
           <h1 className="text-3xl font-bold text-[#1a3c5e]">
-            Coach {user?.full_name?.split(" ").slice(-1)[0] || "Dashboard"}
+            Coach {user?.lastName || user?.last_name || "Dashboard"}
           </h1>
         </div>
         <Button className="bg-[#1a3c5e] hover:bg-[#0d2540]" onClick={() => setShowCreate(true)}>
@@ -62,11 +64,9 @@ export default function AcademicCoachDashboard() {
         </Button>
       </div>
 
-      {/* KPI bar for selected student or all */}
       {kpis && <KPIBar kpis={kpis} />}
 
       <div className="grid lg:grid-cols-3 gap-6">
-        {/* Student queue */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base text-slate-700 flex items-center gap-2">
@@ -109,14 +109,12 @@ export default function AcademicCoachDashboard() {
           </CardContent>
         </Card>
 
-        {/* Lesson list */}
         <Card className="lg:col-span-2">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <CardTitle className="text-base text-slate-700 flex items-center gap-2">
                 <BookOpen className="w-4 h-4" /> Lessons
               </CardTitle>
-              {/* Subject filter */}
               <div className="flex gap-1 flex-wrap">
                 {SUBJECTS.map(s => (
                   <button

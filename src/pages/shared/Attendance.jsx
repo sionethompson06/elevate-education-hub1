@@ -1,311 +1,210 @@
 import { useState } from "react";
 import { useAuth } from "@/lib/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { base44 } from "@/api/base44Client";
-import { CheckCircle, XCircle, Clock, Calendar, Filter, Plus, Users } from "lucide-react";
+import { apiGet, apiPost } from "@/api/apiClient";
+import { Calendar, Activity, Plus, Clock } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { format, parseISO } from "date-fns";
+import { format } from "date-fns";
 
-const PROGRAM_TYPES = ["all", "academic", "homeschool", "athletic", "special_event"];
-const PROGRAM_LABELS = { academic: "Academic", homeschool: "Homeschool", athletic: "Athletic", special_event: "Special Event" };
-const STATUS_CONFIG = {
-  present: { label: "Present", color: "bg-green-100 text-green-700", icon: CheckCircle },
-  absent: { label: "Absent", color: "bg-red-100 text-red-700", icon: XCircle },
-  excused: { label: "Excused", color: "bg-yellow-100 text-yellow-700", icon: Clock },
-  late: { label: "Late", color: "bg-orange-100 text-orange-700", icon: Clock },
-};
+const TYPE_LABELS = { strength: "Strength", conditioning: "Conditioning", skill: "Skill", speed: "Speed", recovery: "Recovery", general: "General" };
 
 export default function Attendance() {
   const { user } = useAuth();
   const qc = useQueryClient();
-  const [programFilter, setProgramFilter] = useState("all");
-  const [markingSession, setMarkingSession] = useState(null);
-  const [attendanceStatus, setAttendanceStatus] = useState("present");
+  const [showCreate, setShowCreate] = useState(false);
+  const [logForm, setLogForm] = useState({ studentId: "", date: "", type: "general", durationMinutes: 60, notes: "" });
   const [saving, setSaving] = useState(false);
-  const [showCreateSession, setShowCreateSession] = useState(false);
-  const [sessionForm, setSessionForm] = useState({ title: "", program_type: "academic", scheduled_at: "", duration_minutes: 60, location: "", student_id: "" });
-  const [selectedParentStudent, setSelectedParentStudent] = useState(null);
-  const [parentStudents, setParentStudents] = useState([]);
 
-  const isCoachOrAdmin = ["academic_coach", "performance_coach", "admin"].includes(user?.role);
+  const isCoach = ["academic_coach", "performance_coach", "admin"].includes(user?.role);
 
-  const { data: sessions = [], isLoading, refetch } = useQuery({
-    queryKey: ["attendance-sessions", user?.id, programFilter, selectedParentStudent],
-    queryFn: async () => {
-      const filters = {};
-      if (programFilter !== "all") filters.program_type = programFilter;
-
-      if (user?.role === "student") {
-        const students = await base44.entities.Student.filter({ user_id: user.id });
-        if (students[0]) filters.student_id = students[0].id;
-      } else if (user?.role === "academic_coach") {
-        filters.coach_user_id = user.id;
-      } else if (user?.role === "performance_coach") {
-        filters.coach_user_id = user.id;
-      } else if (user?.role === "parent") {
-        const parents = await base44.entities.Parent.filter({ user_email: user.email });
-        const parent = parents[0];
-        if (!parent?.student_ids?.length) return [];
-        const studs = await Promise.all(parent.student_ids.map(sid => base44.entities.Student.filter({ id: sid })));
-        setParentStudents(studs.flat());
-        const activeSid = selectedParentStudent || parent.student_ids[0];
-        if (!selectedParentStudent) setSelectedParentStudent(activeSid);
-        filters.student_id = activeSid;
-      }
-      return base44.entities.Session.filter(filters, "-scheduled_at", 100);
-    },
-    enabled: !!user,
+  const { data: student } = useQuery({
+    queryKey: ["my-student", user?.id],
+    queryFn: () => apiGet(`/students/by-user/${user.id}`).then(r => r.student),
+    enabled: !!user?.id && !isCoach,
   });
 
-  const markAttendance = async () => {
-    if (!markingSession) return;
+  const { data: myStudents = [] } = useQuery({
+    queryKey: ["my-students-for-logs", user?.id],
+    queryFn: () => apiGet("/training-logs/my-students").then(r => r.students || []),
+    enabled: !!user && isCoach,
+  });
+
+  const [selectedStudentId, setSelectedStudentId] = useState(null);
+  const activeStudentId = isCoach ? (selectedStudentId || myStudents[0]?.id) : student?.id;
+
+  const { data: logs = [], isLoading, refetch } = useQuery({
+    queryKey: ["attendance-logs", activeStudentId],
+    queryFn: () => apiGet(`/training-logs/student/${activeStudentId}`).then(r => r.logs || []),
+    enabled: !!activeStudentId,
+  });
+
+  const createLog = async () => {
+    if (!logForm.date || !logForm.studentId) return;
     setSaving(true);
-    await base44.entities.Session.update(markingSession.id, {
-      attendance_status: attendanceStatus,
-      status: "completed",
-    });
-    setSaving(false);
-    setMarkingSession(null);
-    refetch();
+    try {
+      await apiPost("/training-logs", {
+        studentId: parseInt(logForm.studentId),
+        date: logForm.date,
+        type: logForm.type,
+        durationMinutes: logForm.durationMinutes ? parseInt(logForm.durationMinutes) : null,
+        notes: logForm.notes || null,
+      });
+      setShowCreate(false);
+      setLogForm({ studentId: "", date: "", type: "general", durationMinutes: 60, notes: "" });
+      refetch();
+    } catch (err) {
+      console.error("Failed to create log:", err);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const createSession = async () => {
-    if (!sessionForm.title || !sessionForm.scheduled_at) return;
-    setSaving(true);
-    await base44.entities.Session.create({
-      ...sessionForm,
-      coach_user_id: user.id,
-      coach_email: user.email,
-      scheduled_at: new Date(sessionForm.scheduled_at).toISOString(),
-      status: "scheduled",
-      duration_minutes: Number(sessionForm.duration_minutes) || 60,
-    });
-    setSaving(false);
-    setShowCreateSession(false);
-    setSessionForm({ title: "", program_type: "academic", scheduled_at: "", duration_minutes: 60, location: "", student_id: "" });
-    refetch();
-  };
-
-  // Attendance stats
-  const completed = sessions.filter(s => s.status === "completed");
-  const present = completed.filter(s => s.attendance_status === "present").length;
-  const absent = completed.filter(s => s.attendance_status === "absent").length;
-  const rate = completed.length > 0 ? Math.round((present / completed.length) * 100) : null;
-
-  // Group by program
-  const grouped = sessions.reduce((acc, s) => {
-    const pt = s.program_type || "general";
-    if (!acc[pt]) acc[pt] = [];
-    acc[pt].push(s);
-    return acc;
-  }, {});
+  const total = logs.length;
+  const thisMonth = logs.filter(l => {
+    if (!l.date) return false;
+    const d = new Date(l.date);
+    const now = new Date();
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  }).length;
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <p className="text-sm text-slate-500 mb-1">Attendance</p>
-          <h1 className="text-3xl font-bold text-[#1a3c5e]">Attendance Tracking</h1>
+          <h1 className="text-3xl font-bold text-[#1a3c5e]">Training Attendance</h1>
         </div>
-        {isCoachOrAdmin && (
-          <Button onClick={() => setShowCreateSession(true)} className="bg-[#1a3c5e] hover:bg-[#0d2540]">
+        {isCoach && (
+          <Button onClick={() => setShowCreate(true)} className="bg-[#1a3c5e] hover:bg-[#0d2540]">
             <Plus className="w-4 h-4 mr-2" /> Log Session
           </Button>
         )}
       </div>
 
-      {/* Parent student switcher */}
-      {user?.role === "parent" && parentStudents.length > 1 && (
+      {isCoach && myStudents.length > 0 && (
         <div className="flex gap-2 flex-wrap">
-          {parentStudents.map(s => (
+          {myStudents.map(s => (
             <button
               key={s.id}
-              onClick={() => { setSelectedParentStudent(s.id); qc.invalidateQueries({ queryKey: ["attendance-sessions"] }); }}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium border-2 transition-all ${selectedParentStudent === s.id ? "border-[#1a3c5e] bg-[#1a3c5e] text-white" : "border-slate-200 text-slate-700 hover:border-[#1a3c5e]"}`}
+              onClick={() => setSelectedStudentId(s.id)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium border-2 transition-all ${activeStudentId === s.id ? "border-[#1a3c5e] bg-[#1a3c5e] text-white" : "border-slate-200 text-slate-700 hover:border-[#1a3c5e]"}`}
             >
-              <Users className="w-3.5 h-3.5" /> {s.full_name}
+              {s.firstName} {s.lastName}
             </button>
           ))}
         </div>
       )}
 
-      {/* Stats */}
-      {completed.length > 0 && (
-        <div className="grid grid-cols-4 gap-3">
+      {logs.length > 0 && (
+        <div className="grid grid-cols-3 gap-3">
           <div className="bg-white rounded-xl border p-4 text-center">
-            <p className="text-2xl font-bold text-slate-800">{sessions.length}</p>
+            <p className="text-2xl font-bold text-slate-800">{total}</p>
             <p className="text-xs text-slate-500 mt-0.5">Total Sessions</p>
           </div>
+          <div className="bg-blue-50 rounded-xl border border-blue-100 p-4 text-center">
+            <p className="text-2xl font-bold text-blue-700">{thisMonth}</p>
+            <p className="text-xs text-blue-500 mt-0.5">This Month</p>
+          </div>
           <div className="bg-green-50 rounded-xl border border-green-100 p-4 text-center">
-            <p className="text-2xl font-bold text-green-700">{present}</p>
-            <p className="text-xs text-green-500 mt-0.5">Present</p>
-          </div>
-          <div className="bg-red-50 rounded-xl border border-red-100 p-4 text-center">
-            <p className="text-2xl font-bold text-red-600">{absent}</p>
-            <p className="text-xs text-red-500 mt-0.5">Absent</p>
-          </div>
-          <div className={`rounded-xl border p-4 text-center ${rate >= 80 ? "bg-green-50 border-green-100" : "bg-yellow-50 border-yellow-100"}`}>
-            <p className={`text-2xl font-bold ${rate >= 80 ? "text-green-700" : "text-yellow-700"}`}>{rate != null ? `${rate}%` : "—"}</p>
-            <p className={`text-xs mt-0.5 ${rate >= 80 ? "text-green-500" : "text-yellow-600"}`}>Attendance Rate</p>
+            <p className="text-2xl font-bold text-green-700">
+              {logs.reduce((s, l) => s + (l.durationMinutes || 0), 0)}
+            </p>
+            <p className="text-xs text-green-500 mt-0.5">Total Minutes</p>
           </div>
         </div>
       )}
-
-      {/* Filter */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <Filter className="w-4 h-4 text-slate-400" />
-        {PROGRAM_TYPES.map(pt => (
-          <button
-            key={pt}
-            onClick={() => setProgramFilter(pt)}
-            className={`px-3 py-1 rounded-lg text-xs font-medium capitalize transition-colors ${programFilter === pt ? "bg-[#1a3c5e] text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
-          >
-            {pt === "all" ? "All Programs" : PROGRAM_LABELS[pt] || pt}
-          </button>
-        ))}
-      </div>
 
       {isLoading ? (
         <div className="flex justify-center py-12"><div className="w-6 h-6 border-4 border-slate-200 border-t-[#1a3c5e] rounded-full animate-spin" /></div>
-      ) : sessions.length === 0 ? (
+      ) : logs.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
             <Calendar className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-            <p className="text-slate-400">No sessions found.</p>
+            <p className="text-slate-400">No training sessions logged.</p>
           </CardContent>
         </Card>
       ) : (
-        Object.entries(grouped).map(([pt, ptSessions]) => (
-          <div key={pt}>
-            <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">{PROGRAM_LABELS[pt] || pt}</h2>
-            <div className="space-y-2">
-              {ptSessions.map(s => {
-                const sc = STATUS_CONFIG[s.attendance_status];
-                return (
-                  <Card key={s.id} className="border border-slate-100">
-                    <CardContent className="py-3 px-5">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-slate-800 text-sm">{s.title}</p>
-                          <p className="text-xs text-slate-400 mt-0.5">
-                            {s.scheduled_at ? format(parseISO(s.scheduled_at), "MMM d, yyyy · h:mm a") : "—"}
-                            {s.duration_minutes ? ` · ${s.duration_minutes} min` : ""}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          {sc ? (
-                            <span className={`text-xs px-2 py-1 rounded-full font-medium flex items-center gap-1 ${sc.color}`}>
-                              {s.attendance_status}
-                            </span>
-                          ) : (
-                            <span className="text-xs px-2 py-1 rounded-full font-medium bg-slate-100 text-slate-500 capitalize">{s.status}</span>
-                          )}
-                          {isCoachOrAdmin && s.status !== "cancelled" && (
-                            <button
-                              onClick={() => { setMarkingSession(s); setAttendanceStatus(s.attendance_status || "present"); }}
-                              className="text-xs text-[#1a3c5e] underline hover:no-underline"
-                            >
-                              {s.attendance_status ? "Edit" : "Mark"}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
+        <Card>
+          <CardContent className="p-0">
+            <div className="divide-y">
+              {logs.map(log => (
+                <div key={log.id} className="px-5 py-4 flex items-center justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-slate-800 text-sm capitalize">{TYPE_LABELS[log.type] || log.type || "General"} Session</p>
+                    <div className="flex items-center gap-3 mt-0.5 text-xs text-slate-400 flex-wrap">
+                      <span>{log.date ? format(new Date(log.date), "MMM d, yyyy") : "—"}</span>
+                      {log.durationMinutes && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{log.durationMinutes} min</span>}
+                      {log.notes && <span className="truncate max-w-xs">{log.notes}</span>}
+                    </div>
+                  </div>
+                  <Activity className="w-4 h-4 text-slate-300 shrink-0" />
+                </div>
+              ))}
             </div>
-          </div>
-        ))
+          </CardContent>
+        </Card>
       )}
 
-      {/* Create Session modal */}
-      {showCreateSession && (
+      {showCreate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
-            <h3 className="font-bold text-[#1a3c5e] text-lg">Log New Session</h3>
+            <h3 className="font-bold text-[#1a3c5e] text-lg">Log Training Session</h3>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Title *</label>
-              <input
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30"
-                value={sessionForm.title}
-                onChange={e => setSessionForm(f => ({ ...f, title: e.target.value }))}
-                placeholder="Session title…"
-              />
+              <label className="block text-sm font-medium text-slate-700 mb-1">Student *</label>
+              <select
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+                value={logForm.studentId}
+                onChange={e => setLogForm(f => ({ ...f, studentId: e.target.value }))}
+              >
+                <option value="">Select student...</option>
+                {myStudents.map(s => (
+                  <option key={s.id} value={s.id}>{s.firstName} {s.lastName}</option>
+                ))}
+              </select>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Program Type</label>
-                <select
+                <label className="block text-sm font-medium text-slate-700 mb-1">Date *</label>
+                <input
+                  type="date"
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
-                  value={sessionForm.program_type}
-                  onChange={e => setSessionForm(f => ({ ...f, program_type: e.target.value }))}
-                >
-                  <option value="academic">Academic</option>
-                  <option value="athletic">Athletic</option>
-                  <option value="homeschool">Homeschool</option>
-                  <option value="special_event">Special Event</option>
-                </select>
+                  value={logForm.date}
+                  onChange={e => setLogForm(f => ({ ...f, date: e.target.value }))}
+                />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Duration (min)</label>
-                <input
-                  type="number" min="15"
+                <label className="block text-sm font-medium text-slate-700 mb-1">Type</label>
+                <select
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
-                  value={sessionForm.duration_minutes}
-                  onChange={e => setSessionForm(f => ({ ...f, duration_minutes: e.target.value }))}
-                />
+                  value={logForm.type}
+                  onChange={e => setLogForm(f => ({ ...f, type: e.target.value }))}
+                >
+                  {Object.entries(TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Scheduled At *</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Duration (min)</label>
               <input
-                type="datetime-local"
+                type="number" min="5"
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
-                value={sessionForm.scheduled_at}
-                onChange={e => setSessionForm(f => ({ ...f, scheduled_at: e.target.value }))}
+                value={logForm.durationMinutes}
+                onChange={e => setLogForm(f => ({ ...f, durationMinutes: e.target.value }))}
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Location</label>
-              <input
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
-                value={sessionForm.location}
-                onChange={e => setSessionForm(f => ({ ...f, location: e.target.value }))}
-                placeholder="e.g. Room 101 / Zoom"
+              <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
+              <textarea
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none resize-none h-20"
+                value={logForm.notes}
+                onChange={e => setLogForm(f => ({ ...f, notes: e.target.value }))}
+                placeholder="Session notes..."
               />
             </div>
             <div className="flex gap-2 pt-2">
-              <button onClick={() => setShowCreateSession(false)} className="flex-1 py-2 rounded-lg border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
-              <Button onClick={createSession} disabled={saving || !sessionForm.title || !sessionForm.scheduled_at} className="flex-1 bg-[#1a3c5e] hover:bg-[#0d2540]">
-                {saving ? "Saving..." : "Create Session"}
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Mark attendance modal */}
-      {markingSession && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
-            <h3 className="font-bold text-[#1a3c5e] mb-1">{markingSession.title}</h3>
-            <p className="text-xs text-slate-400 mb-4">{markingSession.scheduled_at ? format(parseISO(markingSession.scheduled_at), "MMM d, yyyy · h:mm a") : ""}</p>
-            <div className="grid grid-cols-2 gap-2 mb-4">
-              {Object.entries(STATUS_CONFIG).map(([status, cfg]) => (
-                <button
-                  key={status}
-                  onClick={() => setAttendanceStatus(status)}
-                  className={`px-3 py-2 rounded-lg text-sm font-medium capitalize border transition-colors ${attendanceStatus === status ? "bg-[#1a3c5e] text-white border-[#1a3c5e]" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}
-                >
-                  {cfg.label}
-                </button>
-              ))}
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => setMarkingSession(null)} className="flex-1 py-2 rounded-lg border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
-              <Button onClick={markAttendance} disabled={saving} className="flex-1 bg-[#1a3c5e] hover:bg-[#0d2540]">
+              <button onClick={() => setShowCreate(false)} className="flex-1 py-2 rounded-lg border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
+              <Button onClick={createLog} disabled={saving || !logForm.date || !logForm.studentId} className="flex-1 bg-[#1a3c5e] hover:bg-[#0d2540]">
                 {saving ? "Saving..." : "Save"}
               </Button>
             </div>

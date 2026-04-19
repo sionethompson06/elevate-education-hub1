@@ -1,6 +1,6 @@
 import { eq, and } from 'drizzle-orm';
 import db from '../db-postgres.js';
-import { staffAssignments, guardianStudents, students, sections, sectionStudents } from '../schema.js';
+import { staffAssignments, guardianStudents, students, sections, sectionStudents, coachAssignments } from '../schema.js';
 
 export async function getGuardianStudentIds(userId) {
   const links = await db.select().from(guardianStudents)
@@ -36,6 +36,11 @@ export async function getCoachStudentIds(userId) {
     const roster = await db.select().from(sectionStudents).where(eq(sectionStudents.sectionId, secId));
     studentIds.push(...roster.map(r => r.studentId));
   }
+
+  // Also include students from coachAssignments (used by gradebook/performance coaches)
+  const directCoachLinks = await db.select().from(coachAssignments)
+    .where(and(eq(coachAssignments.coachUserId, userId), eq(coachAssignments.isActive, true)));
+  directCoachLinks.forEach(ca => studentIds.push(ca.studentId));
 
   return [...new Set(studentIds)];
 }

@@ -1,60 +1,61 @@
 import { useState } from "react";
 import { useAuth } from "@/lib/AuthContext";
 import { useQuery } from "@tanstack/react-query";
-import { base44 } from "@/api/base44Client";
+import { apiGet } from "@/api/apiClient";
 import { Link } from "react-router-dom";
-import { BookOpen, Activity, AlertCircle, Star, Calendar, TrendingUp, MessageCircle, ChevronRight, Target } from "lucide-react";
+import { BookOpen, Activity, AlertCircle, Star, Calendar, TrendingUp, MessageCircle, ChevronRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import KPIBar from "@/components/gradebook/KPIBar";
 import LessonRow from "@/components/gradebook/LessonRow";
 import LessonDetailPanel from "@/components/gradebook/LessonDetailPanel";
+import { format } from "date-fns";
 
 export default function StudentDashboard() {
   const { user } = useAuth();
   const [selected, setSelected] = useState(null);
 
+  const { data: student } = useQuery({
+    queryKey: ["my-student", user?.id],
+    queryFn: () => apiGet(`/students/by-user/${user.id}`).then(r => r.student),
+    enabled: !!user?.id,
+  });
+
   const { data: lessonData, isLoading: lessonsLoading, refetch } = useQuery({
     queryKey: ["student-lessons", user?.id],
-    queryFn: () => base44.functions.invoke("gradebook", { action: "get_lessons" }).then(r => r.data),
+    queryFn: () => apiGet("/gradebook/lessons"),
     enabled: !!user,
   });
 
-  const { data: rewardData } = useQuery({
-    queryKey: ["student-rewards-dash", user?.id],
-    queryFn: () => base44.functions.invoke("rewards", { action: "get_student_rewards" }).then(r => r.data),
-    enabled: !!user,
+  const { data: pointsData } = useQuery({
+    queryKey: ["student-points", student?.id],
+    queryFn: () => apiGet(`/rewards/points/${student.id}`),
+    enabled: !!student?.id,
   });
 
-  const { data: sessions = [] } = useQuery({
-    queryKey: ["student-sessions-dash", user?.id],
-    queryFn: async () => {
-      const students = await base44.entities.Student.filter({ user_id: user.id });
-      if (!students[0]) return [];
-      return base44.entities.Session.filter({ student_id: students[0].id }, "scheduled_at", 5);
-    },
-    enabled: !!user,
+  const { data: trainingLogs = [] } = useQuery({
+    queryKey: ["student-training-logs", student?.id],
+    queryFn: () => apiGet(`/training-logs/student/${student.id}`).then(r => r.logs || []),
+    enabled: !!student?.id,
   });
 
   const allLessons = lessonData?.lessons || [];
   const kpis = lessonData?.kpis;
   const incomplete = allLessons.filter(l => l.status === "incomplete").slice(0, 5);
-  const balance = rewardData?.balance;
-  const goals = rewardData?.goals?.filter(g => g.status !== "completed").slice(0, 3) || [];
+  const totalPoints = pointsData?.points ?? 0;
+  const recentLogs = trainingLogs.slice(0, 3);
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
-      {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <p className="text-sm text-slate-500 mb-1">Student Portal</p>
           <h1 className="text-3xl font-bold text-[#1a3c5e]">
-            Welcome back, {user?.full_name?.split(" ")[0] || "Student"}!
+            Welcome back, {user?.firstName || user?.first_name || "Student"}!
           </h1>
           <p className="text-sm text-slate-400 mt-1">Here's your full picture — academics, performance, and goals.</p>
         </div>
       </div>
 
-      {/* Intervention alert */}
       {kpis?.intervention && (
         <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-700 text-sm">
           <AlertCircle className="w-4 h-4 shrink-0" />
@@ -62,7 +63,6 @@ export default function StudentDashboard() {
         </div>
       )}
 
-      {/* KPIs */}
       {kpis && (
         <div>
           <h2 className="text-sm font-semibold text-slate-600 mb-3 uppercase tracking-wide">Academic Progress</h2>
@@ -71,7 +71,6 @@ export default function StudentDashboard() {
       )}
 
       <div className="grid lg:grid-cols-3 gap-6">
-        {/* Upcoming lessons */}
         <Card className="lg:col-span-2">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
@@ -94,9 +93,7 @@ export default function StudentDashboard() {
           </CardContent>
         </Card>
 
-        {/* Right column */}
         <div className="space-y-4">
-          {/* Reward balance */}
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm flex items-center gap-2 text-slate-700">
@@ -104,82 +101,46 @@ export default function StudentDashboard() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-3 gap-2 text-center mb-3">
-                <div className="bg-blue-50 rounded-lg p-2">
-                  <p className="text-lg font-bold text-blue-700">{balance?.academic_points ?? 0}</p>
-                  <p className="text-xs text-blue-500">Academic</p>
-                </div>
-                <div className="bg-orange-50 rounded-lg p-2">
-                  <p className="text-lg font-bold text-orange-600">{balance?.performance_points ?? 0}</p>
-                  <p className="text-xs text-orange-500">Perf.</p>
-                </div>
-                <div className="bg-yellow-50 rounded-lg p-2">
-                  <p className="text-lg font-bold text-yellow-600">{balance?.total_points ?? 0}</p>
-                  <p className="text-xs text-yellow-500">Total</p>
-                </div>
+              <div className="text-center py-2">
+                <p className="text-3xl font-bold text-yellow-600">{totalPoints}</p>
+                <p className="text-xs text-yellow-500 mt-0.5">Total Points</p>
               </div>
-              <Link to="/student/rewards" className="text-xs text-[#1a3c5e] flex items-center gap-1 hover:underline">
+              <Link to="/student/rewards" className="text-xs text-[#1a3c5e] flex items-center gap-1 hover:underline mt-2">
                 View rewards & redeem <ChevronRight className="w-3 h-3" />
               </Link>
             </CardContent>
           </Card>
 
-          {/* Active goals */}
-          {goals.length > 0 && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-2 text-slate-700">
-                  <Target className="w-4 h-4 text-blue-500" /> Active Goals
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {goals.map(g => {
-                  const pct = Math.min(100, Math.round(((g.current_points || 0) / g.target_points) * 100));
-                  return (
-                    <div key={g.id}>
-                      <div className="flex justify-between text-xs mb-1">
-                        <span className="text-slate-700 font-medium truncate">{g.title}</span>
-                        <span className="text-slate-400 shrink-0 ml-2">{pct}%</span>
-                      </div>
-                      <div className="w-full bg-slate-200 rounded-full h-1.5">
-                        <div className="h-1.5 rounded-full bg-blue-500 transition-all" style={{ width: `${pct}%` }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Upcoming sessions */}
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm flex items-center gap-2 text-slate-700">
-                <Calendar className="w-4 h-4 text-purple-500" /> Next Sessions
+                <Activity className="w-4 h-4 text-purple-500" /> Recent Training
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {sessions.length === 0 ? (
-                <p className="text-xs text-slate-400">No upcoming sessions.</p>
+              {recentLogs.length === 0 ? (
+                <p className="text-xs text-slate-400">No training sessions logged yet.</p>
               ) : (
                 <div className="space-y-2">
-                  {sessions.slice(0, 3).map(s => (
-                    <div key={s.id} className="flex items-center justify-between text-xs">
-                      <span className="text-slate-700 font-medium truncate">{s.title}</span>
-                      <span className="text-slate-400 shrink-0 ml-2 capitalize">{s.program_type}</span>
+                  {recentLogs.map(log => (
+                    <div key={log.id} className="flex items-center justify-between text-xs">
+                      <span className="text-slate-700 font-medium capitalize">{log.type || "Training"}</span>
+                      <span className="text-slate-400 shrink-0 ml-2">
+                        {log.date ? format(new Date(log.date), "MMM d") : "—"}
+                        {log.durationMinutes ? ` · ${log.durationMinutes}m` : ""}
+                      </span>
                     </div>
                   ))}
                 </div>
               )}
               <Link to="/student/schedule" className="text-xs text-[#1a3c5e] flex items-center gap-1 hover:underline mt-3">
-                Full schedule <ChevronRight className="w-3 h-3" />
+                Full history <ChevronRight className="w-3 h-3" />
               </Link>
             </CardContent>
           </Card>
         </div>
       </div>
 
-      {/* Quick nav tiles */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           { label: "Schedule", href: "/student/schedule", icon: Calendar, color: "text-purple-600", bg: "bg-purple-50" },
