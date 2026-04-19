@@ -79,9 +79,35 @@ async function ensureMedicalInfoTable() {
   }
 }
 
+// 4. Seed demo users if they don't exist (safe to run every boot — upsert by email)
+async function seedDemoUsers() {
+  const ADMIN_PW = process.env.ADMIN_PASSWORD || 'Admin@Elevate2025!';
+  const DEMO_PW  = 'Welcome2025!';
+  const demos = [
+    { email: 'admin@elevateperformance-academy.com', role: 'admin',              firstName: 'Admin',   lastName: 'EPA',       password: ADMIN_PW },
+    { email: 'sarah.johnson@example.com',            role: 'parent',             firstName: 'Sarah',   lastName: 'Johnson',   password: DEMO_PW },
+    { email: 'ethan.johnson@example.com',            role: 'student',            firstName: 'Ethan',   lastName: 'Johnson',   password: DEMO_PW },
+    { email: 'coach.martinez@elevateperformance-academy.com', role: 'academic_coach',    firstName: 'Carlos',  lastName: 'Martinez',  password: DEMO_PW },
+    { email: 'coach.williams@elevateperformance-academy.com', role: 'performance_coach', firstName: 'Jordan',  lastName: 'Williams',  password: DEMO_PW },
+  ];
+  try {
+    for (const d of demos) {
+      const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, d.email));
+      if (!existing) {
+        const passwordHash = await bcrypt.hash(d.password, 10);
+        await db.insert(users).values({ email: d.email, passwordHash, role: d.role, firstName: d.firstName, lastName: d.lastName, status: 'active' });
+        console.log(`[seed] Created demo user: ${d.email}`);
+      }
+    }
+  } catch (err) {
+    console.error('[seed] seedDemoUsers error:', err.message);
+  }
+}
+
 normalizeEnrollmentStatuses();
 ensureOverridesTable();
 ensureMedicalInfoTable();
+seedDemoUsers();
 import applicationsRouter from './routes/applications.js';
 import authRouter from './routes/auth.js';
 import contactRouter from './routes/contact.js';

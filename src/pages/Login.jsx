@@ -18,7 +18,7 @@ const ROLE_ROUTES = {
 };
 
 const DEMO_USERS = [
-  { label: "Admin",        email: "admin@elevateperformance-academy.com", password: "admin123" },
+  { label: "Admin",        email: "admin@elevateperformance-academy.com", password: "Admin@Elevate2025!" },
   { label: "Parent",       email: "sarah.johnson@example.com",            password: "Welcome2025!" },
   { label: "Student",      email: "ethan.johnson@example.com",            password: "Welcome2025!" },
   { label: "Acad. Coach",  email: "coach.martinez@elevateperformance-academy.com", password: "Welcome2025!" },
