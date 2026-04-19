@@ -14,6 +14,7 @@ import StudentGradebook from "@/components/parent/StudentGradebook";
 import ParentRewardsSummary from "@/components/parent/ParentRewardsSummary";
 import AddStudentModal from "@/components/parent/AddStudentModal";
 import StudentProfileModal from "@/components/parent/StudentProfileModal";
+import AnnouncementBanner from "@/components/AnnouncementBanner";
 
 async function fetchMyStudents() {
   const token = localStorage.getItem("elevate_auth_token");
@@ -79,6 +80,7 @@ export default function ParentDashboard() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
+      <AnnouncementBanner />
       {/* Header */}
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>

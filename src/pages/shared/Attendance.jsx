@@ -72,8 +72,8 @@ export default function Attendance() {
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
-          <p className="text-sm text-slate-500 mb-1">Attendance</p>
-          <h1 className="text-3xl font-bold text-[#1a3c5e]">Training Attendance</h1>
+          <p className="text-sm text-slate-500 mb-1">Training</p>
+          <h1 className="text-3xl font-bold text-[#1a3c5e]">Training Sessions</h1>
         </div>
         {isCoach && (
           <Button onClick={() => setShowCreate(true)} className="bg-[#1a3c5e] hover:bg-[#0d2540]">

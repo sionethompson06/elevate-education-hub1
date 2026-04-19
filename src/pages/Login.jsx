@@ -86,9 +86,16 @@ export default function Login() {
     }
   };
 
+  const sessionExpired = searchParams.get("session_expired") === "1";
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0f2540] via-[#1a3c5e] to-[#0f2540] flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-4xl">
+        {sessionExpired && (
+          <div className="mb-6 bg-amber-50 border border-amber-300 text-amber-800 text-sm rounded-xl px-5 py-3 text-center font-medium">
+            Your session has expired. Please sign in again.
+          </div>
+        )}
         {/* Header */}
         <div className="text-center mb-10">
           <div className="inline-flex items-center gap-2 bg-white/10 text-white text-xs font-semibold px-4 py-1.5 rounded-full mb-4 tracking-wide uppercase">

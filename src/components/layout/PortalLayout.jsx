@@ -2,7 +2,10 @@ import { Outlet, Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
 import { GraduationCap, LogOut, Menu, X, ArrowLeft } from "lucide-react";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { apiGet } from "@/api/apiClient";
 import { ROLE_LABELS } from "@/lib/rbac";
+import NotificationBell from "@/components/NotificationBell";
 
 const ROLE_COLORS = {
   student: "bg-blue-600",
@@ -17,7 +20,7 @@ const ROLE_NAV = {
     { label: "My Dashboard", href: "/student/dashboard" },
     { label: "My Lessons", href: "/student/progress" },
     { label: "Schedule", href: "/student/schedule" },
-    { label: "Attendance", href: "/student/attendance" },
+    { label: "Training Sessions", href: "/student/attendance" },
     { label: "Messages", href: "/student/messages" },
     { label: "Resources", href: "/student/resources" },
     { label: "Rewards", href: "/student/rewards" },
@@ -28,14 +31,14 @@ const ROLE_NAV = {
     { label: "Payments & Billing", href: "/parent/payments" },
     { label: "Student Progress", href: "/parent/progress" },
     { label: "Schedule", href: "/parent/schedule" },
-    { label: "Attendance", href: "/parent/attendance" },
+    { label: "Training Sessions", href: "/parent/attendance" },
     { label: "Messages", href: "/parent/messages" },
     { label: "Resources", href: "/parent/resources" },
   ],
   academic_coach: [
     { label: "My Dashboard", href: "/academic-coach/dashboard" },
     { label: "Schedule", href: "/academic-coach/schedule" },
-    { label: "Attendance", href: "/academic-coach/attendance" },
+    { label: "Training Sessions", href: "/academic-coach/attendance" },
     { label: "Messages", href: "/academic-coach/messages" },
     { label: "Resources", href: "/academic-coach/resources" },
     { label: "Rewards", href: "/academic-coach/rewards" },
@@ -43,7 +46,7 @@ const ROLE_NAV = {
   performance_coach: [
     { label: "My Dashboard", href: "/performance-coach/dashboard" },
     { label: "Schedule", href: "/performance-coach/schedule" },
-    { label: "Attendance", href: "/performance-coach/attendance" },
+    { label: "Training Sessions", href: "/performance-coach/attendance" },
     { label: "Messages", href: "/performance-coach/messages" },
     { label: "Resources", href: "/performance-coach/resources" },
     { label: "Rewards", href: "/performance-coach/rewards" },
@@ -55,7 +58,7 @@ const ROLE_NAV = {
     { label: "Parents", href: "/admin/parents" },
     { label: "Admissions", href: "/admin/admissions" },
     { label: "Enrollments", href: "/admin/enrollments" },
-    { label: "Attendance", href: "/admin/attendance" },
+    { label: "Training Sessions", href: "/admin/attendance" },
     { label: "Rewards", href: "/admin/rewards" },
     { label: "Messages", href: "/admin/messages" },
     { label: "Resources", href: "/admin/resources" },
@@ -73,6 +76,14 @@ export default function PortalLayout() {
   const { user, logout } = useAuth();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  const { data: inboxData } = useQuery({
+    queryKey: ["inbox-unread"],
+    queryFn: () => apiGet("/messages/inbox"),
+    enabled: !!user,
+    refetchInterval: 60000,
+  });
+  const unreadMessages = (inboxData?.messages || []).filter(m => !m.isRead).length;
 
   const role = user?.role || "student";
 
@@ -114,23 +125,32 @@ export default function PortalLayout() {
             if (divider) return (
               <p key={label} className="text-xs text-slate-500 px-4 pt-3 pb-1 font-semibold tracking-wide">{label}</p>
             );
+            const isMessages = label === "Messages";
             return (
               <Link
                 key={href}
                 to={href}
-                className={`flex items-center px-4 py-2.5 rounded-lg text-sm transition-colors ${
+                className={`flex items-center justify-between px-4 py-2.5 rounded-lg text-sm transition-colors ${
                   isActive(href)
                     ? "bg-white/20 text-white font-semibold"
                     : "text-slate-300 hover:bg-white/10 hover:text-white"
                 }`}
               >
                 {label}
+                {isMessages && unreadMessages > 0 && (
+                  <span className="ml-auto bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center leading-none shrink-0">
+                    {unreadMessages > 9 ? "9+" : unreadMessages}
+                  </span>
+                )}
               </Link>
             );
           })}
         </nav>
 
         <div className="p-4 border-t border-white/10 space-y-1">
+          <div className="flex items-center justify-end px-2 pb-1">
+            <NotificationBell />
+          </div>
           {isAdminViewingOtherHub && (
             <Link
               to="/admin/dashboard"

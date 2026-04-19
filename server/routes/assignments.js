@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { eq, desc, and, inArray } from 'drizzle-orm';
-import db from '../db-postgres.js';
+import db, { rawSql } from '../db-postgres.js';
 import { assignments, assignmentSubmissions, sectionStudents, sections, students } from '../schema.js';
 import { requireAuth } from '../middleware/auth.js';
 import { getCoachSectionIds, isStudentInSection } from '../middleware/scope.js';
@@ -165,6 +165,75 @@ router.delete('/:id', requireAuth, async (req, res) => {
     });
 
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Student submit work for an assignment
+router.post('/:id/submit', requireAuth, async (req, res) => {
+  try {
+    if (req.user.role !== 'student') {
+      return res.status(403).json({ success: false, error: 'Only students can submit work' });
+    }
+    const assignmentId = parseInt(req.params.id);
+    const { content } = req.body;
+    if (!content?.trim()) return res.status(400).json({ success: false, error: 'Submission content is required' });
+
+    const [assignment] = await db.select().from(assignments).where(eq(assignments.id, assignmentId));
+    if (!assignment) return res.status(404).json({ success: false, error: 'Assignment not found' });
+
+    const [studentRec] = await db.select().from(students).where(eq(students.userId, req.user.id));
+    if (!studentRec) return res.status(400).json({ success: false, error: 'Student record not found' });
+
+    const [existing] = await db.select().from(assignmentSubmissions)
+      .where(and(eq(assignmentSubmissions.assignmentId, assignmentId), eq(assignmentSubmissions.studentId, studentRec.id)));
+
+    let submission;
+    if (existing) {
+      await rawSql`UPDATE assignment_submissions SET submission_content = ${content.trim()}, submitted_at = NOW() WHERE id = ${existing.id}`;
+      submission = { ...existing, submissionContent: content.trim(), submittedAt: new Date() };
+    } else {
+      const [inserted] = await db.insert(assignmentSubmissions).values({
+        assignmentId,
+        studentId: studentRec.id,
+      }).returning();
+      await rawSql`UPDATE assignment_submissions SET submission_content = ${content.trim()}, submitted_at = NOW() WHERE id = ${inserted.id}`;
+      submission = { ...inserted, submissionContent: content.trim(), submittedAt: new Date() };
+    }
+
+    await logAudit({
+      userId: req.user.id,
+      action: 'submit',
+      entityType: 'assignment_submission',
+      entityId: submission.id,
+      details: { assignmentId },
+      ipAddress: req.ip,
+    });
+
+    res.json({ success: true, submission });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Student get their own submissions
+router.get('/my-submissions', requireAuth, async (req, res) => {
+  try {
+    if (req.user.role !== 'student') {
+      return res.status(403).json({ success: false, error: 'Students only' });
+    }
+    const [studentRec] = await db.select().from(students).where(eq(students.userId, req.user.id));
+    if (!studentRec) return res.json({ success: true, submissions: [] });
+
+    const subs = await rawSql`
+      SELECT s.*, a.title as assignment_title, a.description as assignment_description, a.max_score, a.due_date
+      FROM assignment_submissions s
+      JOIN assignments a ON a.id = s.assignment_id
+      WHERE s.student_id = ${studentRec.id}
+      ORDER BY s.created_at DESC
+    `;
+    res.json({ success: true, submissions: subs.rows || subs });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

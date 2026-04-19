@@ -1,8 +1,8 @@
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.ADMIN_TOKEN;
+const JWT_SECRET = process.env.JWT_SECRET || process.env.ADMIN_TOKEN;
 if (!JWT_SECRET) {
-  throw new Error('ADMIN_TOKEN environment variable is required for JWT signing.');
+  throw new Error('JWT_SECRET (or ADMIN_TOKEN) environment variable is required for JWT signing.');
 }
 
 export function generateToken(user) {

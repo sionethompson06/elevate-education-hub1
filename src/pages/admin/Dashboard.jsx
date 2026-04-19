@@ -1,9 +1,10 @@
 import { useAuth } from "@/lib/AuthContext";
-import { useQuery } from "@tanstack/react-query";
-import { apiGet, apiPost } from "@/api/apiClient";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { apiGet, apiPost, apiDelete } from "@/api/apiClient";
 import { Link } from "react-router-dom";
 import { useState } from "react";
-import { Users, DollarSign, ShieldCheck, FileText, BookOpen, Activity, Star, MessageCircle, TrendingUp, GraduationCap, Home, Trophy, ChevronRight, Database, Loader2, CheckCircle } from "lucide-react";
+import { Users, DollarSign, ShieldCheck, FileText, BookOpen, Activity, Star, MessageCircle, TrendingUp, GraduationCap, Home, Trophy, ChevronRight, Database, Loader2, CheckCircle, Megaphone, Trash2, Send } from "lucide-react";
+import { format } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -29,8 +30,11 @@ const PROGRAMS = [
 
 export default function AdminDashboard() {
   const { user } = useAuth();
+  const qc = useQueryClient();
   const [seeding, setSeeding] = useState(false);
   const [seedResult, setSeedResult] = useState(null);
+  const [annForm, setAnnForm] = useState({ title: "", body: "", targetRole: "all" });
+  const [postingAnn, setPostingAnn] = useState(false);
 
   const { data: enrollmentsData = { enrollments: [] } } = useQuery({
     queryKey: ["admin-enrollment-count"],
@@ -46,6 +50,41 @@ export default function AdminDashboard() {
     queryKey: ["admin-users-count"],
     queryFn: () => apiGet('/users'),
   });
+
+  const { data: annData } = useQuery({
+    queryKey: ["admin-announcements"],
+    queryFn: () => apiGet('/announcements'),
+  });
+
+  const { data: contactData } = useQuery({
+    queryKey: ["admin-contacts"],
+    queryFn: () => apiGet('/contact'),
+  });
+
+  const postAnnouncement = async (status) => {
+    if (!annForm.title.trim() || !annForm.body.trim()) return;
+    setPostingAnn(true);
+    try {
+      await apiPost('/announcements', { ...annForm, status });
+      setAnnForm({ title: "", body: "", targetRole: "all" });
+      qc.invalidateQueries({ queryKey: ["admin-announcements"] });
+      qc.invalidateQueries({ queryKey: ["announcements"] });
+    } catch (err) {
+      console.error('Failed to post announcement:', err);
+    } finally {
+      setPostingAnn(false);
+    }
+  };
+
+  const deleteAnnouncement = async (id) => {
+    try {
+      await apiDelete(`/announcements/${id}`);
+      qc.invalidateQueries({ queryKey: ["admin-announcements"] });
+      qc.invalidateQueries({ queryKey: ["announcements"] });
+    } catch (err) {
+      console.error('Failed to delete announcement:', err);
+    }
+  };
 
   const seedDemoData = async () => {
     setSeeding(true);
@@ -172,6 +211,88 @@ export default function AdminDashboard() {
           </div>
         )}
       </div>
+
+      {/* Announcements */}
+      <div>
+        <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3 flex items-center gap-2">
+          <Megaphone className="w-4 h-4" /> Announcements
+        </h2>
+        <div className="rounded-xl border border-slate-200 p-5 space-y-4 bg-white">
+          <div className="grid sm:grid-cols-2 gap-3">
+            <input
+              className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30"
+              placeholder="Title"
+              value={annForm.title}
+              onChange={e => setAnnForm(f => ({ ...f, title: e.target.value }))}
+            />
+            <select
+              className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30 bg-white"
+              value={annForm.targetRole}
+              onChange={e => setAnnForm(f => ({ ...f, targetRole: e.target.value }))}
+            >
+              <option value="all">All users</option>
+              <option value="student">Students only</option>
+              <option value="parent">Parents only</option>
+              <option value="coach">Coaches only</option>
+            </select>
+          </div>
+          <textarea
+            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30 min-h-[70px] resize-none"
+            placeholder="Announcement body..."
+            value={annForm.body}
+            onChange={e => setAnnForm(f => ({ ...f, body: e.target.value }))}
+          />
+          <div className="flex gap-2 justify-end">
+            <Button size="sm" variant="outline" disabled={postingAnn || !annForm.title.trim()} onClick={() => postAnnouncement("draft")}>
+              Save as Draft
+            </Button>
+            <Button size="sm" className="bg-[#1a3c5e] hover:bg-[#0d2540]" disabled={postingAnn || !annForm.title.trim() || !annForm.body.trim()} onClick={() => postAnnouncement("published")}>
+              {postingAnn ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Send className="w-3.5 h-3.5 mr-1" />}
+              Publish Now
+            </Button>
+          </div>
+          {(annData?.announcements || []).length > 0 && (
+            <div className="border-t pt-3 space-y-2">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Recent Announcements</p>
+              {(annData.announcements || []).slice(0, 5).map(a => (
+                <div key={a.id} className="flex items-start justify-between gap-3 py-1">
+                  <div>
+                    <p className="text-sm font-medium text-slate-800">{a.title}</p>
+                    <p className="text-xs text-slate-400 capitalize">{a.status} · {a.targetRole}</p>
+                  </div>
+                  <button onClick={() => deleteAnnouncement(a.id)} className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-500 shrink-0">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Contact Submissions */}
+      {(contactData?.contacts || []).length > 0 && (
+        <div>
+          <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3 flex items-center gap-2">
+            <MessageCircle className="w-4 h-4" /> Recent Contact Submissions
+          </h2>
+          <div className="rounded-xl border border-slate-200 bg-white divide-y overflow-hidden">
+            {(contactData.contacts || []).slice(0, 5).map(c => (
+              <div key={c.id} className="px-5 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium text-slate-800">{c.name} <span className="text-slate-400 font-normal">— {c.email}</span></p>
+                    <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{c.message}</p>
+                  </div>
+                  <p className="text-xs text-slate-400 shrink-0">
+                    {c.createdAt ? format(new Date(c.createdAt), "MMM d") : ""}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Quick links */}
       <div>

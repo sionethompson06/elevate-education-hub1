@@ -20,9 +20,13 @@ export async function getOrCreateCustomer(email, name, metadata = {}) {
 export async function createCheckoutSession({ enrollmentId, studentId, parentUserId, stripeCustomerId, program, billingCycle, successUrl, cancelUrl }) {
   const stripe = getStripe();
   const isSubscription = billingCycle === 'monthly' || billingCycle === 'annual';
+  const tuition = Number(program?.tuitionAmount);
+  if (!tuition || isNaN(tuition) || tuition <= 0) {
+    throw new Error('Program tuition amount is not configured. Please contact support.');
+  }
   const unitAmount = billingCycle === 'annual'
-    ? Math.round(((program?.tuitionAmount || 2400) * 12) * 100)
-    : Math.round((program?.tuitionAmount || 250) * 100);
+    ? Math.round(tuition * 12 * 100)
+    : Math.round(tuition * 100);
 
   const metadata = {
     enrollment_id: String(enrollmentId),

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import db from '../db-postgres.js';
 import {
   assignments, assignmentSubmissions, attendanceRecords, trainingLogs,
@@ -29,22 +29,24 @@ router.get('/student/:studentId', requireAuth, async (req, res) => {
 
     const sectionIds = studentSections.map(s => s.sectionId);
 
-    let allAssignments = [];
-    let allSubmissions = [];
-    for (const secId of sectionIds) {
-      const secAssignments = await db.select().from(assignments)
-        .where(eq(assignments.sectionId, secId));
-      allAssignments.push(...secAssignments);
+    // Batch fetch all assignments and all submissions in 2 queries (was N+1)
+    const allAssignments = sectionIds.length > 0
+      ? await db.select().from(assignments).where(inArray(assignments.sectionId, sectionIds))
+      : [];
 
-      for (const a of secAssignments) {
-        const [sub] = await db.select().from(assignmentSubmissions)
+    const allStudentSubmissions = allAssignments.length > 0
+      ? await db.select().from(assignmentSubmissions)
           .where(and(
-            eq(assignmentSubmissions.assignmentId, a.id),
+            inArray(assignmentSubmissions.assignmentId, allAssignments.map(a => a.id)),
             eq(assignmentSubmissions.studentId, studentId)
-          ));
-        if (sub) allSubmissions.push({ ...sub, assignmentTitle: a.title, maxScore: a.maxScore, sectionId: a.sectionId });
-      }
-    }
+          ))
+      : [];
+
+    const assignmentMap = Object.fromEntries(allAssignments.map(a => [a.id, a]));
+    const allSubmissions = allStudentSubmissions.map(sub => {
+      const a = assignmentMap[sub.assignmentId];
+      return { ...sub, assignmentTitle: a?.title, maxScore: a?.maxScore, sectionId: a?.sectionId };
+    });
 
     const grades = {};
     for (const sec of studentSections) {

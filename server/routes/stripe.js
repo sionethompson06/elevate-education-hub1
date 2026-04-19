@@ -21,10 +21,12 @@ router.post('/checkout', requireAuth, requireRole('parent', 'admin'), async (req
 
     // Verify parent owns this enrollment (skip for admin)
     if (req.user.role === 'parent') {
-      const guardianCheck = await db.query?.guardianStudents?.findFirst?.({
-        where: and(eq(db.guardianStudents?.guardianUserId, req.user.id), eq(db.guardianStudents?.studentId, enrollment.studentId))
-      }).catch(() => null);
-      // Loose check — proceed if student-parent relationship can't be verified quickly
+      const { guardianStudents } = await import('../schema.js');
+      const [guardianCheck] = await db.select().from(guardianStudents)
+        .where(and(eq(guardianStudents.guardianUserId, req.user.id), eq(guardianStudents.studentId, enrollment.studentId)));
+      if (!guardianCheck) {
+        return res.status(403).json({ error: 'Not authorized to checkout for this student' });
+      }
     }
 
     const [user] = await db.select().from(users).where(eq(users.id, req.user.id));
@@ -73,7 +75,7 @@ router.post('/checkout', requireAuth, requireRole('parent', 'admin'), async (req
 router.post('/portal', requireAuth, requireRole('parent', 'admin'), async (req, res) => {
   try {
     const { return_url } = req.body;
-    const [billingAccount] = await db.select().from(billingAccounts).where(eq(billingAccounts.userId, req.user.id));
+    const [billingAccount] = await db.select().from(billingAccounts).where(eq(billingAccounts.parentUserId, req.user.id));
     if (!billingAccount?.stripeCustomerId) {
       return res.status(400).json({ error: 'No billing account found. Complete a payment first.' });
     }

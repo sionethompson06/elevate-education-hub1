@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import KPIBar from "@/components/gradebook/KPIBar";
 import LessonRow from "@/components/gradebook/LessonRow";
 import LessonDetailPanel from "@/components/gradebook/LessonDetailPanel";
+import AnnouncementBanner from "@/components/AnnouncementBanner";
 import { format } from "date-fns";
 
 export default function StudentDashboard() {
@@ -46,6 +47,7 @@ export default function StudentDashboard() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
+      <AnnouncementBanner />
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <p className="text-sm text-slate-500 mb-1">Student Portal</p>

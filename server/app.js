@@ -9,6 +9,7 @@ import db, { rawSql } from './db-postgres.js';
 import {
   users, enrollments, students, guardianStudents, coachAssignments,
   lessonAssignments, rewardCatalog, studentPoints, pointTransactions,
+  emergencyContacts, cmsContent,
 } from './schema.js';
 import { requireAdmin } from './middleware/auth.js';
 
@@ -59,7 +60,18 @@ async function ensureOverridesTable() {
   }
 }
 
-// 3. Create student_medical_info table if it doesn't exist
+// 3. Add submission_content column to assignment_submissions if missing
+async function ensureSubmissionContentColumn() {
+  try {
+    await rawSql`ALTER TABLE assignment_submissions ADD COLUMN IF NOT EXISTS submission_content TEXT`;
+    await rawSql`ALTER TABLE assignment_submissions ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMP`;
+    console.log('[migration] assignment_submissions submission columns ready');
+  } catch (err) {
+    console.error('[migration] ensureSubmissionContentColumn error:', err.message);
+  }
+}
+
+// 4. Create student_medical_info table if it doesn't exist
 async function ensureMedicalInfoTable() {
   try {
     await rawSql`
@@ -110,6 +122,7 @@ async function seedDemoUsers() {
 
 normalizeEnrollmentStatuses();
 ensureOverridesTable();
+ensureSubmissionContentColumn();
 ensureMedicalInfoTable();
 seedDemoUsers();
 import applicationsRouter from './routes/applications.js';
@@ -227,6 +240,14 @@ const authLimiter = rateLimit({
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register-invite', authLimiter);
 
+const publicFormLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, max: 10,
+  standardHeaders: true, legacyHeaders: false,
+  message: { error: 'Too many submissions. Please try again in an hour.' },
+});
+app.use('/api/applications', publicFormLimiter);
+app.use('/api/contact', publicFormLimiter);
+
 app.use(express.json());
 
 app.use('/api/applications', applicationsRouter);
@@ -337,6 +358,29 @@ app.post('/api/admin/seed-demo-data', requireAdmin, async (req, res) => {
         { studentId: student.id, delta: -15, reason: 'Redeemed: Choose Your Study Music' },
       ]);
       report.push('Created student points (185) with 5 transactions');
+    }
+
+    // Emergency contacts for Ethan
+    const existingContacts = await db.select().from(emergencyContacts).where(eq(emergencyContacts.studentId, student.id));
+    if (!existingContacts.length) {
+      await db.insert(emergencyContacts).values([
+        { studentId: student.id, name: 'Sarah Johnson', relationship: 'Mother', phone: '(555) 123-4567', isAuthorizedPickup: true, priorityOrder: 1 },
+        { studentId: student.id, name: 'David Johnson', relationship: 'Father', phone: '(555) 987-6543', isAuthorizedPickup: true, priorityOrder: 2 },
+      ]);
+      report.push('Created emergency contacts for Ethan');
+    }
+
+    // CMS content
+    const existingCms = await db.select().from(cmsContent);
+    if (!existingCms.length) {
+      await db.insert(cmsContent).values([
+        { key: 'home', title: 'Elevate Education Hub', body: 'Transforming student potential through personalized academic and athletic excellence.', section: 'pages' },
+        { key: 'faq-1', title: 'What programs do you offer?', body: 'We offer Academic, Homeschool Support, Athletic Performance, Recruitment & College Prep, and Family Resource Center programs.', section: 'faq' },
+        { key: 'faq-2', title: 'How do I enroll my child?', body: 'Submit an admissions application on our website. Once approved, you will receive an invitation to create your parent account and complete enrollment.', section: 'faq' },
+        { key: 'faq-3', title: 'What are the tuition payment options?', body: 'We offer monthly and annual billing cycles. Annual plans include a discount. Payments are processed securely through Stripe.', section: 'faq' },
+        { key: 'cancellation-policy', title: 'Cancellation Policy', body: 'Cancellations must be submitted 30 days in advance. Monthly subscribers may cancel at any time effective at the next billing cycle. Annual plans are non-refundable after the first 14 days.', section: 'pages' },
+      ]);
+      report.push('Created CMS content (home, 3 FAQs, cancellation policy)');
     }
 
     res.json({ success: true, seeded: report.length > 0 ? report : ['All demo data already exists'] });

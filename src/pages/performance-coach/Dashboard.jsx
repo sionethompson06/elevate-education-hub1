@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { useAuth } from "@/lib/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiGet, apiPost } from "@/api/apiClient";
+import { apiGet, apiPost, apiPatch, apiDelete } from "@/api/apiClient";
 import { Link } from "react-router-dom";
-import { Users, Activity, AlertTriangle, Calendar, MessageCircle, Plus, Star } from "lucide-react";
+import { Users, Activity, AlertTriangle, Calendar, MessageCircle, Star, Pencil, Trash2, Save, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
@@ -14,6 +14,8 @@ export default function PerformanceCoachDashboard() {
   const [selectedAthlete, setSelectedAthlete] = useState(null);
   const [noteText, setNoteText] = useState("");
   const [savingNote, setSavingNote] = useState(false);
+  const [editingNoteId, setEditingNoteId] = useState(null);
+  const [editNoteText, setEditNoteText] = useState("");
 
   const { data: assignments = [], isLoading } = useQuery({
     queryKey: ["pc-assignments", user?.id],
@@ -41,6 +43,13 @@ export default function PerformanceCoachDashboard() {
     enabled: !!user,
   });
 
+  const { data: notesData } = useQuery({
+    queryKey: ["pc-notes", activeAthlete?.student_id],
+    queryFn: () => apiGet(`/coach-notes/student/${activeAthlete.student_id}`),
+    enabled: !!activeAthlete?.student_id,
+  });
+  const notes = notesData?.notes || [];
+
   const saveNote = async () => {
     if (!noteText.trim() || !activeAthlete) return;
     setSavingNote(true);
@@ -51,11 +60,31 @@ export default function PerformanceCoachDashboard() {
         visibility: "staff_only",
       });
       setNoteText("");
-      qc.invalidateQueries({ queryKey: ["pc-notes"] });
+      qc.invalidateQueries({ queryKey: ["pc-notes", activeAthlete.student_id] });
     } catch (err) {
       console.error("Failed to save note:", err);
     } finally {
       setSavingNote(false);
+    }
+  };
+
+  const saveEditNote = async (id) => {
+    if (!editNoteText.trim()) return;
+    try {
+      await apiPatch(`/coach-notes/${id}`, { content: editNoteText.trim() });
+      setEditingNoteId(null);
+      qc.invalidateQueries({ queryKey: ["pc-notes", activeAthlete.student_id] });
+    } catch (err) {
+      console.error("Failed to update note:", err);
+    }
+  };
+
+  const deleteNote = async (id) => {
+    try {
+      await apiDelete(`/coach-notes/${id}`);
+      qc.invalidateQueries({ queryKey: ["pc-notes", activeAthlete.student_id] });
+    } catch (err) {
+      console.error("Failed to delete note:", err);
     }
   };
 
@@ -172,6 +201,58 @@ export default function PerformanceCoachDashboard() {
                   </button>
                 </CardContent>
               </Card>
+
+              {notes.length > 0 && (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm text-slate-700">Note History</CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <div className="divide-y">
+                      {notes.slice(0, 8).map(note => (
+                        <div key={note.id} className="px-4 py-3">
+                          {editingNoteId === note.id ? (
+                            <div className="space-y-2">
+                              <textarea
+                                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30 min-h-[60px] resize-none"
+                                value={editNoteText}
+                                onChange={e => setEditNoteText(e.target.value)}
+                              />
+                              <div className="flex gap-2">
+                                <button onClick={() => saveEditNote(note.id)} className="flex items-center gap-1 text-xs text-[#1a3c5e] font-medium hover:underline">
+                                  <Save className="w-3 h-3" /> Save
+                                </button>
+                                <button onClick={() => setEditingNoteId(null)} className="text-xs text-slate-400 hover:text-slate-600">Cancel</button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex justify-between gap-3">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm text-slate-700 whitespace-pre-wrap">{note.content}</p>
+                                <p className="text-xs text-slate-400 mt-1">
+                                  {note.createdAt ? format(new Date(note.createdAt), "MMM d, yyyy 'at' h:mm a") : ""}
+                                  {note.coachFirstName ? ` · ${note.coachFirstName} ${note.coachLastName || ""}` : ""}
+                                </p>
+                              </div>
+                              <div className="flex gap-1 shrink-0">
+                                <button
+                                  onClick={() => { setEditingNoteId(note.id); setEditNoteText(note.content); }}
+                                  className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                                <button onClick={() => deleteNote(note.id)} className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-500">
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
               {trainingLogs.length > 0 && (
                 <Card>
