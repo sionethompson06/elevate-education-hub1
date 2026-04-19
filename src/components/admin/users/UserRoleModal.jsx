@@ -1,7 +1,6 @@
 import { useState } from "react";
-import { base44 } from "@/api/base44Client";
-import { apiPost, apiPatch, apiDelete } from "@/api/apiClient";
-import { useQuery } from "@tanstack/react-query";
+import { apiGet, apiPost, apiPatch, apiDelete } from "@/api/apiClient";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { X, Loader2, BookOpen, Activity, Save, Plus, Trash2, Users, GraduationCap, Send, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
@@ -17,64 +16,63 @@ const ROLES = [
 
 export default function UserRoleModal({ user, onClose, onUpdated }) {
   const { toast } = useToast();
+  const qc = useQueryClient();
   const [role, setRole] = useState(user.role || "user");
   const [saving, setSaving] = useState(false);
   const [resending, setResending] = useState(false);
   const [inviteUrl, setInviteUrl] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [assignTab, setAssignTab] = useState("individual"); // "individual" | "program"
+  const [assignTab, setAssignTab] = useState("individual");
 
-  // Individual tab state
   const [selectedStudentId, setSelectedStudentId] = useState("");
-
-  // Program tab state
   const [selectedProgramId, setSelectedProgramId] = useState("");
   const [selectedGrade, setSelectedGrade] = useState("");
   const [bulkAssigning, setBulkAssigning] = useState(false);
 
   const isCoach = ["academic_coach", "performance_coach"].includes(role);
 
-  const { data: existingAssignments = [], refetch: refetchAssignments } = useQuery({
+  const { data: assignmentsData = { assignments: [] }, refetch: refetchAssignments } = useQuery({
     queryKey: ["coach-assignments-user", user.id],
-    queryFn: () => base44.entities.CoachAssignment.filter({ coachUserId: user.id, isActive: true }),
+    queryFn: () => apiGet(`/coach-assignments?coachUserId=${user.id}&isActive=true`),
     enabled: isCoach,
   });
+  const existingAssignments = assignmentsData.assignments || [];
 
-  const { data: allStudents = [] } = useQuery({
+  const { data: studentsData = { students: [] } } = useQuery({
     queryKey: ["all-students-for-coach"],
-    queryFn: () => base44.entities.Student.list(),
+    queryFn: () => apiGet('/students'),
     enabled: isCoach,
   });
+  const allStudents = studentsData.students || [];
 
-  const { data: allPrograms = [] } = useQuery({
+  const { data: programsData = { programs: [] } } = useQuery({
     queryKey: ["all-programs-for-coach"],
-    queryFn: () => base44.entities.Program.filter({ is_active: true }),
+    queryFn: () => apiGet('/programs'),
     enabled: isCoach,
   });
+  const allPrograms = (programsData.programs || []).filter(p => p.status === 'active');
 
-  const { data: allEnrollments = [] } = useQuery({
+  const { data: enrollmentsData = { enrollments: [] } } = useQuery({
     queryKey: ["all-enrollments-for-coach"],
-    queryFn: () => base44.entities.Enrollment.list("-created_date", 500),
+    queryFn: () => apiGet('/enrollments'),
     enabled: isCoach && assignTab === "program",
   });
+  const allEnrollments = enrollmentsData.enrollments || [];
 
   const assignedStudentIds = new Set(existingAssignments.map(a => a.studentId));
   const unassignedStudents = allStudents.filter(s => !assignedStudentIds.has(s.id));
 
-  // Derive unique grade levels from all students
   const gradeOptions = [...new Set(allStudents.map(s => s.grade).filter(Boolean))].sort();
 
-  // Filter students by selected program & grade
   const studentsMatchingFilter = (() => {
     if (!selectedProgramId) return [];
-
+    const programIdNum = parseInt(selectedProgramId);
     const enrolledStudentIds = new Set(
       allEnrollments
-        .filter(e => (e.programId ?? e.program_id) === selectedProgramId && ["active", "active_override", "pending_payment"].includes(e.status))
-        .map(e => e.studentId ?? e.student_id)
+        .filter(e => e.programId === programIdNum && ["active", "active_override", "pending_payment"].includes(e.status))
+        .map(e => e.studentId)
     );
-
     return allStudents.filter(s => {
       const inProgram = enrolledStudentIds.has(s.id);
       const inGrade = !selectedGrade || s.grade === selectedGrade;
@@ -83,20 +81,17 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
     });
   })();
 
-  const selectedProgram = allPrograms.find(p => p.id === selectedProgramId);
-
-  // ── Handlers ──────────────────────────────────────────────────────────────
+  const selectedProgram = allPrograms.find(p => p.id === parseInt(selectedProgramId));
 
   const studentName = (s) => s ? `${s.firstName || ''} ${s.lastName || ''}`.trim() || s.email : '';
 
   const handleAssignStudent = async () => {
     if (!selectedStudentId) return;
     try {
-      await base44.entities.CoachAssignment.create({
+      await apiPost('/coach-assignments', {
         coachUserId: user.id,
         coachType: role,
         studentId: parseInt(selectedStudentId),
-        isActive: true,
         startDate: new Date().toISOString().split("T")[0],
       });
       setSelectedStudentId("");
@@ -114,11 +109,10 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
     try {
       await Promise.all(
         studentsMatchingFilter.map(student =>
-          base44.entities.CoachAssignment.create({
+          apiPost('/coach-assignments', {
             coachUserId: user.id,
             coachType: role,
             studentId: student.id,
-            isActive: true,
             startDate: today,
           })
         )
@@ -133,7 +127,7 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
 
   const handleRemoveAssignment = async (assignmentId) => {
     try {
-      await base44.entities.CoachAssignment.patch(assignmentId, { isActive: false });
+      await apiPatch(`/coach-assignments/${assignmentId}`, { isActive: false });
       refetchAssignments();
       toast({ title: "Student removed from coach" });
     } catch (err) {
@@ -150,7 +144,7 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
       if (res.emailSent) {
         toast({ title: "Invite email sent!", description: `Sent to ${user.email}.` });
       } else if (url) {
-        setInviteUrl(url); // show copyable link in modal
+        setInviteUrl(url);
       }
     } catch (err) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -162,7 +156,8 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
     setSaving(true);
     try {
       await apiPatch(`/users/${user.id}`, { role });
-      toast({ title: "Role updated", description: `${user.firstName ? `${user.firstName} ${user.lastName}` : user.email} is now ${role}.` });
+      toast({ title: "Role updated", description: `${user.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : user.email} is now ${role}.` });
+      qc.invalidateQueries({ queryKey: ["admin-all-users"] });
       onUpdated();
     } catch (err) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -174,7 +169,7 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
     setDeleting(true);
     try {
       await apiDelete(`/users/${user.id}`);
-      toast({ title: "User archived", description: `${user.firstName ? `${user.firstName} ${user.lastName}` : user.email} has been archived.` });
+      toast({ title: "User archived", description: `${user.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : user.email} has been archived.` });
       onUpdated();
     } catch (err) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -183,18 +178,21 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
     }
   };
 
+  const displayName = user.firstName
+    ? `${user.firstName} ${user.lastName || ''}`.trim()
+    : user.email;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
 
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-[#1a3c5e] flex items-center justify-center text-white font-bold">
-              {user.full_name?.charAt(0) || "?"}
+              {displayName?.charAt(0)?.toUpperCase() || "?"}
             </div>
             <div>
-              <h2 className="font-bold text-[#1a3c5e] text-lg">{user.full_name || user.email}</h2>
+              <h2 className="font-bold text-[#1a3c5e] text-lg">{displayName}</h2>
               <p className="text-xs text-slate-400">{user.email}</p>
             </div>
           </div>
@@ -205,7 +203,6 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
 
         <div className="px-6 py-5 space-y-5 overflow-y-auto flex-1">
 
-          {/* Role selector */}
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-2">Assign Role</label>
             <div className="space-y-2">
@@ -231,10 +228,8 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
             </div>
           </div>
 
-          {/* Coach assignment panel */}
           {isCoach && (
             <div className="border border-slate-200 rounded-xl overflow-hidden">
-              {/* Panel header */}
               <div className={`flex items-center gap-2 px-4 py-3 ${role === "academic_coach" ? "bg-blue-50 border-b border-blue-100" : "bg-orange-50 border-b border-orange-100"}`}>
                 {role === "academic_coach"
                   ? <BookOpen className="w-4 h-4 text-blue-600" />
@@ -245,7 +240,6 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
                 <span className="ml-auto text-xs text-slate-400">{existingAssignments.length} assigned</span>
               </div>
 
-              {/* Tab switcher */}
               <div className="flex border-b border-slate-100">
                 <button
                   onClick={() => setAssignTab("individual")}
@@ -266,20 +260,17 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
               </div>
 
               <div className="p-4 space-y-3">
-                {/* Currently assigned students (always visible) */}
                 {existingAssignments.length > 0 && (
                   <div className="space-y-1.5">
                     <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Currently Assigned</p>
                     <div className="max-h-40 overflow-y-auto space-y-1">
                       {existingAssignments.map(a => {
-                        const student = allStudents.find(s => s.id === (a.studentId ?? a.student_id));
+                        const student = allStudents.find(s => s.id === a.studentId);
                         return (
                           <div key={a.id} className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
                             <div>
                               <p className="text-sm font-medium text-slate-800">{studentName(student) || `Student #${a.studentId}`}</p>
-                              <p className="text-xs text-slate-400">
-                                {student?.grade ? `Grade ${student.grade}` : ""}
-                              </p>
+                              <p className="text-xs text-slate-400">{student?.grade ? `Grade ${student.grade}` : ""}</p>
                             </div>
                             <button onClick={() => handleRemoveAssignment(a.id)} className="text-red-400 hover:text-red-600 p-1">
                               <Trash2 className="w-3.5 h-3.5" />
@@ -291,7 +282,6 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
                   </div>
                 )}
 
-                {/* ── Individual tab ── */}
                 {assignTab === "individual" && (
                   <div>
                     <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Add Student</p>
@@ -323,11 +313,9 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
                   </div>
                 )}
 
-                {/* ── Program & Grade tab ── */}
                 {assignTab === "program" && (
                   <div className="space-y-3">
                     <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Filter by Program & Grade</p>
-
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="block text-xs text-slate-500 mb-1">Program</label>
@@ -357,7 +345,6 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
                       </div>
                     </div>
 
-                    {/* Matched students preview */}
                     {selectedProgramId && (
                       <div>
                         {studentsMatchingFilter.length === 0 ? (
@@ -403,7 +390,6 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
           )}
         </div>
 
-        {/* Footer */}
         <div className="px-6 pb-5 shrink-0 space-y-2">
           <Button
             variant="outline"
@@ -416,7 +402,7 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
           </Button>
           {inviteUrl && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-1.5">
-              <p className="text-xs font-semibold text-amber-800">Email not configured — copy & share this link:</p>
+              <p className="text-xs font-semibold text-amber-800">Email not configured — copy &amp; share this link:</p>
               <div className="flex gap-2">
                 <input
                   readOnly
@@ -434,13 +420,12 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
             </div>
           )}
 
-          {/* Delete / Archive */}
           {!showDeleteConfirm ? (
             <button
               onClick={() => setShowDeleteConfirm(true)}
               className="w-full py-2.5 rounded-xl border border-red-200 text-sm text-red-500 hover:bg-red-50 flex items-center justify-center gap-2"
             >
-              <Trash2 className="w-4 h-4" /> Delete User
+              <Trash2 className="w-4 h-4" /> Archive User
             </button>
           ) : (
             <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-3">
@@ -449,7 +434,7 @@ export default function UserRoleModal({ user, onClose, onUpdated }) {
                 <div>
                   <p className="text-sm font-semibold text-red-700">Archive this user?</p>
                   <p className="text-xs text-red-600 mt-0.5">
-                    {user.firstName ? `${user.firstName} ${user.lastName}` : user.email} will be archived and can no longer log in. Their data is preserved and an admin can restore them later.
+                    {displayName} will be archived and can no longer log in. Their data is preserved and an admin can restore them later.
                   </p>
                 </div>
               </div>

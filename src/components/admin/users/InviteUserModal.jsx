@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { apiPost } from "@/api/apiClient";
 import { X, Loader2, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
@@ -16,6 +16,8 @@ const ROLES = [
 export default function InviteUserModal({ onClose, onInvited }) {
   const { toast } = useToast();
   const [email, setEmail] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [role, setRole] = useState("parent");
   const [sending, setSending] = useState(false);
   const [inviteUrl, setInviteUrl] = useState(null);
@@ -25,19 +27,18 @@ export default function InviteUserModal({ onClose, onInvited }) {
     setSending(true);
     setInviteUrl(null);
     try {
-      const res = await base44.functions.invoke("inviteAndSetRole", { email: email.trim(), role });
-      const result = res.data || res;
-      const url = result.inviteUrl || result.registerUrl;
-      if (result.emailSent) {
-        toast({ title: "Invite email sent!", description: `Sent to ${email}.` });
-        onInvited();
-      } else if (url) {
+      const res = await apiPost('/users/invite', {
+        email: email.trim().toLowerCase(),
+        role,
+        firstName: firstName.trim() || undefined,
+        lastName: lastName.trim() || undefined,
+      });
+      const url = res.inviteUrl || res.registerUrl;
+      if (url) {
         setInviteUrl(url);
-        onInvited();
-      } else {
-        toast({ title: "Invitation created", description: `User created with role: ${role}.` });
-        onInvited();
       }
+      toast({ title: "Invitation sent", description: `${email} invited as ${role}.` });
+      onInvited();
     } catch (err) {
       toast({ title: "Invite failed", description: err.message, variant: "destructive" });
     }
@@ -55,8 +56,30 @@ export default function InviteUserModal({ onClose, onInvited }) {
         </div>
 
         <div className="px-6 py-5 space-y-5">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1">First Name</label>
+              <input
+                type="text"
+                value={firstName}
+                onChange={e => setFirstName(e.target.value)}
+                placeholder="Optional"
+                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1">Last Name</label>
+              <input
+                type="text"
+                value={lastName}
+                onChange={e => setLastName(e.target.value)}
+                placeholder="Optional"
+                className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30"
+              />
+            </div>
+          </div>
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1">Email Address</label>
+            <label className="block text-sm font-semibold text-slate-700 mb-1">Email Address *</label>
             <input
               type="email"
               value={email}
@@ -104,7 +127,7 @@ export default function InviteUserModal({ onClose, onInvited }) {
         {inviteUrl && (
           <div className="px-6 pb-3">
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-1.5">
-              <p className="text-xs font-semibold text-amber-800">Email not configured — copy & share this link:</p>
+              <p className="text-xs font-semibold text-amber-800">Email not configured — copy &amp; share this link:</p>
               <div className="flex gap-2">
                 <input
                   readOnly

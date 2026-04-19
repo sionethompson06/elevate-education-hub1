@@ -1,6 +1,6 @@
 import { useAuth } from "@/lib/AuthContext";
 import { useQuery } from "@tanstack/react-query";
-import { base44 } from "@/api/base44Client";
+import { apiGet } from "@/api/apiClient";
 import { Link } from "react-router-dom";
 import { Users, DollarSign, ShieldCheck, FileText, BookOpen, Activity, Star, MessageCircle, TrendingUp, GraduationCap, Home, Trophy, ChevronRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,26 +28,32 @@ const PROGRAMS = [
 export default function AdminDashboard() {
   const { user } = useAuth();
 
-  const { data: enrollments = [] } = useQuery({
+  const { data: enrollmentsData = { enrollments: [] } } = useQuery({
     queryKey: ["admin-enrollment-count"],
-    queryFn: () => base44.entities.Enrollment.filter({ status: "active" }),
+    queryFn: () => apiGet('/enrollments'),
   });
 
-  const { data: applications = [] } = useQuery({
-    queryKey: ["admin-pending-apps"],
-    queryFn: () => base44.entities.Application.filter({ status: "submitted" }),
+  const { data: studentsData = { students: [] } } = useQuery({
+    queryKey: ["admin-students-count"],
+    queryFn: () => apiGet('/students'),
   });
 
-  const { data: redemptions = [] } = useQuery({
-    queryKey: ["admin-pending-redemptions"],
-    queryFn: () => base44.functions.invoke("rewards", { action: "get_pending_redemptions" }).then(r => r.data?.redemptions || []),
+  const { data: usersData = { users: [] } } = useQuery({
+    queryKey: ["admin-users-count"],
+    queryFn: () => apiGet('/users'),
   });
+
+  const allEnrollments = enrollmentsData.enrollments || [];
+  const activeEnrollments = allEnrollments.filter(e => ["active", "active_override"].includes(e.status));
+  const pendingEnrollments = allEnrollments.filter(e => ["pending_payment", "pending"].includes(e.status));
+  const totalStudents = (studentsData.students || []).length;
+  const totalUsers = (usersData.users || []).length;
 
   const stats = [
-    { icon: Users, label: "Active Enrollments", value: enrollments.length, color: "text-blue-600" },
-    { icon: FileText, label: "Pending Applications", value: applications.length, color: "text-yellow-500" },
-    { icon: Star, label: "Pending Redemptions", value: redemptions.length, color: "text-purple-600" },
-    { icon: TrendingUp, label: "Programs Active", value: 5, color: "text-green-600" },
+    { icon: Users, label: "Active Enrollments", value: activeEnrollments.length, color: "text-blue-600" },
+    { icon: DollarSign, label: "Pending Payments", value: pendingEnrollments.length, color: "text-yellow-500" },
+    { icon: GraduationCap, label: "Total Students", value: totalStudents, color: "text-green-600" },
+    { icon: TrendingUp, label: "Total Users", value: totalUsers, color: "text-purple-600" },
   ];
 
   return (
@@ -55,7 +61,7 @@ export default function AdminDashboard() {
       <div>
         <div className="inline-block px-3 py-1 bg-red-100 text-red-700 rounded-full text-xs font-semibold mb-2">Admin</div>
         <h1 className="text-3xl font-bold text-[#1a3c5e]">Admin Dashboard</h1>
-        <p className="text-slate-500 mt-1">{user?.full_name} — Elevate Education Hub Control Panel</p>
+        <p className="text-slate-500 mt-1">{user?.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : user?.email} — Elevate Education Hub Control Panel</p>
       </div>
 
       {/* Live stats */}
@@ -78,7 +84,7 @@ export default function AdminDashboard() {
         <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">5 Core Program Hubs</h2>
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
           {PROGRAMS.map(({ label, icon: Icon, color, bg }) => (
-            <div key={label} className={`rounded-xl border border-slate-100 p-4 text-center`}>
+            <div key={label} className="rounded-xl border border-slate-100 p-4 text-center">
               <div className={`w-10 h-10 rounded-xl ${bg} flex items-center justify-center mx-auto mb-2`}>
                 <Icon className={`w-5 h-5 ${color}`} />
               </div>
@@ -94,10 +100,10 @@ export default function AdminDashboard() {
         <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">View Portal Hubs</h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
-            { label: "Student Hub", desc: "View the student portal experience", href: "/student/dashboard", icon: BookOpen, color: "text-blue-600", bg: "bg-blue-50", badge: "bg-blue-100 text-blue-700" },
-            { label: "Parent Hub", desc: "View the parent portal experience", href: "/parent/dashboard", icon: Users, color: "text-purple-600", bg: "bg-purple-50", badge: "bg-purple-100 text-purple-700" },
-            { label: "Coach Hub", desc: "View the academic coach experience", href: "/academic-coach/dashboard", icon: GraduationCap, color: "text-emerald-600", bg: "bg-emerald-50", badge: "bg-emerald-100 text-emerald-700" },
-          ].map(({ label, desc, href, icon: Icon, color, bg, badge }) => (
+            { label: "Student Hub", desc: "View the student portal experience", href: "/student/dashboard", icon: BookOpen, color: "text-blue-600", bg: "bg-blue-50" },
+            { label: "Parent Hub", desc: "View the parent portal experience", href: "/parent/dashboard", icon: Users, color: "text-purple-600", bg: "bg-purple-50" },
+            { label: "Coach Hub", desc: "View the academic coach experience", href: "/academic-coach/dashboard", icon: GraduationCap, color: "text-emerald-600", bg: "bg-emerald-50" },
+          ].map(({ label, desc, href, icon: Icon, color, bg }) => (
             <Link key={href} to={href}>
               <Card className="hover:shadow-md hover:border-[#1a3c5e] transition-all cursor-pointer h-full">
                 <CardHeader className="pb-2">
