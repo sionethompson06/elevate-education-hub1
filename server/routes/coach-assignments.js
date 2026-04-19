@@ -10,12 +10,15 @@ const router = Router();
 // GET /api/coach-assignments?coachUserId=X&isActive=true
 router.get('/', requireAuth, async (req, res) => {
   try {
-    const coachUserId = parseInt(req.query.coachUserId || req.query.coach_user_id);
+    // Non-admins are always scoped to their own assignments regardless of query param
+    const requestedCoachUserId = parseInt(req.query.coachUserId || req.query.coach_user_id);
+    const effectiveCoachUserId = req.user.role === 'admin' ? requestedCoachUserId : req.user.id;
+
     const studentId   = parseInt(req.query.studentId   || req.query.student_id);
     const isActiveRaw = req.query.isActive ?? req.query.is_active;
 
     const conditions = [];
-    if (coachUserId && !isNaN(coachUserId)) conditions.push(eq(coachAssignments.coachUserId, coachUserId));
+    if (effectiveCoachUserId && !isNaN(effectiveCoachUserId)) conditions.push(eq(coachAssignments.coachUserId, effectiveCoachUserId));
     if (studentId   && !isNaN(studentId))   conditions.push(eq(coachAssignments.studentId, studentId));
     if (isActiveRaw !== undefined)           conditions.push(eq(coachAssignments.isActive, isActiveRaw === 'true'));
 

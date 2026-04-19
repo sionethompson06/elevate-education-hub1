@@ -3,10 +3,12 @@ import { useAuth } from "@/lib/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost, apiPatch, apiDelete } from "@/api/apiClient";
 import { Link } from "react-router-dom";
-import { Users, Activity, AlertTriangle, Calendar, MessageCircle, Star, Pencil, Trash2, Save, X } from "lucide-react";
+import { Users, Activity, AlertTriangle, Calendar, MessageCircle, Star, Pencil, Trash2, Save, X, Plus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { format } from "date-fns";
+
+const TYPE_LABELS = { strength: "Strength", conditioning: "Conditioning", skill: "Skill", speed: "Speed", recovery: "Recovery", general: "General" };
 
 export default function PerformanceCoachDashboard() {
   const { user } = useAuth();
@@ -16,6 +18,9 @@ export default function PerformanceCoachDashboard() {
   const [savingNote, setSavingNote] = useState(false);
   const [editingNoteId, setEditingNoteId] = useState(null);
   const [editNoteText, setEditNoteText] = useState("");
+  const [showLogForm, setShowLogForm] = useState(false);
+  const [logForm, setLogForm] = useState({ date: new Date().toISOString().split("T")[0], type: "general", durationMinutes: 60, notes: "" });
+  const [savingLog, setSavingLog] = useState(false);
 
   const { data: assignments = [], isLoading } = useQuery({
     queryKey: ["pc-assignments", user?.id],
@@ -85,6 +90,27 @@ export default function PerformanceCoachDashboard() {
       qc.invalidateQueries({ queryKey: ["pc-notes", activeAthlete.student_id] });
     } catch (err) {
       console.error("Failed to delete note:", err);
+    }
+  };
+
+  const saveLog = async () => {
+    if (!logForm.date || !activeAthlete) return;
+    setSavingLog(true);
+    try {
+      await apiPost("/training-logs", {
+        studentId: activeAthlete.student_id,
+        date: logForm.date,
+        type: logForm.type,
+        durationMinutes: logForm.durationMinutes ? parseInt(logForm.durationMinutes) : null,
+        notes: logForm.notes || null,
+      });
+      setShowLogForm(false);
+      setLogForm({ date: new Date().toISOString().split("T")[0], type: "general", durationMinutes: 60, notes: "" });
+      qc.invalidateQueries({ queryKey: ["pc-logs", activeAthlete.student_id] });
+    } catch (err) {
+      console.error("Failed to save log:", err);
+    } finally {
+      setSavingLog(false);
     }
   };
 
@@ -165,7 +191,12 @@ export default function PerformanceCoachDashboard() {
             <>
               <Card>
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base text-slate-700">{activeAthlete.student_name} — Performance Overview</CardTitle>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base text-slate-700">{activeAthlete.student_name} — Performance Overview</CardTitle>
+                    <Button size="sm" className="bg-[#1a3c5e] hover:bg-[#0d2540]" onClick={() => setShowLogForm(true)}>
+                      <Plus className="w-3.5 h-3.5 mr-1" /> Log Session
+                    </Button>
+                  </div>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="grid grid-cols-2 gap-3 text-center">
@@ -290,6 +321,65 @@ export default function PerformanceCoachDashboard() {
           )}
         </div>
       </div>
+
+      {showLogForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-bold text-[#1a3c5e] text-lg">Log Training Session</h3>
+              <button onClick={() => setShowLogForm(false)} className="p-1 rounded hover:bg-slate-100">
+                <X className="w-4 h-4 text-slate-500" />
+              </button>
+            </div>
+            <p className="text-sm text-slate-500">Athlete: <span className="font-medium text-slate-700">{activeAthlete?.student_name}</span></p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Date *</label>
+                <input
+                  type="date"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+                  value={logForm.date}
+                  onChange={e => setLogForm(f => ({ ...f, date: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Type</label>
+                <select
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+                  value={logForm.type}
+                  onChange={e => setLogForm(f => ({ ...f, type: e.target.value }))}
+                >
+                  {Object.entries(TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Duration (min)</label>
+              <input
+                type="number" min="5"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+                value={logForm.durationMinutes}
+                onChange={e => setLogForm(f => ({ ...f, durationMinutes: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>
+              <textarea
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none resize-none h-20"
+                value={logForm.notes}
+                onChange={e => setLogForm(f => ({ ...f, notes: e.target.value }))}
+                placeholder="Session notes..."
+              />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <button onClick={() => setShowLogForm(false)} className="flex-1 py-2 rounded-lg border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
+              <Button onClick={saveLog} disabled={savingLog || !logForm.date} className="flex-1 bg-[#1a3c5e] hover:bg-[#0d2540]">
+                {savingLog ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

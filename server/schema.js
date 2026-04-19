@@ -214,6 +214,8 @@ export const assignmentSubmissions = pgTable('assignment_submissions', {
   feedback: text('feedback'),
   gradedBy: integer('graded_by').references(() => users.id),
   gradedAt: timestamp('graded_at'),
+  submissionContent: text('submission_content'),
+  submittedAt: timestamp('submitted_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 

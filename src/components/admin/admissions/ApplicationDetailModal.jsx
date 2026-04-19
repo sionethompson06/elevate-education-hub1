@@ -3,6 +3,7 @@ import { apiPatch, apiPost } from "@/api/apiClient";
 import { useAuth } from "@/lib/AuthContext";
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { X, CheckCircle, XCircle, Clock, Loader2, Mail, Pencil, Save, ExternalLink } from "lucide-react";
 import { format } from "date-fns";
 
@@ -23,6 +24,7 @@ export default function ApplicationDetailModal({ application: initialApp, status
   const [inviting, setInviting] = useState(false);
   const [inviteUrl, setInviteUrl] = useState(null);
 
+  const [showDenyConfirm, setShowDenyConfirm] = useState(false);
   const [editingContact, setEditingContact] = useState(false);
   const [contactForm, setContactForm] = useState({
     full_name: `${initialApp.parent_first_name} ${initialApp.parent_last_name}`.trim(),
@@ -94,6 +96,13 @@ export default function ApplicationDetailModal({ application: initialApp, status
           title: "Application approved!",
           description: `Parent account and student record created. Invite sent to ${res.parentUser?.email}.`,
         });
+        onUpdated();
+      } else if (newStatus === "denied") {
+        const res = await apiPost(`/applications/${app.id}/deny`, {
+          decision_notes: decisionNotes,
+        });
+        setApp(res.application);
+        toast({ title: "Application denied", description: "The applicant has been notified." });
         onUpdated();
       } else {
         const res = await apiPatch(`/applications/${app.id}`, {
@@ -283,7 +292,7 @@ export default function ApplicationDetailModal({ application: initialApp, status
             <Button
               variant="outline"
               className="text-red-700 border-red-200 hover:bg-red-50"
-              onClick={() => makeDecision("denied")}
+              onClick={() => setShowDenyConfirm(true)}
               disabled={saving}
             >
               <XCircle className="w-4 h-4 mr-2" />Deny
@@ -299,6 +308,26 @@ export default function ApplicationDetailModal({ application: initialApp, status
           </div>
         )}
       </div>
+
+      <AlertDialog open={showDenyConfirm} onOpenChange={setShowDenyConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Deny this application?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will mark the application as denied and notify {app.parent_first_name} {app.parent_last_name}. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              onClick={() => { setShowDenyConfirm(false); makeDecision("denied"); }}
+            >
+              Deny Application
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

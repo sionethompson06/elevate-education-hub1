@@ -4,7 +4,7 @@ import { randomBytes } from 'crypto';
 import { sendInviteEmail } from '../services/email.service.js';
 
 import db from '../db-postgres.js';
-import { applications, users, students, guardianStudents } from '../schema.js';
+import { applications, users, students, guardianStudents, enrollments, programs, billingAccounts, invoices, schoolYears } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { logAudit } from '../services/audit.service.js';
 import { createNotification } from '../services/notification.service.js';
@@ -181,6 +181,67 @@ router.post('/:id/approve', requireAuth, requireRole('admin'), async (req, res) 
       });
     }
 
+    // Auto-create pending enrollment if program can be matched
+    try {
+      let [currentYear] = await db.select().from(schoolYears).where(eq(schoolYears.isCurrent, true));
+      if (!currentYear) {
+        const now = new Date();
+        [currentYear] = await db.insert(schoolYears).values({
+          name: `${now.getFullYear()}-${now.getFullYear() + 1}`,
+          startDate: `${now.getFullYear()}-08-01`,
+          endDate: `${now.getFullYear() + 1}-06-30`,
+          isCurrent: true,
+        }).returning();
+      }
+
+      const allPrograms = await db.select().from(programs).where(eq(programs.status, 'active'));
+      const matchedProgram = app.programInterest
+        ? allPrograms.find(p =>
+            p.name.toLowerCase().includes(app.programInterest.toLowerCase()) ||
+            p.type.toLowerCase() === app.programInterest.toLowerCase()
+          )
+        : null;
+
+      if (matchedProgram) {
+        const [existingEnrollment] = await db.select().from(enrollments).where(
+          and(
+            eq(enrollments.studentId, studentRecord.id),
+            eq(enrollments.programId, matchedProgram.id),
+            eq(enrollments.schoolYearId, currentYear.id)
+          )
+        );
+        if (!existingEnrollment) {
+          const [newEnrollment] = await db.insert(enrollments).values({
+            studentId: studentRecord.id,
+            programId: matchedProgram.id,
+            schoolYearId: currentYear.id,
+            status: 'pending_payment',
+            enrolledBy: req.user.id,
+          }).returning();
+
+          let [billingAccount] = await db.select().from(billingAccounts)
+            .where(eq(billingAccounts.parentUserId, parentUser.id));
+          if (!billingAccount) {
+            [billingAccount] = await db.insert(billingAccounts).values({
+              parentUserId: parentUser.id,
+            }).returning();
+          }
+
+          const dueDate = new Date();
+          dueDate.setDate(dueDate.getDate() + 30);
+          await db.insert(invoices).values({
+            billingAccountId: billingAccount.id,
+            enrollmentId: newEnrollment.id,
+            description: `Tuition - ${matchedProgram.name}`,
+            amount: matchedProgram.tuitionAmount,
+            dueDate: dueDate.toISOString().split('T')[0],
+          });
+        }
+      }
+    } catch (enrollErr) {
+      console.warn('[approve] auto-enrollment failed (non-fatal):', enrollErr.message);
+    }
+
     // Auto-invite parent — generate token and send email
     let inviteUrl = null;
     try {
@@ -221,6 +282,48 @@ router.post('/:id/approve', requireAuth, requireRole('admin'), async (req, res) 
     });
   } catch (err) {
     console.error('Approve application error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.post('/:id/deny', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const [app] = await db.select().from(applications).where(eq(applications.id, id));
+    if (!app) return res.status(404).json({ success: false, error: 'Application not found' });
+    if (app.status === 'denied') return res.status(400).json({ success: false, error: 'Application already denied' });
+
+    const { decision_notes } = req.body;
+
+    await db.update(applications)
+      .set({ status: 'denied', reviewerNotes: decision_notes || null })
+      .where(eq(applications.id, id));
+
+    await logAudit({
+      userId: req.user.id,
+      action: 'update',
+      entityType: 'application',
+      entityId: id,
+      details: { status: 'denied', reviewed_by: req.user.email },
+      ipAddress: req.ip,
+    });
+
+    // Notify parent user if their account exists
+    const [parentUser] = await db.select().from(users).where(eq(users.email, app.email.toLowerCase().trim()));
+    if (parentUser) {
+      await createNotification({
+        userId: parentUser.id,
+        type: 'application_denied',
+        title: 'Application update',
+        body: `We regret to inform you that ${app.studentFirstName}'s application was not approved at this time. Please contact us if you have questions.`,
+        link: null,
+      });
+    }
+
+    const [updatedApp] = await db.select().from(applications).where(eq(applications.id, id));
+    res.json({ success: true, application: formatApp(updatedApp) });
+  } catch (err) {
+    console.error('Deny application error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

@@ -29,10 +29,7 @@ export default function Checkout() {
 
   const { data: enrollment, isLoading: enrollmentLoading } = useQuery({
     queryKey: ["enrollment-detail", enrollmentId],
-    queryFn: () => apiFetch("/enrollments/my-students").then(d => {
-      const found = (d.enrollments || []).find(e => String(e.id) === String(enrollmentId));
-      return found || null;
-    }),
+    queryFn: () => apiFetch(`/enrollments/${enrollmentId}`).then(d => d.enrollment || null),
     enabled: !!enrollmentId && !!user,
   });
 

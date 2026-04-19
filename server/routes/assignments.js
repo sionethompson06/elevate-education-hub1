@@ -191,15 +191,17 @@ router.post('/:id/submit', requireAuth, async (req, res) => {
 
     let submission;
     if (existing) {
-      await rawSql`UPDATE assignment_submissions SET submission_content = ${content.trim()}, submitted_at = NOW() WHERE id = ${existing.id}`;
-      submission = { ...existing, submissionContent: content.trim(), submittedAt: new Date() };
+      [submission] = await db.update(assignmentSubmissions)
+        .set({ submissionContent: content.trim(), submittedAt: new Date() })
+        .where(eq(assignmentSubmissions.id, existing.id))
+        .returning();
     } else {
-      const [inserted] = await db.insert(assignmentSubmissions).values({
+      [submission] = await db.insert(assignmentSubmissions).values({
         assignmentId,
         studentId: studentRec.id,
+        submissionContent: content.trim(),
+        submittedAt: new Date(),
       }).returning();
-      await rawSql`UPDATE assignment_submissions SET submission_content = ${content.trim()}, submitted_at = NOW() WHERE id = ${inserted.id}`;
-      submission = { ...inserted, submissionContent: content.trim(), submittedAt: new Date() };
     }
 
     await logAudit({
@@ -226,14 +228,25 @@ router.get('/my-submissions', requireAuth, async (req, res) => {
     const [studentRec] = await db.select().from(students).where(eq(students.userId, req.user.id));
     if (!studentRec) return res.json({ success: true, submissions: [] });
 
-    const subs = await rawSql`
-      SELECT s.*, a.title as assignment_title, a.description as assignment_description, a.max_score, a.due_date
-      FROM assignment_submissions s
-      JOIN assignments a ON a.id = s.assignment_id
-      WHERE s.student_id = ${studentRec.id}
-      ORDER BY s.created_at DESC
-    `;
-    res.json({ success: true, submissions: subs.rows || subs });
+    const subs = await db.select({
+      id: assignmentSubmissions.id,
+      assignmentId: assignmentSubmissions.assignmentId,
+      studentId: assignmentSubmissions.studentId,
+      score: assignmentSubmissions.score,
+      isMissing: assignmentSubmissions.isMissing,
+      isLate: assignmentSubmissions.isLate,
+      feedback: assignmentSubmissions.feedback,
+      submissionContent: assignmentSubmissions.submissionContent,
+      submittedAt: assignmentSubmissions.submittedAt,
+      createdAt: assignmentSubmissions.createdAt,
+      assignment_title: assignments.title,
+      assignment_description: assignments.description,
+      max_score: assignments.maxScore,
+      due_date: assignments.dueDate,
+    }).from(assignmentSubmissions)
+      .innerJoin(assignments, eq(assignmentSubmissions.assignmentId, assignments.id))
+      .where(eq(assignmentSubmissions.studentId, studentRec.id));
+    res.json({ success: true, submissions: subs });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

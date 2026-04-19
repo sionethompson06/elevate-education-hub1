@@ -7,6 +7,7 @@ import {
   CreditCard, DollarSign, CheckCircle, Clock, XCircle, AlertCircle,
   Users, ExternalLink, RefreshCw, Loader2
 } from "lucide-react";
+import { apiPost } from "@/api/apiClient";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import PaymentHistory from "@/components/parent/PaymentHistory";
@@ -38,6 +39,19 @@ export default function PaymentsBilling() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [studentFilter, setStudentFilter] = useState("all");
   const [showSuccess, setShowSuccess] = useState(paymentSuccess);
+  const [portalLoading, setPortalLoading] = useState(false);
+
+  const openBillingPortal = async () => {
+    setPortalLoading(true);
+    try {
+      const res = await apiPost("/stripe/portal", { return_url: window.location.href });
+      if (res.url) window.open(res.url, "_blank");
+    } catch (err) {
+      console.error("Billing portal error:", err);
+    } finally {
+      setPortalLoading(false);
+    }
+  };
 
   // Auto-dismiss success banner after 6 seconds
   useEffect(() => {
@@ -101,15 +115,10 @@ export default function PaymentsBilling() {
           <p className="text-slate-500 text-sm mt-0.5">Manage your enrollments and payment history</p>
         </div>
         {billingAccount?.stripeCustomerId && (
-          <a
-            href="https://billing.stripe.com/p/login/test_eVa5oq8oP0vc2qQ144"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Button variant="outline" className="gap-2">
-              <ExternalLink className="w-4 h-4" /> Manage Subscription
-            </Button>
-          </a>
+          <Button variant="outline" className="gap-2" onClick={openBillingPortal} disabled={portalLoading}>
+            {portalLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ExternalLink className="w-4 h-4" />}
+            Manage Subscription
+          </Button>
         )}
       </div>
 

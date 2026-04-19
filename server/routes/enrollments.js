@@ -249,6 +249,48 @@ router.post('/', requireAuth, async (req, res) => {
   }
 });
 
+// GET /api/enrollments/:id — single enrollment (parent: must own it; admin: any)
+router.get('/:id', requireAuth, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ success: false, error: 'Invalid enrollment ID' });
+
+    const [row] = await db.select({
+      id: enrollments.id,
+      studentId: enrollments.studentId,
+      programId: enrollments.programId,
+      sectionId: enrollments.sectionId,
+      schoolYearId: enrollments.schoolYearId,
+      status: enrollments.status,
+      startDate: enrollments.startDate,
+      endDate: enrollments.endDate,
+      createdAt: enrollments.createdAt,
+      programName: programs.name,
+      programBillingCycle: programs.billingCycle,
+      programTuition: programs.tuitionAmount,
+      studentFirstName: students.firstName,
+      studentLastName: students.lastName,
+    }).from(enrollments)
+      .leftJoin(programs, eq(enrollments.programId, programs.id))
+      .leftJoin(students, eq(enrollments.studentId, students.id))
+      .where(eq(enrollments.id, id));
+
+    if (!row) return res.status(404).json({ success: false, error: 'Enrollment not found' });
+
+    // Parent can only view their own students' enrollments
+    if (req.user.role === 'parent') {
+      const [link] = await db.select().from(guardianStudents).where(
+        and(eq(guardianStudents.guardianUserId, req.user.id), eq(guardianStudents.studentId, row.studentId))
+      );
+      if (!link) return res.status(403).json({ success: false, error: 'Not authorized' });
+    }
+
+    res.json({ success: true, enrollment: row });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 router.patch('/:id', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     const id = parseInt(req.params.id);

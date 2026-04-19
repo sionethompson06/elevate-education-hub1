@@ -20,6 +20,8 @@ export default function Programs() {
   const [enrollingId, setEnrollingId] = useState(null);
   const [billingChoice, setBillingChoice] = useState({});
   const [error, setError] = useState(null);
+  const [selectedStudentId, setSelectedStudentId] = useState(null);
+  const [pendingEnrollProgram, setPendingEnrollProgram] = useState(null);
 
   const { data: programData, isLoading: programsLoading } = useQuery({
     queryKey: ["parent-programs"],
@@ -35,6 +37,7 @@ export default function Programs() {
 
   const programs = programData?.programs || [];
   const myEnrollments = myStudentsData?.enrollments || [];
+  // 'students' is derived above in handleEnroll; used here for the selector modal too
 
   const getEnrollmentStatus = (programId) => {
     return myEnrollments.find(e => (e.programId ?? e.program_id) === programId && ["active", "active_override", "pending_payment", "pending"].includes(e.status));
@@ -42,15 +45,20 @@ export default function Programs() {
 
   const getBillingCycle = (program) => billingChoice[program.id] || "monthly";
 
+  const students = myStudentsData?.students || [];
+
   const handleEnroll = async (program) => {
-    setEnrollingId(program.id);
     setError(null);
-    const studentId = myStudentsData?.students?.[0]?.id;
-    if (!studentId) {
-      setError('No student found on your account. Please contact support.');
-      setEnrollingId(null);
+    if (students.length > 1 && !selectedStudentId) {
+      setPendingEnrollProgram(program);
       return;
     }
+    const studentId = selectedStudentId || students[0]?.id;
+    if (!studentId) {
+      setError('No student found on your account. Please contact support.');
+      return;
+    }
+    setEnrollingId(program.id);
     try {
       const res = await apiPost('/enrollments', {
         studentId,
@@ -66,6 +74,13 @@ export default function Programs() {
     } finally {
       setEnrollingId(null);
     }
+  };
+
+  const confirmEnrollWithStudent = async () => {
+    if (!pendingEnrollProgram || !selectedStudentId) return;
+    const program = pendingEnrollProgram;
+    setPendingEnrollProgram(null);
+    await handleEnroll(program);
   };
 
   return (
@@ -229,6 +244,36 @@ export default function Programs() {
               </div>
             );
           })}
+        </div>
+      )}
+      {/* Student selector modal for multi-student families */}
+      {pendingEnrollProgram && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <h3 className="font-bold text-[#1a3c5e] text-lg">Which student to enroll?</h3>
+            <p className="text-sm text-slate-500">Enrolling in: <span className="font-medium text-slate-700">{pendingEnrollProgram.name}</span></p>
+            <div className="space-y-2">
+              {students.map(s => (
+                <button
+                  key={s.id}
+                  onClick={() => setSelectedStudentId(s.id)}
+                  className={`w-full text-left px-4 py-3 rounded-xl border-2 text-sm font-medium transition-colors ${selectedStudentId === s.id ? "border-[#1a3c5e] bg-[#1a3c5e]/5 text-[#1a3c5e]" : "border-slate-200 text-slate-700 hover:border-[#1a3c5e]"}`}
+                >
+                  {s.firstName} {s.lastName}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2 pt-2">
+              <button onClick={() => setPendingEnrollProgram(null)} className="flex-1 py-2 rounded-lg border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
+              <Button
+                disabled={!selectedStudentId || enrollingId === pendingEnrollProgram.id}
+                onClick={confirmEnrollWithStudent}
+                className="flex-1 bg-slate-900 hover:bg-slate-800"
+              >
+                {enrollingId === pendingEnrollProgram.id ? "Enrolling..." : "Confirm Enrollment"}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

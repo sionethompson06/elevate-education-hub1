@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { eq, and } from 'drizzle-orm';
 import db from '../db-postgres.js';
-import { enrollments, users, programs, billingAccounts, payments, notifications } from '../schema.js';
+import { enrollments, users, programs, billingAccounts, payments, invoices, students } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import {
   getOrCreateCustomer, createCheckoutSession, createPortalSession, constructWebhookEvent
@@ -108,37 +108,70 @@ export async function stripeWebhookHandler(req, res) {
     if (event.type === 'checkout.session.completed') {
       const session = event.data.object;
       const enrollmentId = session.metadata?.enrollment_id;
+      const parentUserId = session.metadata?.parent_user_id;
+
       if (enrollmentId) {
+        // Activate enrollment
         await db.update(enrollments).set({ status: 'active' })
           .where(eq(enrollments.id, Number(enrollmentId)));
 
-        await db.insert(payments).values({
-          amount: String(session.amount_total / 100),
-          method: 'stripe',
-          stripePaymentIntentId: session.payment_intent || session.subscription || session.id,
-          status: 'paid',
-        }).catch(() => {});
-
-        // Notify parent
+        // Fetch enrollment to get studentId
         const [enrollment] = await db.select().from(enrollments).where(eq(enrollments.id, Number(enrollmentId)));
-        if (enrollment) {
+
+        // Update student status to active
+        if (enrollment?.studentId) {
+          await db.update(students).set({ status: 'active' })
+            .where(eq(students.id, enrollment.studentId));
+        }
+
+        // Fetch billing account for payment record + invoice update
+        let billingAccountId = null;
+        if (parentUserId) {
+          const [billingAccount] = await db.select().from(billingAccounts)
+            .where(eq(billingAccounts.parentUserId, Number(parentUserId)));
+          billingAccountId = billingAccount?.id ?? null;
+        }
+
+        // Find invoice linked to this enrollment and mark it paid
+        let invoiceId = null;
+        const [linkedInvoice] = await db.select().from(invoices)
+          .where(eq(invoices.enrollmentId, Number(enrollmentId)));
+        if (linkedInvoice) {
+          invoiceId = linkedInvoice.id;
+          await db.update(invoices)
+            .set({ status: 'paid', paidDate: new Date().toISOString().split('T')[0], stripePaymentId: session.payment_intent || session.id })
+            .where(eq(invoices.id, linkedInvoice.id));
+        }
+
+        // Insert payment record linked to billing account + invoice
+        if (billingAccountId) {
+          await db.insert(payments).values({
+            billingAccountId,
+            invoiceId,
+            amount: String(session.amount_total / 100),
+            method: 'stripe',
+            stripePaymentIntentId: session.payment_intent || session.subscription || session.id,
+            status: 'paid',
+            processedAt: new Date(),
+          }).catch(err => console.error('[webhook] payment record error:', err));
+        }
+
+        // Notify parent via email
+        if (parentUserId && enrollment) {
           const [prog] = enrollment.programId
             ? await db.select().from(programs).where(eq(programs.id, enrollment.programId))
             : [null];
-          const parentUserId = session.metadata?.parent_user_id;
-          if (parentUserId) {
-            const [parentUser] = await db.select().from(users).where(eq(users.id, Number(parentUserId)));
-            if (parentUser) {
-              await sendPaymentConfirmationEmail(
-                parentUser.email,
-                `${parentUser.firstName} ${parentUser.lastName}`,
-                session.amount_total,
-                prog?.name || 'your program'
-              );
-            }
+          const [parentUser] = await db.select().from(users).where(eq(users.id, Number(parentUserId)));
+          if (parentUser) {
+            await sendPaymentConfirmationEmail(
+              parentUser.email,
+              `${parentUser.firstName} ${parentUser.lastName}`,
+              session.amount_total,
+              prog?.name || 'your program'
+            );
           }
         }
-        console.log(`[stripe] Enrollment ${enrollmentId} activated`);
+        console.log(`[stripe] Enrollment ${enrollmentId} activated, invoice marked paid, student activated`);
       }
     }
 

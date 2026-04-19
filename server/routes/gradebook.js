@@ -202,12 +202,17 @@ router.post('/lessons', requireAuth, requireRole('admin', 'academic_coach'), asy
   }
 });
 
-// PATCH /api/gradebook/lessons/:id — update status/score/feedback
-router.patch('/lessons/:id', requireAuth, async (req, res) => {
+// PATCH /api/gradebook/lessons/:id — update status/score/feedback (coaches and admin only)
+router.patch('/lessons/:id', requireAuth, requireRole('admin', 'academic_coach'), async (req, res) => {
   try {
     const id = Number(req.params.id);
     const [lesson] = await db.select().from(lessonAssignments).where(eq(lessonAssignments.id, id));
     if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
+
+    // Non-admin coaches can only update lessons they own
+    if (req.user.role !== 'admin' && lesson.academicCoachUserId !== req.user.id) {
+      return res.status(403).json({ error: 'Not authorized to update this lesson' });
+    }
 
     const { new_status, points_earned } = req.body;
     const updates = {};
