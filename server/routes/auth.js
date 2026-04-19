@@ -122,16 +122,13 @@ const DEV_ALLOWED_EMAILS = [
 ];
 
 router.post('/dev-login', async (req, res) => {
-  if (process.env.NODE_ENV === 'production') {
-    return res.status(404).json({ error: 'Not found' });
-  }
   const { email } = req.body;
   if (!email) {
     return res.status(400).json({ success: false, error: 'Email is required.' });
   }
   const normalizedEmail = email.toLowerCase().trim();
   if (!DEV_ALLOWED_EMAILS.includes(normalizedEmail)) {
-    return res.status(403).json({ success: false, error: 'This email is not authorized for dev login.' });
+    return res.status(403).json({ success: false, error: 'This email is not authorized for demo login.' });
   }
   try {
     const [user] = await db.select().from(users).where(eq(users.email, normalizedEmail));

@@ -18,11 +18,11 @@ const ROLE_ROUTES = {
 };
 
 const DEMO_USERS = [
-  { label: "Admin",        email: "admin@elevateperformance-academy.com", password: "Admin@Elevate2025!" },
-  { label: "Parent",       email: "sarah.johnson@example.com",            password: "Welcome2025!" },
-  { label: "Student",      email: "ethan.johnson@example.com",            password: "Welcome2025!" },
-  { label: "Acad. Coach",  email: "coach.martinez@elevateperformance-academy.com", password: "Welcome2025!" },
-  { label: "Perf. Coach",  email: "coach.williams@elevateperformance-academy.com", password: "Welcome2025!" },
+  { label: "Admin",       email: "admin@elevateperformance-academy.com" },
+  { label: "Parent",      email: "sarah.johnson@example.com" },
+  { label: "Student",     email: "ethan.johnson@example.com" },
+  { label: "Acad. Coach", email: "coach.martinez@elevateperformance-academy.com" },
+  { label: "Perf. Coach", email: "coach.williams@elevateperformance-academy.com" },
 ];
 
 export default function Login() {
@@ -34,23 +34,28 @@ export default function Login() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
-  const doLogin = async (loginEmail, loginPassword) => {
+  const handleAuthResponse = (res) => {
+    setAuthToken(res.token);
+    setUser(res.user);
+    setIsAuthenticated(true);
+    const from = searchParams.get("from");
+    if (from && from.startsWith("/") && !from.startsWith("//")) {
+      navigate(from, { replace: true });
+    } else {
+      navigate(ROLE_ROUTES[res.user.role] || "/", { replace: true });
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
     setError("");
     setLoading(true);
     try {
       const res = await apiPost('/auth/hub-login', {
-        email: loginEmail.trim().toLowerCase(),
-        password: loginPassword,
+        email: email.trim().toLowerCase(),
+        password,
       });
-      setAuthToken(res.token);
-      setUser(res.user);
-      setIsAuthenticated(true);
-      const from = searchParams.get("from");
-      if (from && from.startsWith("/") && !from.startsWith("//")) {
-        navigate(from, { replace: true });
-      } else {
-        navigate(ROLE_ROUTES[res.user.role] || "/", { replace: true });
-      }
+      handleAuthResponse(res);
     } catch (err) {
       setError(err.message || "Login failed. Please try again.");
     } finally {
@@ -58,9 +63,17 @@ export default function Login() {
     }
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    doLogin(email, password);
+  const handleDemoLogin = async (demoEmail) => {
+    setError("");
+    setLoading(true);
+    try {
+      const res = await apiPost('/auth/dev-login', { email: demoEmail });
+      handleAuthResponse(res);
+    } catch (err) {
+      setError(err.message || "Demo login failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -107,7 +120,7 @@ export default function Login() {
             </form>
 
             <div className="mt-6 border-t pt-4">
-              <p className="text-xs text-slate-500 mb-3 text-center">Quick access — click any role to log in instantly:</p>
+              <p className="text-xs text-slate-500 mb-3 text-center">Quick demo access — click any role:</p>
               <div className="grid grid-cols-2 gap-2">
                 {DEMO_USERS.map((d) => (
                   <Button
@@ -116,7 +129,7 @@ export default function Login() {
                     size="sm"
                     className="text-xs"
                     disabled={loading}
-                    onClick={() => doLogin(d.email, d.password)}
+                    onClick={() => handleDemoLogin(d.email)}
                   >
                     {d.label}
                   </Button>
