@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import db from '../db-postgres.js';
 import { eq, desc } from 'drizzle-orm';
-import { rewardCatalog, studentPoints, pointTransactions, rewardRedemptions, students } from '../schema.js';
+import { rewardCatalog, studentPoints, pointTransactions, rewardRedemptions, students, studentGoals } from '../schema.js';
 
 const router = Router();
 
@@ -205,6 +205,25 @@ router.get('/', requireAuth, async (req, res) => {
     res.json(catalog);
   } catch {
     res.json([]);
+  }
+});
+
+// POST /rewards/goals — create a student goal
+router.post('/goals', requireAuth, async (req, res) => {
+  try {
+    const { studentId, track, title, description, targetPoints } = req.body;
+    if (!studentId || !track || !title || !targetPoints) {
+      return res.status(400).json({ error: 'studentId, track, title, and targetPoints are required' });
+    }
+    const [goal] = await db.insert(studentGoals).values({
+      studentId: Number(studentId),
+      track,
+      title,
+      targetPoints: Number(targetPoints),
+    }).returning();
+    res.json({ success: true, goal });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { base44 } from "@/api/base44Client";
+import { apiGet } from "@/api/apiClient";
 import { Link } from "react-router-dom";
 import HeroSection from "@/components/public/HeroSection";
 import CmsContent from "@/components/public/CmsContent";
@@ -14,21 +14,20 @@ const STEPS = [
 ];
 
 export default function Admissions() {
-  const { data: pages = [] } = useQuery({
-    queryKey: ["cms-page", "admissions"],
-    queryFn: () => base44.entities.CmsPage.filter({ slug: "admissions", status: "published" }),
+  const { data: allCms = [] } = useQuery({
+    queryKey: ["cms-all-public"],
+    queryFn: () => apiGet('/cms'),
   });
 
-  const page = pages[0];
+  const page = allCms.find(r => r.section === "pages" && r.key === "admissions");
 
   return (
     <div>
       <HeroSection
-        headline={page?.hero_headline || "Join the Elevate Community"}
-        subheadline={page?.hero_subheadline || "Our admissions process is designed to find the right fit for every student-athlete."}
-        ctaLabel={page?.hero_cta_label || "Start Your Application"}
-        ctaHref={page?.hero_cta_href || "/apply"}
-        imageUrl={page?.hero_image_url}
+        headline={page?.title || "Join the Elevate Community"}
+        subheadline="Our admissions process is designed to find the right fit for every student-athlete."
+        ctaLabel="Start Your Application"
+        ctaHref="/apply"
       />
 
       {/* Process */}
@@ -49,11 +48,10 @@ export default function Admissions() {
         </div>
       </section>
 
-      {/* Body content from CMS */}
-      {page?.body_content && (
+      {page?.body && (
         <section className="py-12 px-6 bg-slate-50">
           <div className="max-w-3xl mx-auto">
-            <CmsContent content={page.body_content} />
+            <CmsContent content={page.body} />
           </div>
         </section>
       )}

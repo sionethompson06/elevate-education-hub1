@@ -140,4 +140,33 @@ router.delete('/:id', requireAuth, async (req, res) => {
   }
 });
 
+// GET /training-logs/coach-summary — returns per-athlete last log date and needs-attention count
+router.get('/coach-summary', requireAuth, async (req, res) => {
+  try {
+    const studentIds = await getCoachStudentIds(req.user.id);
+    if (studentIds.length === 0) return res.json({ needsAttention: 0, athletes: [] });
+
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 14);
+
+    const athletes = [];
+    for (const sid of studentIds) {
+      const [lastLog] = await db.select().from(trainingLogs)
+        .where(eq(trainingLogs.studentId, sid))
+        .orderBy(desc(trainingLogs.date))
+        .limit(1);
+      athletes.push({
+        studentId: sid,
+        lastLogDate: lastLog?.date || null,
+        needsAttention: !lastLog || new Date(lastLog.date) < cutoff,
+      });
+    }
+
+    const needsAttention = athletes.filter(a => a.needsAttention).length;
+    res.json({ needsAttention, athletes });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 export default router;

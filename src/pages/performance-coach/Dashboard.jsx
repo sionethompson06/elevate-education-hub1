@@ -35,6 +35,12 @@ export default function PerformanceCoachDashboard() {
     enabled: !!activeAthlete?.student_id,
   });
 
+  const { data: coachSummary } = useQuery({
+    queryKey: ["pc-summary", user?.id],
+    queryFn: () => apiGet('/training-logs/coach-summary'),
+    enabled: !!user,
+  });
+
   const saveNote = async () => {
     if (!noteText.trim() || !activeAthlete) return;
     setSavingNote(true);
@@ -79,7 +85,7 @@ export default function PerformanceCoachDashboard() {
           { label: "Assigned Athletes", value: assignments.length, color: "text-blue-600", bg: "bg-blue-50", icon: Users },
           { label: "Training Logs", value: trainingLogs.length, color: "text-orange-600", bg: "bg-orange-50", icon: Activity },
           { label: "Total Points", value: pointsData?.points ?? "—", color: "text-purple-600", bg: "bg-purple-50", icon: Star },
-          { label: "Needs Attention", value: "—", color: "text-red-500", bg: "bg-red-50", icon: AlertTriangle },
+          { label: "Needs Attention", value: coachSummary?.needsAttention ?? "—", color: "text-red-500", bg: "bg-red-50", icon: AlertTriangle },
         ].map(({ label, value, color, bg, icon: Icon }) => (
           <Card key={label}>
             <CardHeader className="pb-2">

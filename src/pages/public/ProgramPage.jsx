@@ -1,12 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
-import { base44 } from "@/api/base44Client";
-import { Link, useParams } from "react-router-dom";
+import { apiGet } from "@/api/apiClient";
+import { Link } from "react-router-dom";
 import HeroSection from "@/components/public/HeroSection";
 import CmsContent from "@/components/public/CmsContent";
 import { Button } from "@/components/ui/button";
 import { Check, ArrowRight } from "lucide-react";
 
-// slug mapping from URL paths
 const SLUG_MAP = {
   academics: "academics",
   athletics: "athletics",
@@ -17,31 +16,22 @@ const SLUG_MAP = {
 export default function ProgramPage({ programType }) {
   const pageSlug = SLUG_MAP[programType] || programType;
 
-  const { data: pages = [] } = useQuery({
-    queryKey: ["cms-page", pageSlug],
-    queryFn: () => base44.entities.CmsPage.filter({ slug: pageSlug, status: "published" }),
-  });
-  const { data: programs = [] } = useQuery({
-    queryKey: ["cms-program", pageSlug],
-    queryFn: () => base44.entities.CmsProgram.filter({ slug: pageSlug, status: "published" }),
-  });
-  const { data: pricingPlans = [] } = useQuery({
-    queryKey: ["cms-pricing", pageSlug],
-    queryFn: () => base44.entities.CmsPricingPlan.filter({ program_slug: pageSlug, status: "published" }),
+  const { data: allCms = [] } = useQuery({
+    queryKey: ["cms-all-public"],
+    queryFn: () => apiGet('/cms'),
   });
 
-  const page = pages[0];
-  const program = programs[0];
-  const pricing = pricingPlans[0];
+  const page = allCms.find(r => r.section === "pages" && r.key === pageSlug);
+  const program = allCms.find(r => r.section === "programs" && r.key === pageSlug);
+  const pricing = allCms.find(r => r.section === "pricing" && r.key?.includes(pageSlug));
 
   return (
     <div>
       <HeroSection
-        headline={page?.hero_headline || program?.name || "Program Details"}
-        subheadline={page?.hero_subheadline || program?.tagline}
-        ctaLabel={page?.hero_cta_label || "Apply Now"}
-        ctaHref={page?.hero_cta_href || "/apply"}
-        imageUrl={page?.hero_image_url}
+        headline={page?.title || program?.title || "Program Details"}
+        subheadline={page?.body || null}
+        ctaLabel="Apply Now"
+        ctaHref="/apply"
       />
 
       <section className="py-16 px-6 bg-white">
@@ -50,53 +40,14 @@ export default function ProgramPage({ programType }) {
             <div className="grid md:grid-cols-2 gap-12">
               <div>
                 <h2 className="text-2xl font-bold text-[#1a3c5e] mb-4">About This Program</h2>
-                <p className="text-slate-600 mb-6">{program.description}</p>
-
-                {program.features?.length > 0 && (
-                  <>
-                    <h3 className="font-semibold text-slate-800 mb-3">What's Included</h3>
-                    <ul className="space-y-2 mb-6">
-                      {program.features.map((f, i) => (
-                        <li key={i} className="flex items-start gap-2 text-sm text-slate-600">
-                          <Check className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
-                          {f}
-                        </li>
-                      ))}
-                    </ul>
-                  </>
-                )}
-
-                {program.who_its_for && (
-                  <>
-                    <h3 className="font-semibold text-slate-800 mb-2">Who It's For</h3>
-                    <p className="text-sm text-slate-600 mb-6">{program.who_its_for}</p>
-                  </>
-                )}
-
-                {program.outcomes && (
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
-                    <p className="text-sm font-semibold text-yellow-800">📈 Results</p>
-                    <p className="text-sm text-yellow-700 mt-1">{program.outcomes}</p>
-                  </div>
-                )}
+                <p className="text-slate-600 mb-6">{program.body}</p>
               </div>
 
               <div>
                 {pricing && (
                   <div className="bg-[#1a3c5e] text-white rounded-2xl p-8">
-                    <h3 className="text-xl font-bold mb-1">{pricing.name}</h3>
-                    <div className="mb-2">
-                      <span className="text-4xl font-bold">${pricing.price_monthly?.toLocaleString()}</span>
-                      <span className="text-slate-300 text-sm ml-1">/month</span>
-                    </div>
-                    {pricing.price_annual && (
-                      <p className="text-yellow-400 text-sm mb-4">
-                        ${pricing.price_annual?.toLocaleString()}/year (save 2 months)
-                      </p>
-                    )}
-                    {pricing.billing_note && (
-                      <p className="text-slate-300 text-xs mb-6">{pricing.billing_note}</p>
-                    )}
+                    <h3 className="text-xl font-bold mb-4">{pricing.title}</h3>
+                    <div className="text-slate-300 text-sm mb-6">{pricing.body}</div>
                     <Link to="/apply">
                       <Button className="w-full bg-yellow-400 text-[#1a3c5e] hover:bg-yellow-300 font-bold">
                         Apply Now <ArrowRight className="ml-2 w-4 h-4" />
@@ -105,9 +56,9 @@ export default function ProgramPage({ programType }) {
                   </div>
                 )}
 
-                {page?.body_content && (
+                {page?.body && !pricing && (
                   <div className="mt-8 bg-slate-50 rounded-xl p-6">
-                    <CmsContent content={page.body_content} />
+                    <CmsContent content={page.body} />
                   </div>
                 )}
               </div>
@@ -115,6 +66,11 @@ export default function ProgramPage({ programType }) {
           ) : (
             <div className="text-center py-20">
               <p className="text-slate-400">Program details are being updated. Check back soon.</p>
+              <Link to="/apply" className="mt-4 inline-block">
+                <Button className="bg-[#1a3c5e] hover:bg-[#0d2540]">
+                  Apply Now <ArrowRight className="ml-2 w-4 h-4" />
+                </Button>
+              </Link>
             </div>
           )}
         </div>

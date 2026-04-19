@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { apiPost } from "@/api/apiClient";
 import { Button } from "@/components/ui/button";
 import { X, Loader2, Target } from "lucide-react";
 
@@ -12,16 +12,19 @@ export default function CreateGoalModal({ student, track, onClose, onSuccess }) 
     e.preventDefault();
     if (!form.title.trim()) { setError("Title is required"); return; }
     setSaving(true);
-    const res = await base44.functions.invoke("rewards", {
-      action: "create_goal",
-      student_id: student.student_id,
-      track,
-      title: form.title,
-      description: form.description,
-      target_points: Number(form.target_points),
-    });
-    if (res.data?.error) { setError(res.data.error); setSaving(false); return; }
-    onSuccess();
+    try {
+      await apiPost('/rewards/goals', {
+        studentId: student.student_id || student.id,
+        track,
+        title: form.title,
+        description: form.description,
+        targetPoints: Number(form.target_points),
+      });
+      onSuccess();
+    } catch (err) {
+      setError(err.message || 'Failed to create goal');
+      setSaving(false);
+    }
   };
 
   return (

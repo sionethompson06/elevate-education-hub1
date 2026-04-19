@@ -40,6 +40,9 @@ export default function Checkout() {
   const studentName = enrollment?.studentFirstName
     ? `${enrollment.studentFirstName} ${enrollment.studentLastName || ""}`.trim()
     : null;
+  const program = enrollment
+    ? { tuitionAmount: enrollment.programTuition, billingCycle: enrollment.programBillingCycle }
+    : null;
 
   const handleCheckout = async () => {
     setLoading(true);
@@ -140,10 +143,10 @@ export default function Checkout() {
           <BillingCycleSelector
             value={billingCycle}
             onChange={(cycle) => { setBillingCycle(cycle); setError(null); }}
-            programName={programName}
+            program={program}
           />
 
-          <TuitionSummary billingCycle={billingCycle} programName={programName} />
+          <TuitionSummary billingCycle={billingCycle} program={program} />
 
           <TermsCheckbox accepted={termsAccepted} onChange={setTermsAccepted} />
 

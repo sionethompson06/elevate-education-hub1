@@ -10,7 +10,14 @@ const router = Router();
 router.get('/', requireAuth, async (req, res) => {
   try {
     const allPrograms = await db.select().from(programs).orderBy(desc(programs.createdAt));
-    res.json({ success: true, programs: allPrograms });
+    res.json({
+      success: true,
+      programs: allPrograms.map(p => ({
+        ...p,
+        category: p.type,
+        ...(p.metadata || {}),
+      })),
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

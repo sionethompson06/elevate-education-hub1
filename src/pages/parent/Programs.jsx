@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "@/lib/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { base44 } from "@/api/base44Client";
+import { apiGet, apiPost } from "@/api/apiClient";
 import { useNavigate } from "react-router-dom";
 import { Check, ChevronRight, Loader2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -23,21 +23,21 @@ export default function Programs() {
 
   const { data: programData, isLoading: programsLoading } = useQuery({
     queryKey: ["parent-programs"],
-    queryFn: () => base44.functions.invoke("enrollment", { action: "get_programs" }).then(r => r.data),
+    queryFn: () => apiGet('/programs'),
     enabled: !!user,
   });
 
-  const { data: enrollmentData } = useQuery({
+  const { data: myStudentsData } = useQuery({
     queryKey: ["my-enrollments", user?.id],
-    queryFn: () => base44.functions.invoke("enrollment", { action: "get_my_enrollments" }).then(r => r.data),
+    queryFn: () => apiGet('/enrollments/my-students'),
     enabled: !!user,
   });
 
   const programs = programData?.programs || [];
-  const myEnrollments = enrollmentData?.enrollments || [];
+  const myEnrollments = myStudentsData?.enrollments || [];
 
   const getEnrollmentStatus = (programId) => {
-    return myEnrollments.find(e => e.program_id === programId && ["active", "active_override", "pending_payment", "pending"].includes(e.status));
+    return myEnrollments.find(e => (e.programId ?? e.program_id) === programId && ["active", "active_override", "pending_payment", "pending"].includes(e.status));
   };
 
   const getBillingCycle = (program) => billingChoice[program.id] || "monthly";
@@ -45,26 +45,26 @@ export default function Programs() {
   const handleEnroll = async (program) => {
     setEnrollingId(program.id);
     setError(null);
-    const billing_cycle = getBillingCycle(program);
-    const res = await base44.functions.invoke("enrollment", {
-      action: "enroll",
-      program_id: program.id,
-      billing_cycle,
-    });
-    setEnrollingId(null);
-
-    if (res.data?.error) {
-      if (res.data?.enrollment_id) {
-        navigate(`/parent/checkout?enrollment_id=${res.data.enrollment_id}`);
-      } else {
-        setError(res.data.error);
-      }
+    const studentId = myStudentsData?.students?.[0]?.id;
+    if (!studentId) {
+      setError('No student found on your account. Please contact support.');
+      setEnrollingId(null);
       return;
     }
-
-    if (res.data?.enrollment) {
+    try {
+      const res = await apiPost('/enrollments', {
+        studentId,
+        programId: program.id,
+        billingCycle: getBillingCycle(program),
+      });
       qc.invalidateQueries({ queryKey: ["my-enrollments"] });
-      navigate(`/parent/checkout?enrollment_id=${res.data.enrollment.id}`);
+      if (res.enrollment) {
+        navigate(`/parent/checkout?enrollment_id=${res.enrollment.id}`);
+      }
+    } catch (err) {
+      setError(err.message || 'Enrollment failed. Please try again.');
+    } finally {
+      setEnrollingId(null);
     }
   };
 

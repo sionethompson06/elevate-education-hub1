@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "@/lib/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { base44 } from "@/api/base44Client";
+import { apiGet, apiPost } from "@/api/apiClient";
 import { useNavigate } from "react-router-dom";
 import { Check, ChevronRight, Loader2, AlertCircle, X, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -401,45 +401,36 @@ export default function ProgramsEnroll() {
 
   const { data: programData, isLoading } = useQuery({
     queryKey: ['parent-programs'],
-    queryFn: () => base44.functions.invoke('enrollment', { action: 'get_programs' }).then(r => r.data),
+    queryFn: () => apiGet('/programs'),
     enabled: !!user,
   });
 
-  const { data: enrollmentData } = useQuery({
+  const { data: myStudentsData } = useQuery({
     queryKey: ['my-enrollments', user?.id],
-    queryFn: () => base44.functions.invoke('enrollment', { action: 'get_my_enrollments' }).then(r => r.data),
-    enabled: !!user,
-  });
-
-  const { data: students = [] } = useQuery({
-    queryKey: ['my-students', user?.id],
-    queryFn: async () => {
-      const res = await base44.functions.invoke('enrollment', { action: 'get_my_enrollments' });
-      return res.data?.students || [];
-    },
+    queryFn: () => apiGet('/enrollments/my-students'),
     enabled: !!user,
   });
 
   const programs = (programData?.programs || [])
     .sort((a, b) => (DISPLAY_ORDER[a.category] ?? 99) - (DISPLAY_ORDER[b.category] ?? 99))
     .map(mergeDisplay);
-  const myEnrollments = (enrollmentData?.enrollments || []).map(e => ({ ...e, programId: e.programId ?? e.program_id }));
+  const myEnrollments = (myStudentsData?.enrollments || []).map(e => ({ ...e, programId: e.programId ?? e.program_id }));
+  const students = myStudentsData?.students || [];
 
   const handleEnroll = async ({ studentId, billingCycle, variant }) => {
     setEnrolling(true);
     setError(null);
     try {
-      const res = await base44.functions.invoke('enrollment', {
-        action: 'enroll',
-        program_id: enrollModal.id,
-        student_id: studentId,
-        billing_cycle: billingCycle,
+      const res = await apiPost('/enrollments', {
+        studentId,
+        programId: enrollModal.id,
+        billingCycle,
         variant,
       });
       qc.invalidateQueries({ queryKey: ['my-enrollments'] });
       setEnrollModal(null);
-      if (res.data?.enrollment) {
-        navigate(`/parent/checkout?enrollment_id=${res.data.enrollment.id}`);
+      if (res.enrollment) {
+        navigate(`/parent/checkout?enrollment_id=${res.enrollment.id}`);
       }
     } catch (err) {
       setError(err.message || 'Enrollment failed. Please try again.');

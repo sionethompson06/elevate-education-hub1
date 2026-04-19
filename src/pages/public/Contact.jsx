@@ -1,18 +1,17 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { base44 } from "@/api/base44Client";
-import { apiPost } from "@/api/apiClient";
+import { apiGet, apiPost } from "@/api/apiClient";
 import HeroSection from "@/components/public/HeroSection";
 import CmsContent from "@/components/public/CmsContent";
 import { Mail, Phone, Clock, CheckCircle } from "lucide-react";
 
 export default function Contact() {
-  const { data: pages = [] } = useQuery({
-    queryKey: ["cms-page", "contact"],
-    queryFn: () => base44.entities.CmsPage.filter({ slug: "contact", status: "published" }),
+  const { data: allCms = [] } = useQuery({
+    queryKey: ["cms-all-public"],
+    queryFn: () => apiGet('/cms'),
   });
 
-  const page = pages[0];
+  const page = allCms.find(r => r.section === "pages" && r.key === "contact");
 
   const [form, setForm] = useState({ name: "", email: "", message: "" });
   const [sending, setSending] = useState(false);
@@ -41,9 +40,8 @@ export default function Contact() {
   return (
     <div>
       <HeroSection
-        headline={page?.hero_headline || "We'd Love to Hear From You"}
-        subheadline={page?.hero_subheadline || "Our team is here to help."}
-        imageUrl={page?.hero_image_url}
+        headline={page?.title || "We'd Love to Hear From You"}
+        subheadline={page?.body || "Our team is here to help."}
       />
 
       <section className="py-16 px-6 bg-white">
@@ -75,12 +73,6 @@ export default function Contact() {
                 </div>
               </div>
             </div>
-
-            {page?.body_content && (
-              <div className="mt-8">
-                <CmsContent content={page.body_content} />
-              </div>
-            )}
           </div>
 
           <div className="bg-slate-50 rounded-2xl p-8 border border-slate-200">

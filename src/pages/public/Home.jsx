@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { base44 } from "@/api/base44Client";
+import { apiGet } from "@/api/apiClient";
 import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -7,26 +7,23 @@ import HeroSection from "@/components/public/HeroSection";
 import ProgramCard from "@/components/public/ProgramCard";
 
 export default function Home() {
-  const { data: pages = [] } = useQuery({
-    queryKey: ["cms-page", "home"],
-    queryFn: () => base44.entities.CmsPage.filter({ slug: "home", status: "published" }),
-  });
-  const { data: programs = [] } = useQuery({
-    queryKey: ["cms-programs"],
-    queryFn: () => base44.entities.CmsProgram.filter({ status: "published" }),
+  const { data: allCms = [] } = useQuery({
+    queryKey: ["cms-all-public"],
+    queryFn: () => apiGet('/cms'),
   });
 
-  const page = pages[0];
-  const sortedPrograms = [...programs].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+  const page = allCms.find(r => r.section === "pages" && r.key === "home");
+  const cmsPrograms = allCms
+    .filter(r => r.section === "programs")
+    .map(p => ({ ...p, name: p.title, description: p.body }));
 
   return (
     <div>
       <HeroSection
-        headline={page?.hero_headline || "Elevate Your Potential. Academic + Athletic Excellence."}
-        subheadline={page?.hero_subheadline || "A centralized hub for students, parents, coaches, and administrators."}
-        ctaLabel={page?.hero_cta_label || "Apply Now"}
-        ctaHref={page?.hero_cta_href || "/apply"}
-        imageUrl={page?.hero_image_url}
+        headline={page?.title || "Elevate Your Potential. Academic + Athletic Excellence."}
+        subheadline={page?.body || "A centralized hub for students, parents, coaches, and administrators."}
+        ctaLabel="Apply Now"
+        ctaHref="/apply"
       />
 
       {/* Programs section */}
@@ -38,9 +35,9 @@ export default function Home() {
               Comprehensive programs designed to develop every dimension of the student-athlete.
             </p>
           </div>
-          {sortedPrograms.length > 0 ? (
+          {cmsPrograms.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {sortedPrograms.map((p) => (
+              {cmsPrograms.map((p) => (
                 <ProgramCard key={p.id} program={p} />
               ))}
             </div>

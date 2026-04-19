@@ -1,17 +1,9 @@
-import { useQuery } from "@tanstack/react-query";
-import { base44 } from "@/api/base44Client";
 import { Check } from "lucide-react";
 
 const FALLBACK_PRICING = { monthly: 250, annual: 2400 };
 
-export default function BillingCycleSelector({ value, onChange, programName }) {
-  const { data: programs = [] } = useQuery({
-    queryKey: ["program-pricing", programName],
-    queryFn: () => base44.entities.Program.filter({ name: programName }),
-    enabled: !!programName,
-  });
-  const program = programs[0];
-  const monthly = program?.price_monthly || FALLBACK_PRICING.monthly;
+export default function BillingCycleSelector({ value, onChange, program }) {
+  const monthly = program?.price_monthly || program?.tuitionAmount || FALLBACK_PRICING.monthly;
   const annual = program?.price_annual || FALLBACK_PRICING.annual;
   const annualMonthly = Math.round(annual / 12);
   const savings = Math.round(((monthly * 12 - annual) / (monthly * 12)) * 100);
@@ -20,7 +12,7 @@ export default function BillingCycleSelector({ value, onChange, programName }) {
     {
       id: "monthly",
       label: "Monthly",
-      price: `$${monthly.toLocaleString()}/mo`,
+      price: `$${Number(monthly).toLocaleString()}/mo`,
       sub: "Billed each month",
       badge: null,
     },
@@ -28,7 +20,7 @@ export default function BillingCycleSelector({ value, onChange, programName }) {
       id: "annual",
       label: "Annual",
       price: `$${annualMonthly.toLocaleString()}/mo`,
-      sub: `$${annual.toLocaleString()} billed once per year`,
+      sub: `$${Number(annual).toLocaleString()} billed once per year`,
       badge: savings > 0 ? `Save ${savings}%` : null,
     },
     {
