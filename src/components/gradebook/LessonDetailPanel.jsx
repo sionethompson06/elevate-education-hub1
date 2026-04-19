@@ -1,35 +1,33 @@
-import { useState, useEffect } from "react";
-import { base44 } from "@/api/base44Client";
+import { useState } from "react";
+import { apiPatch } from "@/api/apiClient";
 import { Button } from "@/components/ui/button";
-import { X, CheckCircle, Circle, Loader2, History } from "lucide-react";
+import { X, CheckCircle, Circle, Loader2 } from "lucide-react";
 import LessonStatusBadge from "./LessonStatusBadge";
 import { format } from "date-fns";
 import { useAuth } from "@/lib/AuthContext";
 
 export default function LessonDetailPanel({ lesson, onClose, onUpdated, readOnly = false }) {
   const { user } = useAuth();
-  const [history, setHistory] = useState([]);
   const [saving, setSaving] = useState(false);
   const [comment, setComment] = useState("");
   const [pointsEarned, setPointsEarned] = useState(lesson.points_earned ?? "");
-
-  useEffect(() => {
-    base44.functions.invoke("gradebook", { action: "get_history", lesson_id: lesson.id })
-      .then(r => setHistory(r.data?.history || []));
-  }, [lesson.id]);
+  const [error, setError] = useState(null);
 
   const changeStatus = async (new_status) => {
     if (user.role === 'admin' && !comment.trim()) return;
     setSaving(true);
-    await base44.functions.invoke("gradebook", {
-      action: "update_status",
-      lesson_id: lesson.id,
-      new_status,
-      comment,
-      points_earned: pointsEarned !== "" ? Number(pointsEarned) : undefined,
-    });
-    setSaving(false);
-    onUpdated();
+    setError(null);
+    try {
+      await apiPatch(`/gradebook/lessons/${lesson.id}`, {
+        new_status,
+        points_earned: pointsEarned !== "" ? Number(pointsEarned) : undefined,
+      });
+      onUpdated();
+    } catch (err) {
+      setError(err.message || "Failed to update lesson");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const isAdmin = user?.role === 'admin';
@@ -59,11 +57,28 @@ export default function LessonDetailPanel({ lesson, onClose, onUpdated, readOnly
           )}
 
           <div className="grid grid-cols-2 gap-3 text-sm">
-            <div><span className="text-slate-400">Assigned</span><br /><span className="font-medium">{lesson.assigned_at ? format(new Date(lesson.assigned_at), "MMM d, yyyy") : "—"}</span></div>
-            <div><span className="text-slate-400">Due</span><br /><span className="font-medium">{lesson.due_at ? format(new Date(lesson.due_at), "MMM d, yyyy h:mm a") : "—"}</span></div>
-            <div><span className="text-slate-400">Points Possible</span><br /><span className="font-medium">{lesson.points_possible ?? "—"}</span></div>
-            <div><span className="text-slate-400">Points Earned</span><br /><span className="font-medium">{lesson.points_earned ?? "—"}</span></div>
-            {lesson.completed_at && <div><span className="text-slate-400">Completed</span><br /><span className="font-medium text-green-700">{format(new Date(lesson.completed_at), "MMM d, h:mm a")}</span></div>}
+            <div>
+              <span className="text-slate-400">Assigned</span><br />
+              <span className="font-medium">{lesson.assigned_at ? format(new Date(lesson.assigned_at), "MMM d, yyyy") : "—"}</span>
+            </div>
+            <div>
+              <span className="text-slate-400">Due</span><br />
+              <span className="font-medium">{lesson.due_at ? format(new Date(lesson.due_at), "MMM d, yyyy h:mm a") : "—"}</span>
+            </div>
+            <div>
+              <span className="text-slate-400">Points Possible</span><br />
+              <span className="font-medium">{lesson.points_possible ?? "—"}</span>
+            </div>
+            <div>
+              <span className="text-slate-400">Points Earned</span><br />
+              <span className="font-medium">{lesson.points_earned ?? "—"}</span>
+            </div>
+            {lesson.completed_at && (
+              <div>
+                <span className="text-slate-400">Completed</span><br />
+                <span className="font-medium text-green-700">{format(new Date(lesson.completed_at), "MMM d, h:mm a")}</span>
+              </div>
+            )}
           </div>
 
           {!readOnly && (
@@ -93,6 +108,7 @@ export default function LessonDetailPanel({ lesson, onClose, onUpdated, readOnly
               {isStudent && (
                 <p className="text-xs text-slate-400">Click below to mark this lesson complete when you've finished it.</p>
               )}
+              {error && <p className="text-sm text-red-500">{error}</p>}
               <div className="flex gap-3">
                 {lesson.status !== 'complete' && (
                   <Button
@@ -120,32 +136,6 @@ export default function LessonDetailPanel({ lesson, onClose, onUpdated, readOnly
               </div>
             </div>
           )}
-
-          {/* Status history */}
-          <div>
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2 flex items-center gap-1">
-              <History className="w-3.5 h-3.5" /> Status History
-            </p>
-            {history.length === 0
-              ? <p className="text-sm text-slate-400">No status changes recorded.</p>
-              : (
-                <div className="space-y-2">
-                  {history.map(h => (
-                    <div key={h.id} className="flex items-start gap-3 text-xs">
-                      <div className="w-1.5 h-1.5 rounded-full bg-slate-300 mt-1.5 shrink-0" />
-                      <div>
-                        <span className="text-slate-500">{h.previous_status}</span>
-                        <span className="text-slate-400 mx-1">→</span>
-                        <span className="font-medium text-slate-800">{h.new_status}</span>
-                        <span className="text-slate-400 ml-2">by {h.changed_by}</span>
-                        {h.changed_at && <span className="text-slate-400 ml-1">· {format(new Date(h.changed_at), "MMM d, h:mm a")}</span>}
-                        {h.reason && <p className="text-slate-500 mt-0.5 italic">{h.reason}</p>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-          </div>
         </div>
       </div>
     </div>

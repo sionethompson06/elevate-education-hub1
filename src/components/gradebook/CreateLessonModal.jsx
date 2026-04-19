@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { apiPost } from "@/api/apiClient";
 import { Button } from "@/components/ui/button";
 import { X, Loader2, BookOpen } from "lucide-react";
 
@@ -13,7 +13,6 @@ export default function CreateLessonModal({ assignedStudents, onClose, onSuccess
     due_at: "",
     points_possible: 10,
     student_ids: [],
-    bulk: false,
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -29,17 +28,20 @@ export default function CreateLessonModal({ assignedStudents, onClose, onSuccess
     if (!form.student_ids.length) { setError("Select at least one student"); return; }
     setSaving(true);
     setError(null);
-    const res = await base44.functions.invoke("gradebook", {
-      action: "create",
-      title: form.title,
-      subject: form.subject,
-      instructions: form.instructions,
-      due_at: form.due_at ? new Date(form.due_at).toISOString() : null,
-      points_possible: Number(form.points_possible),
-      student_ids: form.student_ids,
-    });
-    if (res.data?.error) { setError(res.data.error); setSaving(false); return; }
-    onSuccess();
+    try {
+      await apiPost("/gradebook/lessons", {
+        title: form.title,
+        subject: form.subject,
+        instructions: form.instructions,
+        due_at: form.due_at ? new Date(form.due_at).toISOString() : null,
+        points_possible: Number(form.points_possible),
+        student_ids: form.student_ids,
+      });
+      onSuccess();
+    } catch (err) {
+      setError(err.message || "Failed to assign lesson");
+      setSaving(false);
+    }
   };
 
   return (

@@ -8,6 +8,24 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 
 const router = Router();
 
+// ── Normalize lesson to snake_case for frontend ────────────────────────────────
+function formatLesson(l) {
+  return {
+    id: l.id,
+    student_id: l.studentId,
+    academic_coach_user_id: l.academicCoachUserId,
+    title: l.title,
+    subject: l.subject,
+    instructions: l.instructions,
+    due_at: l.dueAt ? new Date(l.dueAt).toISOString() : null,
+    points_possible: l.pointsPossible,
+    status: l.status,
+    points_earned: l.pointsEarned,
+    completed_at: l.completedAt ? new Date(l.completedAt).toISOString() : null,
+    assigned_at: l.assignedAt ? new Date(l.assignedAt).toISOString() : null,
+  };
+}
+
 // ── KPI helpers ────────────────────────────────────────────────────────────────
 function getWeekBounds() {
   const now = new Date();
@@ -104,7 +122,7 @@ router.get('/lessons', requireAuth, async (req, res) => {
       lessons = lessons.filter(l => l.subject === subject);
     }
 
-    res.json({ lessons, kpis: computeKPIs(lessons) });
+    res.json({ lessons: lessons.map(formatLesson), kpis: computeKPIs(lessons) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -178,7 +196,7 @@ router.post('/lessons', requireAuth, requireRole('admin', 'academic_coach'), asy
       created.push(lesson);
     }
 
-    res.json({ lessons: created });
+    res.json({ lessons: created.map(formatLesson) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -204,7 +222,7 @@ router.patch('/lessons/:id', requireAuth, async (req, res) => {
     const [updated] = await db.update(lessonAssignments).set(updates)
       .where(eq(lessonAssignments.id, id)).returning();
 
-    res.json({ lesson: updated });
+    res.json({ lesson: formatLesson(updated) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
