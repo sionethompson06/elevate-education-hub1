@@ -1,57 +1,67 @@
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
-import { base44 } from "@/api/base44Client";
+import { apiPost, setAuthToken } from "@/api/apiClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+
+const ROLE_ROUTES = {
+  admin: "/admin/dashboard",
+  student: "/student/dashboard",
+  parent: "/parent/dashboard",
+  "academic-coach": "/academic-coach/dashboard",
+  "academic_coach": "/academic-coach/dashboard",
+  "performance-coach": "/performance-coach/dashboard",
+  "performance_coach": "/performance-coach/dashboard",
+};
+
+const DEMO_USERS = [
+  { label: "Admin",        email: "admin@elevateperformance-academy.com", password: "admin123" },
+  { label: "Parent",       email: "sarah.johnson@example.com",            password: "Welcome2025!" },
+  { label: "Student",      email: "ethan.johnson@example.com",            password: "Welcome2025!" },
+  { label: "Acad. Coach",  email: "coach.martinez@elevateperformance-academy.com", password: "Welcome2025!" },
+  { label: "Perf. Coach",  email: "coach.williams@elevateperformance-academy.com", password: "Welcome2025!" },
+];
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const { setUser, setIsAuthenticated, checkAppState } = useAuth();
+  const { setUser, setIsAuthenticated } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const doLogin = async (loginEmail, loginPassword) => {
     setError("");
     setLoading(true);
     try {
-      const user = await base44.auth.login(email, password);
-      setUser(user);
+      const res = await apiPost('/auth/hub-login', {
+        email: loginEmail.trim().toLowerCase(),
+        password: loginPassword,
+      });
+      setAuthToken(res.token);
+      setUser(res.user);
       setIsAuthenticated(true);
       const from = searchParams.get("from");
       if (from && from.startsWith("/") && !from.startsWith("//")) {
         navigate(from, { replace: true });
       } else {
-        // Redirect based on role
-        const roleRoutes = {
-          admin: "/admin/dashboard",
-          student: "/student/dashboard",
-          parent: "/parent/dashboard",
-          academic_coach: "/academic-coach/dashboard",
-          performance_coach: "/performance-coach/dashboard",
-        };
-        navigate(roleRoutes[user.role] || "/", { replace: true });
+        navigate(ROLE_ROUTES[res.user.role] || "/", { replace: true });
       }
     } catch (err) {
-      setError("Login failed. Please try again.");
+      setError(err.message || "Login failed. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
-  const demoLogins = [
-    { label: "Admin", email: "admin@elevate.edu", hint: "admin" },
-    { label: "Student", email: "student@elevate.edu", hint: "student" },
-    { label: "Parent", email: "parent@elevate.edu", hint: "parent" },
-    { label: "Academic Coach", email: "coach@elevate.edu", hint: "academic_coach" },
-    { label: "Performance Coach", email: "performance@elevate.edu", hint: "performance_coach" },
-  ];
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    doLogin(email, password);
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#1a3c5e] to-[#0f2540] p-4">
@@ -97,18 +107,16 @@ export default function Login() {
             </form>
 
             <div className="mt-6 border-t pt-4">
-              <p className="text-xs text-slate-500 mb-3 text-center">Quick demo access — click any role:</p>
+              <p className="text-xs text-slate-500 mb-3 text-center">Quick access — click any role to log in instantly:</p>
               <div className="grid grid-cols-2 gap-2">
-                {demoLogins.map((d) => (
+                {DEMO_USERS.map((d) => (
                   <Button
                     key={d.label}
                     variant="outline"
                     size="sm"
                     className="text-xs"
-                    onClick={() => {
-                      setEmail(d.email);
-                      setPassword("demo");
-                    }}
+                    disabled={loading}
+                    onClick={() => doLogin(d.email, d.password)}
                   >
                     {d.label}
                   </Button>

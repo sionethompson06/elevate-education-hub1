@@ -1,5 +1,5 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { apiGet, apiPost, clearAuthToken, getAuthToken } from '@/api/apiClient';
 
 const AuthContext = createContext();
 
@@ -7,9 +7,9 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
-  const [isLoadingPublicSettings, setIsLoadingPublicSettings] = useState(false);
+  const [isLoadingPublicSettings] = useState(false);
   const [authError, setAuthError] = useState(null);
-  const [appPublicSettings, setAppPublicSettings] = useState({ id: 'elevate', public_settings: {} });
+  const [appPublicSettings] = useState({ id: 'elevate', public_settings: {} });
 
   useEffect(() => {
     checkAppState();
@@ -19,23 +19,33 @@ export const AuthProvider = ({ children }) => {
     try {
       setIsLoadingAuth(true);
       setAuthError(null);
-      const currentUser = await base44.auth.me();
-      if (currentUser) {
-        setUser(currentUser);
+      const token = getAuthToken();
+      if (!token) {
+        setIsAuthenticated(false);
+        return;
+      }
+      const data = await apiGet('/auth/me');
+      if (data?.user) {
+        setUser(data.user);
         setIsAuthenticated(true);
       } else {
+        clearAuthToken();
         setIsAuthenticated(false);
       }
     } catch (error) {
-      console.error('Auth check failed:', error);
-      setAuthError({ type: 'unknown', message: error.message || 'Failed to load app' });
+      clearAuthToken();
+      setIsAuthenticated(false);
+      if (error.message !== 'Session expired') {
+        setAuthError({ type: 'unknown', message: error.message || 'Failed to load app' });
+      }
     } finally {
       setIsLoadingAuth(false);
     }
   };
 
   const logout = async (shouldRedirect = true) => {
-    await base44.auth.logout();
+    try { await apiPost('/auth/logout'); } catch { /* ignore */ }
+    clearAuthToken();
     setUser(null);
     setIsAuthenticated(false);
     if (shouldRedirect) {
@@ -44,7 +54,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const navigateToLogin = () => {
-    base44.auth.redirectToLogin(window.location.href);
+    window.location.href = '/login';
   };
 
   return (
