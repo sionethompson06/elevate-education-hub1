@@ -29,8 +29,12 @@ async function request(method, path, body) {
 
   if (res.status === 401) {
     clearAuthToken();
-    window.location.href = '/login';
-    throw new Error('Session expired');
+    const data = await res.json().catch(() => ({}));
+    // Only redirect to login if we're not already there (avoids reload loop on bad credentials)
+    if (!window.location.pathname.startsWith('/login')) {
+      window.location.href = '/login';
+    }
+    throw new Error(data.error || 'Session expired');
   }
 
   if (!res.ok) {
