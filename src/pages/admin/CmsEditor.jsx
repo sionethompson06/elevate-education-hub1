@@ -1,11 +1,5 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { base44 } from "@/api/base44Client";
-import { useAuth } from "@/lib/AuthContext";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { FileText, Globe, HelpCircle, DollarSign, BookOpen, CheckCircle, Clock, Archive } from "lucide-react";
+import { FileText, Globe, HelpCircle, DollarSign, BookOpen } from "lucide-react";
 import CmsEntityTable from "@/components/admin/cms/CmsEntityTable";
 
 const TABS = [
@@ -27,7 +21,6 @@ export default function CmsEditor() {
         <p className="text-slate-500 mt-1">Manage all public-facing content.</p>
       </div>
 
-      {/* Tab bar */}
       <div className="flex gap-2 mb-6 flex-wrap">
         {TABS.map(({ key, label, icon: Icon }) => (
           <button

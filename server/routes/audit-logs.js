@@ -1,22 +1,34 @@
 import { Router } from 'express';
-import { desc } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import db from '../db-postgres.js';
-import { auditLogs } from '../schema.js';
+import { auditLogs, users } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 
 const router = Router();
 
-// GET /api/audit-logs — admin only
 router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
   try {
-    const rows = await db.select().from(auditLogs).orderBy(desc(auditLogs.timestamp)).limit(200);
+    const rows = await db.select({
+      id: auditLogs.id,
+      userId: auditLogs.userId,
+      action: auditLogs.action,
+      entityType: auditLogs.entityType,
+      entityId: auditLogs.entityId,
+      details: auditLogs.details,
+      ipAddress: auditLogs.ipAddress,
+      timestamp: auditLogs.timestamp,
+      userEmail: users.email,
+      userRole: users.role,
+    }).from(auditLogs)
+      .leftJoin(users, eq(auditLogs.userId, users.id))
+      .orderBy(desc(auditLogs.timestamp))
+      .limit(200);
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// POST /api/audit-logs — log an access denial (called by RBACGuard)
 router.post('/', requireAuth, async (req, res) => {
   try {
     const { action, entityType, entityId, details } = req.body;
@@ -30,7 +42,7 @@ router.post('/', requireAuth, async (req, res) => {
     });
     res.json({ success: true });
   } catch {
-    res.json({ success: true }); // non-critical
+    res.json({ success: true });
   }
 });
 
