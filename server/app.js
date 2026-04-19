@@ -4,9 +4,13 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcryptjs';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import db, { rawSql } from './db-postgres.js';
-import { users, enrollments } from './schema.js';
+import {
+  users, enrollments, students, guardianStudents, coachAssignments,
+  lessonAssignments, rewardCatalog, studentPoints, pointTransactions,
+} from './schema.js';
+import { requireAdmin } from './middleware/auth.js';
 
 // ── Startup migrations (idempotent — safe to run on every boot) ────────────────
 
@@ -253,5 +257,93 @@ app.use('/api/audit-logs', auditLogsRouter);
 app.use('/api/coach-assignments', coachAssignmentsRouter);
 app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), stripeWebhookHandler);
 app.use('/api/stripe', stripeRouter);
+
+// Admin-triggered demo data seed (requires admin JWT)
+app.post('/api/admin/seed-demo-data', requireAdmin, async (req, res) => {
+  try {
+    const report = [];
+
+    const [academicCoachUser] = await db.select().from(users).where(eq(users.email, 'coach.martinez@elevateperformance-academy.com'));
+    const [perfCoachUser] = await db.select().from(users).where(eq(users.email, 'coach.williams@elevateperformance-academy.com'));
+    const [studentUser] = await db.select().from(users).where(eq(users.email, 'ethan.johnson@example.com'));
+    const [parentUser] = await db.select().from(users).where(eq(users.email, 'sarah.johnson@example.com'));
+
+    if (!academicCoachUser || !perfCoachUser || !studentUser) {
+      return res.status(400).json({ success: false, error: 'Demo users not found. Ensure demo users exist first.' });
+    }
+
+    let [student] = await db.select().from(students).where(eq(students.userId, studentUser.id));
+    if (!student) {
+      [student] = await db.insert(students).values({
+        userId: studentUser.id, firstName: 'Ethan', lastName: 'Johnson',
+        grade: '10th', dateOfBirth: '2010-03-15', status: 'active',
+      }).returning();
+      report.push('Created student record: Ethan Johnson');
+    }
+
+    if (parentUser) {
+      const [existingLink] = await db.select().from(guardianStudents)
+        .where(and(eq(guardianStudents.guardianUserId, parentUser.id), eq(guardianStudents.studentId, student.id)));
+      if (!existingLink) {
+        await db.insert(guardianStudents).values({ guardianUserId: parentUser.id, studentId: student.id, relationship: 'parent', isPrimary: true });
+        report.push('Created guardian-student link');
+      }
+    }
+
+    const existingCA = await db.select().from(coachAssignments).where(eq(coachAssignments.studentId, student.id));
+    if (!existingCA.length) {
+      await db.insert(coachAssignments).values([
+        { coachUserId: academicCoachUser.id, coachType: 'academic_coach', studentId: student.id, isActive: true, startDate: '2025-08-15' },
+        { coachUserId: perfCoachUser.id, coachType: 'performance_coach', studentId: student.id, isActive: true, startDate: '2025-08-15' },
+      ]);
+      report.push('Created coach assignments (academic + performance)');
+    }
+
+    const existingLessons = await db.select().from(lessonAssignments).where(eq(lessonAssignments.studentId, student.id));
+    if (!existingLessons.length) {
+      const now = new Date();
+      const ago = (n) => new Date(now.getTime() - n * 86400000);
+      const ahead = (n) => new Date(now.getTime() + n * 86400000);
+      await db.insert(lessonAssignments).values([
+        { studentId: student.id, academicCoachUserId: academicCoachUser.id, subject: 'Math', title: 'Linear Equations Practice', instructions: 'Complete problems 1–20 from Chapter 3.', dueAt: ago(5), status: 'complete', completedAt: ago(6), pointsPossible: 20, pointsEarned: 18 },
+        { studentId: student.id, academicCoachUserId: academicCoachUser.id, subject: 'Science', title: 'Chemical Reactions Lab Write-Up', instructions: 'Write a formal lab report following the template provided.', dueAt: ago(2), status: 'complete', completedAt: ago(3), pointsPossible: 30, pointsEarned: 26 },
+        { studentId: student.id, academicCoachUserId: academicCoachUser.id, subject: 'English', title: 'Persuasive Essay Draft', instructions: 'Write a 3–5 paragraph persuasive essay.', dueAt: ahead(3), status: 'incomplete', pointsPossible: 25 },
+        { studentId: student.id, academicCoachUserId: academicCoachUser.id, subject: 'History', title: 'WWII Timeline Research', instructions: 'Create a detailed timeline of major WWII events from 1939–1945.', dueAt: ahead(7), status: 'incomplete', pointsPossible: 15 },
+        { studentId: student.id, academicCoachUserId: academicCoachUser.id, subject: 'Math', title: 'Quadratic Equations Quiz Prep', instructions: 'Review chapters 4–5.', dueAt: ago(15), status: 'incomplete', pointsPossible: 20 },
+      ]);
+      report.push('Created 5 lesson assignments');
+    }
+
+    const existingCatalog = await db.select().from(rewardCatalog);
+    if (!existingCatalog.length) {
+      await db.insert(rewardCatalog).values([
+        { name: 'Free Homework Pass', description: 'Skip one homework assignment of your choice.', pointCost: 100, isActive: true },
+        { name: 'Extra Credit Opportunity', description: 'Unlock a special extra credit project.', pointCost: 150, isActive: true },
+        { name: 'Choose Your Study Music', description: 'Play music during one solo study session.', pointCost: 50, isActive: true },
+        { name: 'Lunch with Your Coach', description: 'One-on-one lunch session with your academic coach.', pointCost: 200, isActive: true },
+        { name: 'Early Dismissal (30 min)', description: 'Leave 30 minutes early on a school day.', pointCost: 300, isActive: true },
+      ]);
+      report.push('Created 5 reward catalog items');
+    }
+
+    const [existingPoints] = await db.select().from(studentPoints).where(eq(studentPoints.studentId, student.id));
+    if (!existingPoints) {
+      await db.insert(studentPoints).values({ studentId: student.id, points: 185 });
+      await db.insert(pointTransactions).values([
+        { studentId: student.id, delta: 50, reason: 'Completed Linear Equations Practice on time', awardedBy: academicCoachUser.id },
+        { studentId: student.id, delta: 75, reason: 'Excellent lab write-up — above and beyond', awardedBy: academicCoachUser.id },
+        { studentId: student.id, delta: 25, reason: 'Great effort in training session', awardedBy: perfCoachUser.id },
+        { studentId: student.id, delta: 50, reason: 'Perfect attendance this week', awardedBy: null },
+        { studentId: student.id, delta: -15, reason: 'Redeemed: Choose Your Study Music' },
+      ]);
+      report.push('Created student points (185) with 5 transactions');
+    }
+
+    res.json({ success: true, seeded: report.length > 0 ? report : ['All demo data already exists'] });
+  } catch (err) {
+    console.error('[admin/seed-demo-data] error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 export default app;

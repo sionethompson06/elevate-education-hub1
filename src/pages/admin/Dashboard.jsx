@@ -1,9 +1,11 @@
 import { useAuth } from "@/lib/AuthContext";
 import { useQuery } from "@tanstack/react-query";
-import { apiGet } from "@/api/apiClient";
+import { apiGet, apiPost } from "@/api/apiClient";
 import { Link } from "react-router-dom";
-import { Users, DollarSign, ShieldCheck, FileText, BookOpen, Activity, Star, MessageCircle, TrendingUp, GraduationCap, Home, Trophy, ChevronRight } from "lucide-react";
+import { useState } from "react";
+import { Users, DollarSign, ShieldCheck, FileText, BookOpen, Activity, Star, MessageCircle, TrendingUp, GraduationCap, Home, Trophy, ChevronRight, Database, Loader2, CheckCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 const QUICK_LINKS = [
   { label: "Parents & Guardians", href: "/admin/parents", description: "Edit parent profiles & link students", icon: Users, color: "text-purple-600", bg: "bg-purple-50" },
@@ -27,6 +29,8 @@ const PROGRAMS = [
 
 export default function AdminDashboard() {
   const { user } = useAuth();
+  const [seeding, setSeeding] = useState(false);
+  const [seedResult, setSeedResult] = useState(null);
 
   const { data: enrollmentsData = { enrollments: [] } } = useQuery({
     queryKey: ["admin-enrollment-count"],
@@ -42,6 +46,19 @@ export default function AdminDashboard() {
     queryKey: ["admin-users-count"],
     queryFn: () => apiGet('/users'),
   });
+
+  const seedDemoData = async () => {
+    setSeeding(true);
+    setSeedResult(null);
+    try {
+      const result = await apiPost('/admin/seed-demo-data', {});
+      setSeedResult({ success: true, items: result.seeded });
+    } catch (err) {
+      setSeedResult({ success: false, error: err.message });
+    } finally {
+      setSeeding(false);
+    }
+  };
 
   const allEnrollments = enrollmentsData.enrollments || [];
   const activeEnrollments = allEnrollments.filter(e => ["active", "active_override"].includes(e.status));
@@ -124,6 +141,36 @@ export default function AdminDashboard() {
             </Link>
           ))}
         </div>
+      </div>
+
+      {/* Demo data seed */}
+      <div className="rounded-xl border border-dashed border-slate-300 p-5 bg-slate-50">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Database className="w-4 h-4 text-slate-500" />
+              <h2 className="text-sm font-semibold text-slate-700">Demo Data Setup</h2>
+            </div>
+            <p className="text-xs text-slate-500">Seeds coach assignments, lessons, reward catalog, and points for demo accounts. Safe to run multiple times — skips existing data.</p>
+          </div>
+          <Button size="sm" variant="outline" onClick={seedDemoData} disabled={seeding} className="shrink-0">
+            {seeding ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Database className="w-4 h-4 mr-1" />}
+            Seed Demo Data
+          </Button>
+        </div>
+        {seedResult && (
+          <div className={`mt-3 rounded-lg px-4 py-3 text-sm ${seedResult.success ? 'bg-green-50 border border-green-200 text-green-800' : 'bg-red-50 border border-red-200 text-red-700'}`}>
+            {seedResult.success ? (
+              <ul className="space-y-0.5">
+                {seedResult.items.map((item, i) => (
+                  <li key={i} className="flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5 shrink-0" /> {item}</li>
+                ))}
+              </ul>
+            ) : (
+              <span>{seedResult.error}</span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Quick links */}

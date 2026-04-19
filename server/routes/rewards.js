@@ -78,7 +78,6 @@ router.post('/redeem', requireAuth, async (req, res) => {
       studentId: Number(studentId),
       delta: -item.pointCost,
       reason: `Redeemed: ${item.name}`,
-      catalogItemId: Number(catalogItemId),
     });
 
     await db.insert(rewardRedemptions).values({

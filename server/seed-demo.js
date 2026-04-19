@@ -7,13 +7,20 @@ import {
   billingAccounts, invoices, payments, sectionStudents,
   assignments, assignmentSubmissions, attendanceRecords, trainingLogs, coachNotes,
   messages, announcements, notifications, resources, resourceAssignments, documents,
-  auditLogs
+  auditLogs, coachAssignments, lessonAssignments, rewardCatalog, studentPoints,
+  pointTransactions, rewardRedemptions,
 } from './schema.js';
 
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 
 async function clearAll() {
   console.log('Clearing existing data...');
+  await db.delete(rewardRedemptions);
+  await db.delete(pointTransactions);
+  await db.delete(studentPoints);
+  await db.delete(lessonAssignments);
+  await db.delete(coachAssignments);
+  await db.delete(rewardCatalog);
   await db.delete(resourceAssignments);
   await db.delete(documents);
   await db.delete(notifications);
@@ -517,6 +524,138 @@ async function seed() {
     },
   ]);
   console.log('✓ Documents: 2');
+
+  // ── Coach assignments (gradebook system) ─────────────────────────────────────
+  await db.insert(coachAssignments).values([
+    { coachUserId: academicCoachUser.id, coachType: 'academic_coach', studentId: student1.id, isActive: true, startDate: '2025-08-15' },
+    { coachUserId: academicCoachUser.id, coachType: 'academic_coach', studentId: student2.id, isActive: true, startDate: '2025-08-15' },
+    { coachUserId: perfCoachUser.id, coachType: 'performance_coach', studentId: student1.id, isActive: true, startDate: '2025-08-15' },
+  ]);
+  console.log('✓ Coach assignments: 3');
+
+  // ── Lesson assignments ────────────────────────────────────────────────────────
+  const now = new Date();
+  const daysAgo = (n) => new Date(now.getTime() - n * 86400000);
+  const daysAhead = (n) => new Date(now.getTime() + n * 86400000);
+
+  await db.insert(lessonAssignments).values([
+    {
+      studentId: student1.id,
+      academicCoachUserId: academicCoachUser.id,
+      subject: 'Math',
+      title: 'Linear Equations Practice',
+      instructions: 'Complete problems 1–20 from Chapter 3. Show all work.',
+      dueAt: daysAgo(5),
+      status: 'complete',
+      completedAt: daysAgo(6),
+      pointsPossible: 20,
+      pointsEarned: 18,
+    },
+    {
+      studentId: student1.id,
+      academicCoachUserId: academicCoachUser.id,
+      subject: 'Science',
+      title: 'Chemical Reactions Lab Write-Up',
+      instructions: 'Write a formal lab report following the template provided.',
+      dueAt: daysAgo(2),
+      status: 'complete',
+      completedAt: daysAgo(3),
+      pointsPossible: 30,
+      pointsEarned: 26,
+    },
+    {
+      studentId: student1.id,
+      academicCoachUserId: academicCoachUser.id,
+      subject: 'English',
+      title: 'Persuasive Essay Draft',
+      instructions: 'Write a 3–5 paragraph persuasive essay on a topic of your choice.',
+      dueAt: daysAhead(3),
+      status: 'incomplete',
+      pointsPossible: 25,
+    },
+    {
+      studentId: student1.id,
+      academicCoachUserId: academicCoachUser.id,
+      subject: 'History',
+      title: 'WWII Timeline Research',
+      instructions: 'Create a detailed timeline of major WWII events from 1939–1945.',
+      dueAt: daysAhead(7),
+      status: 'incomplete',
+      pointsPossible: 15,
+    },
+    {
+      studentId: student1.id,
+      academicCoachUserId: academicCoachUser.id,
+      subject: 'Math',
+      title: 'Quadratic Equations Quiz Prep',
+      instructions: 'Review chapters 4–5 and complete the practice quiz.',
+      dueAt: daysAgo(15),
+      status: 'incomplete',
+      pointsPossible: 20,
+    },
+    {
+      studentId: student2.id,
+      academicCoachUserId: academicCoachUser.id,
+      subject: 'Science',
+      title: 'Ecosystems Research Project',
+      instructions: 'Research a specific ecosystem and present findings in a 2-page report.',
+      dueAt: daysAhead(5),
+      status: 'incomplete',
+      pointsPossible: 40,
+    },
+    {
+      studentId: student2.id,
+      academicCoachUserId: academicCoachUser.id,
+      subject: 'Math',
+      title: 'Geometry Proofs',
+      instructions: 'Complete proofs 1–10 from the worksheet.',
+      dueAt: daysAgo(3),
+      status: 'complete',
+      completedAt: daysAgo(4),
+      pointsPossible: 20,
+      pointsEarned: 20,
+    },
+  ]);
+  console.log('✓ Lesson assignments: 7');
+
+  // ── Reward catalog ────────────────────────────────────────────────────────────
+  const [catalog1] = await db.insert(rewardCatalog).values({
+    name: 'Free Homework Pass',
+    description: 'Skip one homework assignment of your choice.',
+    pointCost: 100,
+    isActive: true,
+  }).returning();
+
+  const [catalog2] = await db.insert(rewardCatalog).values({
+    name: 'Extra Credit Opportunity',
+    description: 'Unlock a special extra credit project to boost your grade.',
+    pointCost: 150,
+    isActive: true,
+  }).returning();
+
+  await db.insert(rewardCatalog).values([
+    { name: 'Choose Your Study Music', description: 'Play music during one solo study session.', pointCost: 50, isActive: true },
+    { name: 'Lunch with Your Coach', description: 'One-on-one lunch session with your academic coach.', pointCost: 200, isActive: true },
+    { name: 'Early Dismissal (30 min)', description: 'Leave 30 minutes early on a school day.', pointCost: 300, isActive: true },
+  ]);
+  console.log('✓ Reward catalog: 5 items');
+
+  // ── Student points and transaction history ────────────────────────────────────
+  await db.insert(studentPoints).values([
+    { studentId: student1.id, points: 185 },
+    { studentId: student2.id, points: 75 },
+  ]);
+
+  await db.insert(pointTransactions).values([
+    { studentId: student1.id, delta: 50, reason: 'Completed Linear Equations Practice on time', awardedBy: academicCoachUser.id },
+    { studentId: student1.id, delta: 75, reason: 'Excellent lab write-up — above and beyond', awardedBy: academicCoachUser.id },
+    { studentId: student1.id, delta: 25, reason: 'Great effort in training session', awardedBy: perfCoachUser.id },
+    { studentId: student1.id, delta: 50, reason: 'Perfect attendance this week', awardedBy: admin.id },
+    { studentId: student1.id, delta: -15, reason: 'Redeemed: Choose Your Study Music', awardedBy: null },
+    { studentId: student2.id, delta: 50, reason: 'Perfect score on Geometry Proofs', awardedBy: academicCoachUser.id },
+    { studentId: student2.id, delta: 25, reason: 'Excellent class participation', awardedBy: academicCoachUser.id },
+  ]);
+  console.log('✓ Student points: Ethan=185, Lily=75 with transaction history');
 
   console.log('\n========================================');
   console.log('Demo data seeded successfully!');
