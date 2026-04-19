@@ -14,7 +14,9 @@ const SLUG_MAP = {
   "college-nil": "college-nil",
 };
 
-export default function ProgramPage({ pageSlug }) {
+export default function ProgramPage({ programType }) {
+  const pageSlug = SLUG_MAP[programType] || programType;
+
   const { data: pages = [] } = useQuery({
     queryKey: ["cms-page", pageSlug],
     queryFn: () => base44.entities.CmsPage.filter({ slug: pageSlug, status: "published" }),

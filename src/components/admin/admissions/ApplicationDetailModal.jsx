@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { base44 } from "@/api/base44Client";
+import { apiPatch, apiPost } from "@/api/apiClient";
 import { useAuth } from "@/lib/AuthContext";
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
-import { X, CheckCircle, XCircle, Clock, Loader2, Mail, Pencil, Save } from "lucide-react";
+import { X, CheckCircle, XCircle, Clock, Loader2, Mail, Pencil, Save, ExternalLink } from "lucide-react";
 import { format } from "date-fns";
 
 const Row = ({ label, value }) => (
@@ -18,14 +18,14 @@ export default function ApplicationDetailModal({ application: initialApp, status
   const { toast } = useToast();
 
   const [app, setApp] = useState(initialApp);
-  const [decisionNotes, setDecisionNotes] = useState(initialApp.decision_notes || "");
+  const [decisionNotes, setDecisionNotes] = useState(initialApp.reviewer_notes || "");
   const [saving, setSaving] = useState(false);
   const [inviting, setInviting] = useState(false);
+  const [inviteUrl, setInviteUrl] = useState(null);
 
-  // Editable parent contact state — seeded from app record
   const [editingContact, setEditingContact] = useState(false);
   const [contactForm, setContactForm] = useState({
-    full_name: `${initialApp.parent_first_name} ${initialApp.parent_last_name}`,
+    full_name: `${initialApp.parent_first_name} ${initialApp.parent_last_name}`.trim(),
     email: initialApp.email || "",
     phone: initialApp.phone || "",
   });
@@ -38,177 +38,77 @@ export default function ApplicationDetailModal({ application: initialApp, status
     const nameParts = contactForm.full_name.trim().split(" ");
     const firstName = nameParts[0] || "";
     const lastName = nameParts.slice(1).join(" ") || "";
-
-    // Update the Application record
-    await base44.entities.Application.update(app.id, {
-      parent_first_name: firstName,
-      parent_last_name: lastName,
-      email: contactForm.email,
-      phone: contactForm.phone,
-      applicant_email: contactForm.email,
-    });
-
-    // If a Parent record was already created on approval, update it too
-    if (app.created_parent_id) {
-      await base44.entities.Parent.update(app.created_parent_id, {
-        full_name: contactForm.full_name.trim(),
-        user_email: contactForm.email,
+    try {
+      const res = await apiPatch(`/applications/${app.id}`, {
+        parent_first_name: firstName,
+        parent_last_name: lastName,
+        email: contactForm.email,
         phone: contactForm.phone,
-        billing_email: contactForm.email,
       });
+      setApp(res.application);
+      setEditingContact(false);
+      toast({ title: "Contact info updated" });
+    } catch (err) {
+      toast({ title: "Update failed", description: err.message, variant: "destructive" });
+    } finally {
+      setSavingContact(false);
     }
-
-    setApp(prev => ({
-      ...prev,
-      parent_first_name: firstName,
-      parent_last_name: lastName,
-      email: contactForm.email,
-      phone: contactForm.phone,
-    }));
-
-    setEditingContact(false);
-    setSavingContact(false);
-    toast({ title: "Contact info updated" });
   };
 
   const sendInvite = async () => {
     setInviting(true);
     try {
-      const res = await base44.functions.invoke("inviteAndSetRole", { email: contactForm.email, role: "parent" });
-      const result = res.data;
-      if (result.warning) {
-        toast({ title: "Invitation sent", description: result.warning });
-      } else {
-        toast({
-          title: "Invitation sent!",
-          description: `Login invite emailed to ${contactForm.email} with parent access.`,
-        });
-      }
-    } catch (err) {
-      toast({
-        title: "Invite failed",
-        description: err.message || "Could not send invite. The user may already have an account.",
-        variant: "destructive",
+      const nameParts = contactForm.full_name.trim().split(" ");
+      const res = await apiPost("/users/invite", {
+        email: contactForm.email,
+        role: "parent",
+        firstName: nameParts[0] || "",
+        lastName: nameParts.slice(1).join(" ") || "",
       });
+      const url = res.inviteUrl || res.registerUrl;
+      if (url) setInviteUrl(url);
+      toast({
+        title: res.emailSent ? "Invitation sent!" : "Invitation created",
+        description: res.emailSent
+          ? `Login invite emailed to ${contactForm.email}.`
+          : "Email not configured — use the link below.",
+      });
+    } catch (err) {
+      toast({ title: "Invite failed", description: err.message, variant: "destructive" });
+    } finally {
+      setInviting(false);
     }
-    setInviting(false);
   };
 
   const makeDecision = async (newStatus) => {
     setSaving(true);
-    await base44.entities.Application.update(app.id, {
-      status: newStatus,
-      reviewed_at: new Date().toISOString(),
-      reviewed_by: user?.email,
-      decision_notes: decisionNotes,
-    });
-
-    await base44.entities.AuditLog.create({
-      actor_user_id: user?.id,
-      actor_email: user?.email,
-      actor_role: user?.role,
-      action: `application_${newStatus}`,
-      resource_type: "Application",
-      resource_id: app.id,
-      description: `Application for ${app.student_first_name} ${app.student_last_name} marked as ${newStatus}`,
-      metadata: JSON.stringify({ decision_notes: decisionNotes, program: app.program_interest }),
-      timestamp: new Date().toISOString(),
-      severity: newStatus === "denied" ? "warning" : "info",
-    });
-
-    if (newStatus === "approved") {
-      await handleApproval();
-    } else {
-      setSaving(false);
-      onUpdated();
-    }
-  };
-
-  const handleApproval = async () => {
-    const placeholderUserId = `pending_${app.id}`;
-    const emailToUse = contactForm.email;
-    const nameToUse = contactForm.full_name.trim();
-    const nameParts = nameToUse.split(" ");
-
-    // 1. Create Parent record
-    const parent = await base44.entities.Parent.create({
-      user_id: placeholderUserId,
-      user_email: emailToUse,
-      full_name: nameToUse,
-      phone: contactForm.phone,
-      student_ids: [],
-      is_primary_contact: true,
-      billing_email: emailToUse,
-    });
-
-    // 2. Create Student record
-    const student = await base44.entities.Student.create({
-      user_id: placeholderUserId,
-      user_email: emailToUse,
-      full_name: `${app.student_first_name} ${app.student_last_name}`,
-      date_of_birth: app.student_birth_date,
-      grade_level: app.student_grade,
-      parent_ids: [parent.id],
-      is_active: true,
-      notes: app.notes || "",
-    });
-
-    // 3. Link parent -> student
-    await base44.entities.Parent.update(parent.id, { student_ids: [student.id] });
-
-    // 4. Try to find a matching Program
-    const allPrograms = await base44.entities.Program.list("name", 100);
-    const matchedProgram = allPrograms.find(p =>
-      p.name?.toLowerCase().includes(app.program_interest?.toLowerCase()) ||
-      app.program_interest?.toLowerCase().includes(p.name?.toLowerCase())
-    );
-
-    // 5. Create Enrollment
-    const enrollment = await base44.entities.Enrollment.create({
-      student_id: student.id,
-      student_email: emailToUse,
-      program_id: matchedProgram?.id || "pending",
-      program_name: matchedProgram?.name || app.program_interest,
-      status: "pending_payment",
-      payment_status: "unpaid",
-      enrolled_date: new Date().toISOString().split("T")[0],
-      notes: `Created from application ${app.id}`,
-    });
-
-    // 6. Back-link IDs onto Application
-    await base44.entities.Application.update(app.id, {
-      created_parent_id: parent.id,
-      created_student_id: student.id,
-      created_enrollment_id: enrollment.id,
-    });
-
-    // 7. Invite parent with correct role
     try {
-      await base44.functions.invoke("inviteAndSetRole", { email: emailToUse, role: "parent" });
-      toast({
-        title: "Invitation sent",
-        description: `An invitation email was sent to ${emailToUse} with parent access.`,
-      });
-    } catch (inviteErr) {
-      console.warn("Invite skipped (user may already exist):", inviteErr.message);
+      if (newStatus === "approved") {
+        const res = await apiPost(`/applications/${app.id}/approve`, {
+          decision_notes: decisionNotes,
+          reviewed_by: user?.email,
+        });
+        setApp(res.application);
+        if (res.inviteUrl) setInviteUrl(res.inviteUrl);
+        toast({
+          title: "Application approved!",
+          description: `Parent account and student record created. Invite sent to ${res.parentUser?.email}.`,
+        });
+        onUpdated();
+      } else {
+        const res = await apiPatch(`/applications/${app.id}`, {
+          status: newStatus,
+          decision_notes: decisionNotes,
+        });
+        setApp(res.application);
+        toast({ title: `Application ${newStatus}` });
+        onUpdated();
+      }
+    } catch (err) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSaving(false);
     }
-
-    // 8. Audit log
-    await base44.entities.AuditLog.create({
-      actor_user_id: user?.id,
-      actor_email: user?.email,
-      actor_role: user?.role,
-      action: "enrollment_created_from_application",
-      resource_type: "Enrollment",
-      resource_id: enrollment.id,
-      description: `Enrollment created for ${app.student_first_name} ${app.student_last_name} — ${app.program_interest}`,
-      metadata: JSON.stringify({ application_id: app.id, parent_id: parent.id, student_id: student.id }),
-      timestamp: new Date().toISOString(),
-      severity: "info",
-    });
-
-    setSaving(false);
-    onUpdated();
   };
 
   const canDecide = !["approved", "denied"].includes(app.status);
@@ -304,26 +204,35 @@ export default function ApplicationDetailModal({ application: initialApp, status
             {app.notes && <Row label="Notes" value={app.notes} />}
           </div>
 
-          {app.submitted_at && (
+          {app.created_date && (
             <p className="text-xs text-slate-400">
-              Submitted {format(new Date(app.submitted_at), "MMM d, yyyy 'at' h:mm a")}
-              {app.reviewed_by && ` · Reviewed by ${app.reviewed_by}`}
+              Submitted {format(new Date(app.created_date), "MMM d, yyyy 'at' h:mm a")}
             </p>
           )}
 
-          {app.created_enrollment_id && (
-            <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-sm text-green-700">
-              ✓ Enrollment created (ID: {app.created_enrollment_id}) — status: <strong>pending_payment</strong>
+          {/* Invite link if email not configured */}
+          {inviteUrl && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2">
+              <p className="text-xs font-semibold text-amber-800">Email not configured — share this invite link:</p>
+              <div className="flex gap-2">
+                <input readOnly value={inviteUrl} className="flex-1 text-xs bg-white border border-amber-200 rounded px-2 py-1.5 text-amber-800" />
+                <button
+                  onClick={() => { navigator.clipboard.writeText(inviteUrl); toast({ title: "Copied!" }); }}
+                  className="px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-800 text-xs font-medium rounded"
+                >
+                  Copy
+                </button>
+              </div>
             </div>
           )}
 
-          {/* Manual invite — uses contactForm.email so it's always up to date */}
-          {app.status === "approved" && (
+          {/* Manual re-invite button for already-approved applications */}
+          {app.status === "approved" && !inviteUrl && (
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center justify-between gap-4">
               <div>
-                <p className="text-sm font-semibold text-blue-800">Send Login Invitation</p>
+                <p className="text-sm font-semibold text-blue-800">Resend Login Invitation</p>
                 <p className="text-xs text-blue-600 mt-0.5">
-                  Email <strong>{contactForm.email}</strong> a link to create their password and access the Parent Portal.
+                  Email <strong>{contactForm.email}</strong> a new invite link.
                 </p>
               </div>
               <Button
@@ -335,7 +244,7 @@ export default function ApplicationDetailModal({ application: initialApp, status
               >
                 {inviting
                   ? <Loader2 className="w-4 h-4 animate-spin" />
-                  : <><Mail className="w-4 h-4 mr-1.5" /> Send Invite</>
+                  : <><Mail className="w-4 h-4 mr-1.5" /> Resend</>
                 }
               </Button>
             </div>
@@ -353,10 +262,10 @@ export default function ApplicationDetailModal({ application: initialApp, status
             </div>
           )}
 
-          {!canDecide && app.decision_notes && (
+          {!canDecide && app.reviewer_notes && (
             <div className="bg-slate-50 rounded-xl p-4 text-sm">
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">Decision Notes</p>
-              <p className="text-slate-700">{app.decision_notes}</p>
+              <p className="text-slate-700">{app.reviewer_notes}</p>
             </div>
           )}
         </div>

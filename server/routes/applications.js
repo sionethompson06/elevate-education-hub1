@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { eq, desc, and } from 'drizzle-orm';
+import { randomBytes } from 'crypto';
+import { sendInviteEmail } from '../services/email.service.js';
 
 import db from '../db-postgres.js';
 import { applications, users, students, guardianStudents } from '../schema.js';
@@ -70,6 +72,11 @@ router.patch('/:id', requireAuth, requireRole('admin'), async (req, res) => {
       status: 'status',
       reviewer_notes: 'reviewerNotes',
       reviewerNotes: 'reviewerNotes',
+      decision_notes: 'reviewerNotes',
+      parent_first_name: 'parentFirstName',
+      parent_last_name: 'parentLastName',
+      email: 'email',
+      phone: 'phone',
     };
     for (const [key, col] of Object.entries(fieldMap)) {
       if (req.body[key] !== undefined) updateData[col] = req.body[key];
@@ -120,8 +127,12 @@ router.post('/:id/approve', requireAuth, requireRole('admin'), async (req, res) 
     const [app] = await db.select().from(applications).where(eq(applications.id, id));
     if (!app) return res.status(404).json({ success: false, error: 'Application not found' });
 
+    const { decision_notes, reviewed_by } = req.body;
+
     // Sequential queries — neon-http driver does not support transactions
-    await db.update(applications).set({ status: 'accepted' }).where(eq(applications.id, id));
+    await db.update(applications)
+      .set({ status: 'approved', reviewerNotes: decision_notes || null })
+      .where(eq(applications.id, id));
 
     let parentUser;
     const [existingUser] = await db.select().from(users).where(eq(users.email, app.email.toLowerCase().trim()));
@@ -170,29 +181,43 @@ router.post('/:id/approve', requireAuth, requireRole('admin'), async (req, res) 
       });
     }
 
+    // Auto-invite parent — generate token and send email
+    let inviteUrl = null;
+    try {
+      const inviteToken = randomBytes(32).toString('hex');
+      const inviteTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      await db.update(users).set({ inviteToken, inviteTokenExpiry }).where(eq(users.id, parentUser.id));
+      const baseUrl = (process.env.APP_URL || '').replace(/\/+$/, '') || `${req.protocol}://${req.get('host')}`;
+      inviteUrl = `${baseUrl}/register?token=${inviteToken}`;
+      await sendInviteEmail(parentUser.email, parentUser.firstName, inviteToken);
+    } catch (inviteErr) {
+      console.warn('[approve] invite send failed (non-fatal):', inviteErr.message);
+    }
+
     await logAudit({
       userId: req.user.id,
       action: 'update',
       entityType: 'application',
       entityId: id,
-      details: { status: 'accepted', parentUserId: parentUser.id, studentId: studentRecord.id },
+      details: { status: 'approved', parentUserId: parentUser.id, studentId: studentRecord.id, reviewed_by: reviewed_by || req.user.email },
       ipAddress: req.ip,
     });
 
     await createNotification({
       userId: parentUser.id,
-      type: 'application_accepted',
-      title: 'Application accepted',
-      body: `${studentRecord.firstName}'s application has been accepted! You can now log in and enroll.`,
-      link: '/hub/parent',
+      type: 'application_approved',
+      title: 'Application approved',
+      body: `${studentRecord.firstName}'s application has been approved! Check your email to set up your account.`,
+      link: '/parent/dashboard',
     });
 
-    const [acceptedApp] = await db.select().from(applications).where(eq(applications.id, id));
+    const [approvedApp] = await db.select().from(applications).where(eq(applications.id, id));
     res.json({
       success: true,
-      application: formatApp(acceptedApp),
+      application: formatApp(approvedApp),
       parentUser: { id: parentUser.id, email: parentUser.email },
       student: { id: studentRecord.id, firstName: studentRecord.firstName, lastName: studentRecord.lastName },
+      inviteUrl,
     });
   } catch (err) {
     console.error('Approve application error:', err);

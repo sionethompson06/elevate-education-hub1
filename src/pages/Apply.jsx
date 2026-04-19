@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { base44 } from "@/api/base44Client";
+import { apiPost } from "@/api/apiClient";
 import { useAuth } from "@/lib/AuthContext";
 import StepIndicator from "@/components/apply/StepIndicator";
 import StepParent from "@/components/apply/StepParent";
@@ -44,33 +44,37 @@ export default function Apply() {
   const handleSaveDraft = async () => {
     setSaving(true);
     setError(null);
-    const data = {
-      ...form,
-      student_age: Number(form.student_age) || 0,
-      status: "draft",
-      applicant_user_id: user?.id || "",
-      applicant_email: user?.email || form.email,
-    };
-    await base44.entities.Application.create(data);
-    setSaving(false);
-    alert("Draft saved! You can return to complete your application later.");
+    try {
+      await apiPost("/applications", {
+        ...form,
+        student_age: Number(form.student_age) || 0,
+        status: "draft",
+      });
+      alert("Draft saved! You can return to complete your application later.");
+    } catch (err) {
+      setError(err.message || "Could not save draft. Please try again.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleSubmit = async () => {
     setSaving(true);
     setError(null);
-    const data = {
-      ...form,
-      student_age: Number(form.student_age) || 0,
-      status: "submitted",
-      submitted_at: new Date().toISOString(),
-      applicant_user_id: user?.id || "",
-      applicant_email: user?.email || form.email,
-    };
-    const app = await base44.entities.Application.create(data);
-    setSubmittedApp(app);
-    setSubmitted(true);
-    setSaving(false);
+    try {
+      const res = await apiPost("/applications", {
+        ...form,
+        student_age: Number(form.student_age) || 0,
+        status: "submitted",
+        submitted_at: new Date().toISOString(),
+      });
+      setSubmittedApp(res.application);
+      setSubmitted(true);
+    } catch (err) {
+      setError(err.message || "Submission failed. Please try again.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (submitted) return <ConfirmationPage application={submittedApp} />;
