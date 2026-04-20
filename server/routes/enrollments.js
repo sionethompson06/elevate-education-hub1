@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { eq, desc, and, ne } from 'drizzle-orm';
+import { eq, desc, and, ne, inArray } from 'drizzle-orm';
 import db from '../db-postgres.js';
 import { enrollments, programs, students, users, billingAccounts, invoices, schoolYears, sections, guardianStudents, enrollmentOverrides, coachAssignments, staffProfiles } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
@@ -117,14 +117,31 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
       programName: programs.name,
       programTuition: programs.tuitionAmount,
       programBillingCycle: programs.billingCycle,
-      parentFirstName: users.firstName,
-      parentLastName: users.lastName,
-      parentEmail: users.email,
     }).from(enrollments)
       .leftJoin(students, eq(enrollments.studentId, students.id))
       .leftJoin(programs, eq(enrollments.programId, programs.id))
-      .leftJoin(users, eq(enrollments.enrolledBy, users.id))
       .orderBy(desc(enrollments.createdAt));
+
+    // Resolve actual parent/guardian via guardianStudents → users (not enrolledBy admin)
+    const studentIds = [...new Set(result.map(e => e.studentId).filter(Boolean))];
+    const guardianMap = {};
+    if (studentIds.length > 0) {
+      const guardianRows = await db.select({
+        studentId: guardianStudents.studentId,
+        isPrimary: guardianStudents.isPrimary,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        email: users.email,
+      }).from(guardianStudents)
+        .leftJoin(users, eq(guardianStudents.guardianUserId, users.id))
+        .where(inArray(guardianStudents.studentId, studentIds));
+
+      for (const row of guardianRows) {
+        if (!guardianMap[row.studentId] || row.isPrimary) {
+          guardianMap[row.studentId] = { firstName: row.firstName, lastName: row.lastName, email: row.email };
+        }
+      }
+    }
 
     // Fetch all invoices and map to the latest per enrollment
     const allInvoices = await db.select().from(invoices).orderBy(desc(invoices.createdAt));
@@ -135,16 +152,22 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
       }
     }
 
-    const enriched = result.map(e => ({
-      ...e,
-      billingCycle: e.billingCycleOverride || e.programBillingCycle,
-      invoiceId: invoiceMap[e.id]?.id || null,
-      invoiceAmount: invoiceMap[e.id]?.amount || null,
-      invoiceStatus: invoiceMap[e.id]?.status || null,
-      invoiceDueDate: invoiceMap[e.id]?.dueDate || null,
-      invoicePaidDate: invoiceMap[e.id]?.paidDate || null,
-      invoiceDescription: invoiceMap[e.id]?.description || null,
-    }));
+    const enriched = result.map(e => {
+      const guardian = guardianMap[e.studentId] || {};
+      return {
+        ...e,
+        parentFirstName: guardian.firstName || null,
+        parentLastName: guardian.lastName || null,
+        parentEmail: guardian.email || null,
+        billingCycle: e.billingCycleOverride || e.programBillingCycle,
+        invoiceId: invoiceMap[e.id]?.id || null,
+        invoiceAmount: invoiceMap[e.id]?.amount || null,
+        invoiceStatus: invoiceMap[e.id]?.status || null,
+        invoiceDueDate: invoiceMap[e.id]?.dueDate || null,
+        invoicePaidDate: invoiceMap[e.id]?.paidDate || null,
+        invoiceDescription: invoiceMap[e.id]?.description || null,
+      };
+    });
 
     res.json({ success: true, enrollments: enriched });
   } catch (err) {
@@ -360,14 +383,14 @@ router.patch('/:id/invoice', requireAuth, requireRole('admin'), async (req, res)
         return res.status(400).json({ success: false, error: 'Cannot create invoice: no parent billing account found for this student' });
       }
 
-      const dueDate = new Date();
-      dueDate.setDate(dueDate.getDate() + 30);
+      const defaultDueDate = new Date();
+      defaultDueDate.setDate(defaultDueDate.getDate() + 30);
       [invoice] = await db.insert(invoices).values({
         billingAccountId,
         enrollmentId,
         description: description || 'Tuition',
         amount: amount ? String(amount) : '0',
-        dueDate: dueDate.toISOString().split('T')[0],
+        dueDate: dueDate || defaultDueDate.toISOString().split('T')[0],
       }).returning();
     }
 
