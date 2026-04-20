@@ -1,78 +1,156 @@
-import { useQuery } from "@tanstack/react-query";
-import { apiGet } from "@/api/apiClient";
 import { Link } from "react-router-dom";
-import HeroSection from "@/components/public/HeroSection";
-import CmsContent from "@/components/public/CmsContent";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, CheckCircle2 } from "lucide-react";
+import { ArrowRight, BookOpen, Dumbbell, Layers, CheckCircle2 } from "lucide-react";
 
 const STEPS = [
-  { num: "01", title: "Apply Online", desc: "Complete our short application sharing your academic and athletic background." },
-  { num: "02", title: "Intro Call", desc: "A 30-minute call with our admissions team to learn more about your goals." },
-  { num: "03", title: "Program Match", desc: "We recommend the right program(s) based on your needs and goals." },
-  { num: "04", title: "Enroll & Meet Your Coaches", desc: "Complete enrollment and get introduced to your dedicated coaches." },
+  { num: "01", title: "Submit Application", desc: "Complete the online application form with student and family information.", color: "#3B82F6" },
+  { num: "02", title: "Family Consultation", desc: "Meet with our team to discuss your student's goals and program fit.", color: "#10B981" },
+  { num: "03", title: "Evaluation", desc: "We review academic history, athletic background, and family alignment.", color: "#8B5CF6" },
+  { num: "04", title: "Enrollment", desc: "Receive your offer, submit the deposit, and join the EPA community.", color: "#F59E0B" },
 ];
 
+const PROGRAMS = [
+  {
+    icon: BookOpen,
+    tag: "MICROSCHOOL",
+    title: "Hybrid Program",
+    price: "$7,500",
+    billing: "per year",
+    sub: "$750/month × 10 months · $500 deposit",
+    color: "#3B82F6",
+    features: ["K–12 hybrid education", "3 on-site days per week", "Max 10 students per class", "Literacy, STEM & Humanities", "Wednesday home learning", "40 student enrollment cap"],
+  },
+  {
+    icon: Dumbbell,
+    tag: "PERFORMANCE",
+    title: "Athletic Program",
+    price: "$500",
+    billing: "per month",
+    sub: "Per athlete",
+    color: "#10B981",
+    features: ["4 sessions per week (60 min)", "Speed, strength & conditioning", "Sports nutrition education", "Mental performance training", "NIL & recruiting workshops", "Elite mentorship access"],
+  },
+  {
+    icon: Layers,
+    tag: "FULL PROGRAM",
+    title: "Combined Enrollment",
+    price: "Contact",
+    billing: "for pricing",
+    sub: "Best value for complete development",
+    color: "#8B5CF6",
+    features: ["Full academic program", "Full athletic training program", "Integrated scheduling", "Priority mentorship access", "Combined family discount", "Complete student-athlete pathway"],
+  },
+];
+
+const VALUES = ["Coachability", "Commitment to Growth", "Academic Effort", "Athletic Drive", "Character & Integrity"];
+
 export default function Admissions() {
-  const { data: allCms = [] } = useQuery({
-    queryKey: ["cms-all-public"],
-    queryFn: () => apiGet('/cms'),
-  });
-
-  const page = allCms.find(r => r.section === "pages" && r.key === "admissions");
-
   return (
-    <div>
-      <HeroSection
-        headline={page?.title || "Join the Elevate Community"}
-        subheadline="Our admissions process is designed to find the right fit for every student-athlete."
-        ctaLabel="Start Your Application"
-        ctaHref="/apply"
-      />
+    <div className="bg-[#0A0F1A]">
+      {/* Hero */}
+      <section className="py-20 px-6 text-white border-b border-white/5">
+        <div className="max-w-3xl mx-auto text-center">
+          <p className="text-xs font-mono tracking-widest text-[#10B981] uppercase mb-4">ENROLLMENT</p>
+          <h1 className="text-4xl md:text-5xl font-black uppercase tracking-tight text-white mb-4">
+            ADMISSIONS
+          </h1>
+          <p className="text-slate-400 mb-8 max-w-xl mx-auto">
+            Three enrollment paths designed to meet the unique needs of every family. Choose academics, athletics, or both.
+          </p>
+          <Link to="/apply">
+            <Button size="lg" className="bg-[#10B981] text-white hover:bg-[#059669] font-bold">
+              INITIATE APPLICATION <ArrowRight className="ml-2 w-4 h-4" />
+            </Button>
+          </Link>
+        </div>
+      </section>
 
-      {/* Process */}
-      <section className="py-16 px-6 bg-white">
+      {/* Enrollment options */}
+      <section className="py-20 px-6 bg-[#0D1117]">
         <div className="max-w-5xl mx-auto">
-          <h2 className="text-2xl font-bold text-[#1a3c5e] mb-10 text-center">How to Apply</h2>
-          <div className="grid md:grid-cols-4 gap-8">
-            {STEPS.map(({ num, title, desc }) => (
-              <div key={num} className="text-center">
-                <div className="w-14 h-14 bg-[#1a3c5e] text-white rounded-full flex items-center justify-center text-xl font-bold mx-auto mb-4">
-                  {num}
+          <div className="text-center mb-12">
+            <p className="text-xs font-mono tracking-widest text-[#3B82F6] uppercase mb-3">CHOOSE YOUR PATH</p>
+            <h2 className="text-3xl font-black text-white uppercase tracking-tight">ENROLLMENT OPTIONS</h2>
+          </div>
+          <div className="grid md:grid-cols-3 gap-6">
+            {PROGRAMS.map(({ icon: Icon, tag, title, price, billing, sub, color, features }) => (
+              <div key={title} className="bg-[#1E293B] rounded-2xl border border-white/5 overflow-hidden flex flex-col">
+                <div className="h-0.5" style={{ backgroundColor: color }} />
+                <div className="p-6 flex flex-col flex-1">
+                  <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-4" style={{ backgroundColor: `${color}20` }}>
+                    <Icon className="w-5 h-5" style={{ color }} />
+                  </div>
+                  <span className="text-xs font-mono font-bold tracking-widest mb-2 inline-block" style={{ color }}>{tag}</span>
+                  <h3 className="font-black text-white uppercase tracking-tight mb-1">{title}</h3>
+                  <div className="my-3">
+                    <span className="text-2xl font-black text-white">{price}</span>
+                    <span className="text-slate-500 text-xs ml-1">/ {billing}</span>
+                    <p className="text-xs text-slate-500 mt-0.5">{sub}</p>
+                  </div>
+                  <ul className="space-y-1.5 flex-1 mb-5">
+                    {features.map(f => (
+                      <li key={f} className="flex items-start gap-2 text-xs text-slate-400">
+                        <CheckCircle2 className="w-3 h-3 shrink-0 mt-0.5" style={{ color }} />
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+                  <Link to="/apply">
+                    <Button size="sm" className="w-full text-white font-bold" style={{ backgroundColor: color }}>
+                      APPLY NOW
+                    </Button>
+                  </Link>
                 </div>
-                <h3 className="font-bold text-slate-800 mb-2">{title}</h3>
-                <p className="text-sm text-slate-500">{desc}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {page?.body && (
-        <section className="py-12 px-6 bg-slate-50">
-          <div className="max-w-3xl mx-auto">
-            <CmsContent content={page.body} />
+      {/* Admissions process */}
+      <section className="py-20 px-6 bg-[#0A0F1A]">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-12">
+            <p className="text-xs font-mono tracking-widest text-[#3B82F6] uppercase mb-3">HOW IT WORKS</p>
+            <h2 className="text-3xl font-black text-white uppercase tracking-tight">ADMISSIONS PROCESS</h2>
           </div>
-        </section>
-      )}
+          <div className="grid md:grid-cols-4 gap-6">
+            {STEPS.map(({ num, title, desc, color }, i) => (
+              <div key={num} className="relative">
+                {i < STEPS.length - 1 && (
+                  <div className="hidden md:block absolute top-7 left-[calc(50%+28px)] right-0 h-px bg-white/5" />
+                )}
+                <div className="text-center">
+                  <div className="w-14 h-14 rounded-full flex items-center justify-center text-sm font-black mx-auto mb-4 border-2" style={{ borderColor: color, color, backgroundColor: `${color}10` }}>
+                    {num}
+                  </div>
+                  <h3 className="font-black text-white uppercase tracking-tight text-sm mb-2">{title}</h3>
+                  <p className="text-xs text-slate-400 leading-relaxed">{desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
       {/* What we look for */}
-      <section className="py-16 px-6 bg-white">
+      <section className="py-20 px-6 bg-[#0D1117]">
         <div className="max-w-3xl mx-auto text-center">
-          <h2 className="text-2xl font-bold text-[#1a3c5e] mb-4">What We Look For</h2>
-          <p className="text-slate-500 mb-8">
+          <p className="text-xs font-mono tracking-widest text-[#10B981] uppercase mb-3">SELECTION CRITERIA</p>
+          <h2 className="text-3xl font-black text-white uppercase tracking-tight mb-4">WHAT WE LOOK FOR</h2>
+          <p className="text-slate-400 mb-8">
             We accept students at all academic and athletic levels. What matters most is commitment to growth and coachability.
           </p>
-          <div className="flex flex-wrap gap-3 justify-center mb-8">
-            {["Coachability", "Commitment to Growth", "Academic Effort", "Athletic Drive", "Character"].map((v) => (
-              <div key={v} className="flex items-center gap-2 bg-blue-50 text-[#1a3c5e] px-4 py-2 rounded-full text-sm font-medium">
-                <CheckCircle2 className="w-4 h-4" /> {v}
+          <div className="flex flex-wrap gap-3 justify-center mb-10">
+            {VALUES.map(v => (
+              <div key={v} className="flex items-center gap-2 bg-[#1E293B] border border-white/10 text-slate-300 px-4 py-2 rounded-full text-sm font-medium">
+                <CheckCircle2 className="w-4 h-4 text-[#10B981]" /> {v}
               </div>
             ))}
           </div>
           <Link to="/apply">
-            <Button size="lg" className="bg-[#1a3c5e] hover:bg-[#0d2540] font-bold">
-              Start Your Application <ArrowRight className="ml-2 w-4 h-4" />
+            <Button size="lg" className="bg-[#10B981] text-white hover:bg-[#059669] font-bold">
+              START YOUR APPLICATION <ArrowRight className="ml-2 w-4 h-4" />
             </Button>
           </Link>
         </div>
