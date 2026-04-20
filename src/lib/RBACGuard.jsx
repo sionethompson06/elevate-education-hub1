@@ -16,7 +16,8 @@ export default function RBACGuard({ children }) {
   useEffect(() => {
     if (isLoadingAuth) return;
 
-    const role = user?.role || null;
+    // Normalize role: API may return "academic-coach" (hyphen) but RBAC keys use "academic_coach" (underscore)
+    const role = user?.role?.replace(/-/g, '_') || null;
     const pathname = location.pathname;
     const { allowed, reason } = checkRouteAccess(role, pathname);
 

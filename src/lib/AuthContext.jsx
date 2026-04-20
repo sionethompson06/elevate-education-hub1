@@ -6,10 +6,12 @@ const AuthContext = createContext();
 const IMPERSONATE_RETURN_KEY = 'elevate_impersonate_return';
 
 function getDashboardForRole(role) {
-  if (role === 'parent') return '/parent/dashboard';
-  if (role === 'student') return '/student/dashboard';
-  if (role === 'academic_coach') return '/academic-coach/dashboard';
-  if (role === 'performance_coach') return '/performance-coach/dashboard';
+  // Accepts both underscore and hyphen formats
+  const r = role?.replace(/-/g, '_');
+  if (r === 'parent') return '/parent/dashboard';
+  if (r === 'student') return '/student/dashboard';
+  if (r === 'academic_coach') return '/academic-coach/dashboard';
+  if (r === 'performance_coach') return '/performance-coach/dashboard';
   return '/admin/dashboard';
 }
 
@@ -20,8 +22,9 @@ export const AuthProvider = ({ children }) => {
   const [isLoadingPublicSettings] = useState(false);
   const [authError, setAuthError] = useState(null);
   const [appPublicSettings] = useState({ id: 'elevate', public_settings: {} });
-
-  const isImpersonating = !!localStorage.getItem(IMPERSONATE_RETURN_KEY);
+  const [isImpersonating, setIsImpersonating] = useState(
+    () => !!localStorage.getItem(IMPERSONATE_RETURN_KEY)
+  );
 
   useEffect(() => {
     checkAppState();
@@ -40,6 +43,8 @@ export const AuthProvider = ({ children }) => {
       if (data?.user) {
         setUser(data.user);
         setIsAuthenticated(true);
+        // Sync impersonation state from localStorage on (re)load
+        setIsImpersonating(!!localStorage.getItem(IMPERSONATE_RETURN_KEY));
       } else {
         clearAuthToken();
         setIsAuthenticated(false);
@@ -56,7 +61,6 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = async (shouldRedirect = true) => {
-    // If impersonating, stop first and return to admin
     if (localStorage.getItem(IMPERSONATE_RETURN_KEY)) {
       stopImpersonating();
       return;
@@ -71,9 +75,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const impersonateUser = async (userId) => {
-    const { apiPost: post } = await import('@/api/apiClient');
-    const res = await post(`/users/${userId}/impersonate`);
-    // Back up the current admin token
+    const res = await apiPost(`/users/${userId}/impersonate`);
     localStorage.setItem(IMPERSONATE_RETURN_KEY, getAuthToken());
     setAuthToken(res.token);
     window.location.href = getDashboardForRole(res.user.role);

@@ -88,7 +88,8 @@ export default function PortalLayout() {
   });
   const unreadMessages = (inboxData?.messages || []).filter(m => !m.isRead).length;
 
-  const role = user?.role || "student";
+  // Normalize role: API may return "academic-coach" (hyphen) but nav/color maps use underscore
+  const role = (user?.role || "student").replace(/-/g, '_');
 
   // If admin is browsing a non-admin hub (NOT via impersonation), show that hub's nav + a back button
   const path = location.pathname;
