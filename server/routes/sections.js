@@ -157,6 +157,18 @@ router.post('/:id/students', requireAuth, requireRole('admin'), async (req, res)
     const [section] = await db.select().from(sections).where(eq(sections.id, sectionId));
     if (!section) return res.status(404).json({ success: false, error: 'Section not found' });
 
+    // Enforce capacity if set
+    if (section.capacity) {
+      const currentRoster = await db.select({ id: sectionStudents.id })
+        .from(sectionStudents).where(eq(sectionStudents.sectionId, sectionId));
+      if (currentRoster.length >= section.capacity) {
+        return res.status(400).json({
+          success: false,
+          error: `Section is at capacity (${section.capacity} students)`,
+        });
+      }
+    }
+
     const enrollmentCheck = await db.select().from(enrollments)
       .where(and(
         eq(enrollments.studentId, parseInt(studentId)),

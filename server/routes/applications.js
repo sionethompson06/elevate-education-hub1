@@ -127,7 +127,7 @@ router.post('/:id/approve', requireAuth, requireRole('admin'), async (req, res) 
     const [app] = await db.select().from(applications).where(eq(applications.id, id));
     if (!app) return res.status(404).json({ success: false, error: 'Application not found' });
 
-    const { decision_notes, reviewed_by } = req.body;
+    const { decision_notes, reviewed_by, programId } = req.body;
 
     // Sequential queries — neon-http driver does not support transactions
     await db.update(applications)
@@ -195,12 +195,15 @@ router.post('/:id/approve', requireAuth, requireRole('admin'), async (req, res) 
       }
 
       const allPrograms = await db.select().from(programs).where(eq(programs.status, 'active'));
-      const matchedProgram = app.programInterest
-        ? allPrograms.find(p =>
-            p.name.toLowerCase().includes(app.programInterest.toLowerCase()) ||
-            p.type.toLowerCase() === app.programInterest.toLowerCase()
-          )
-        : null;
+      // Use explicitly selected programId if provided, otherwise fall back to fuzzy name matching
+      const matchedProgram = programId
+        ? allPrograms.find(p => p.id === parseInt(programId))
+        : (app.programInterest
+            ? allPrograms.find(p =>
+                p.name.toLowerCase().includes(app.programInterest.toLowerCase()) ||
+                p.type.toLowerCase() === app.programInterest.toLowerCase()
+              )
+            : null);
 
       if (matchedProgram) {
         const [existingEnrollment] = await db.select().from(enrollments).where(
@@ -279,6 +282,7 @@ router.post('/:id/approve', requireAuth, requireRole('admin'), async (req, res) 
       parentUser: { id: parentUser.id, email: parentUser.email },
       student: { id: studentRecord.id, firstName: studentRecord.firstName, lastName: studentRecord.lastName },
       inviteUrl,
+      enrolledProgramId: programId ? parseInt(programId) : null,
     });
   } catch (err) {
     console.error('Approve application error:', err);

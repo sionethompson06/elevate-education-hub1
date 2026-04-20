@@ -4,6 +4,7 @@ import db from '../db-postgres.js';
 import { enrollments, programs, students, users, billingAccounts, invoices, schoolYears, sections, guardianStudents, enrollmentOverrides, coachAssignments, staffProfiles } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { logAudit } from '../services/audit.service.js';
+import { createNotification } from '../services/notification.service.js';
 
 const router = Router();
 
@@ -498,6 +499,29 @@ router.patch('/overrides/:overrideId/revoke', requireAuth, requireRole('admin'),
       details: { overrideId, revokeReason },
       ipAddress: req.ip,
     });
+
+    // Notify the parent that payment is now required
+    try {
+      const [enrollment] = await db.select({ studentId: enrollments.studentId })
+        .from(enrollments).where(eq(enrollments.id, override.enrollmentId));
+      if (enrollment) {
+        const [guardianLink] = await db.select({ guardianUserId: guardianStudents.guardianUserId })
+          .from(guardianStudents).where(eq(guardianStudents.studentId, enrollment.studentId));
+        if (guardianLink) {
+          await createNotification({
+            userId: guardianLink.guardianUserId,
+            type: 'payment_required',
+            title: 'Payment now required',
+            body: revokeReason
+              ? `Your enrollment override has been revoked: ${revokeReason}. Payment is now required to keep your enrollment active.`
+              : 'Your enrollment override has been revoked. Payment is now required to keep your enrollment active.',
+            link: '/parent/payments',
+          });
+        }
+      }
+    } catch (notifyErr) {
+      console.warn('[revoke-override] notification failed (non-fatal):', notifyErr.message);
+    }
 
     res.json({ success: true });
   } catch (err) {

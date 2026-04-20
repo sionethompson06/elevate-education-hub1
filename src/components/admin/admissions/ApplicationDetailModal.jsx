@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { apiPatch, apiPost } from "@/api/apiClient";
+import { apiGet, apiPatch, apiPost } from "@/api/apiClient";
 import { useAuth } from "@/lib/AuthContext";
+import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
@@ -34,6 +35,16 @@ export default function ApplicationDetailModal({ application: initialApp, status
     phone: initialApp.phone || "",
   });
   const [savingContact, setSavingContact] = useState(false);
+  const [selectedProgramId, setSelectedProgramId] = useState("");
+
+  const canDecide = !["approved", "denied"].includes(app.status);
+
+  const { data: programsData } = useQuery({
+    queryKey: ["admin-programs-for-approval"],
+    queryFn: () => apiGet("/programs").then(r => (r.programs || []).filter(p => p.status === "active")),
+    enabled: canDecide,
+  });
+  const programs = programsData || [];
 
   const sc = statusColors[app.status] || "bg-slate-100 text-slate-500";
 
@@ -91,6 +102,7 @@ export default function ApplicationDetailModal({ application: initialApp, status
         const res = await apiPost(`/applications/${app.id}/approve`, {
           decision_notes: decisionNotes,
           reviewed_by: user?.email,
+          ...(selectedProgramId ? { programId: parseInt(selectedProgramId) } : {}),
         });
         setApp(res.application);
         if (res.inviteUrl) setInviteUrl(res.inviteUrl);
@@ -121,8 +133,6 @@ export default function ApplicationDetailModal({ application: initialApp, status
       setSaving(false);
     }
   };
-
-  const canDecide = !["approved", "denied"].includes(app.status);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -262,14 +272,34 @@ export default function ApplicationDetailModal({ application: initialApp, status
           )}
 
           {canDecide && (
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Decision Notes</label>
-              <textarea
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30 min-h-[70px]"
-                value={decisionNotes}
-                onChange={(e) => setDecisionNotes(e.target.value)}
-                placeholder="Add any notes about this decision…"
-              />
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Enroll in Program
+                  <span className="text-xs text-slate-400 font-normal ml-1">
+                    (optional — auto-matched from "{app.program_interest || "—"}" if blank)
+                  </span>
+                </label>
+                <select
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30"
+                  value={selectedProgramId}
+                  onChange={e => setSelectedProgramId(e.target.value)}
+                >
+                  <option value="">Auto-match from program interest…</option>
+                  {programs.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Decision Notes</label>
+                <textarea
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30 min-h-[70px]"
+                  value={decisionNotes}
+                  onChange={(e) => setDecisionNotes(e.target.value)}
+                  placeholder="Add any notes about this decision…"
+                />
+              </div>
             </div>
           )}
 

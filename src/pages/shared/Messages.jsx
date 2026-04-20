@@ -50,11 +50,13 @@ export default function Messages() {
     enabled: !!user && tab === "sent",
   });
 
-  const { data: contacts = [] } = useQuery({
+  const { data: contactsData = { contacts: [], groups: [] } } = useQuery({
     queryKey: ["messages-contacts", user?.id],
-    queryFn: () => apiGet("/messages/contacts").then(r => r.contacts || []),
+    queryFn: () => apiGet("/messages/contacts"),
     enabled: !!user && composing,
   });
+  const contacts = contactsData.contacts || [];
+  const contactGroups = contactsData.groups || [];
 
   const { data: thread = [], refetch: refetchThread } = useQuery({
     queryKey: ["message-thread", selectedMsg?.id],
@@ -149,12 +151,32 @@ export default function Messages() {
                   required
                 >
                   <option value="">Select recipient...</option>
-                  {contacts.map(c => (
-                    <option key={c.id} value={c.id}>
-                      {c.firstName} {c.lastName} ({c.role?.replace(/_/g, " ")})
-                    </option>
-                  ))}
+                  {contactGroups.length > 0
+                    ? contactGroups.map(group => (
+                        <optgroup key={group.label} label={group.label}>
+                          {group.contacts.map(c => (
+                            <option key={c.id} value={c.id}>
+                              {c.firstName} {c.lastName}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ))
+                    : contacts.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.firstName} {c.lastName} ({c.role?.replace(/_/g, " ")})
+                        </option>
+                      ))
+                  }
                 </select>
+                {composeForm.toUserId && contacts.length > 0 && (() => {
+                  const sel = contacts.find(c => String(c.id) === String(composeForm.toUserId));
+                  const grp = contactGroups.find(g => g.contacts.some(c => String(c.id) === String(composeForm.toUserId)));
+                  return sel ? (
+                    <p className="text-xs text-slate-400 mt-1">
+                      {grp ? grp.label : sel.role?.replace(/_/g, " ")} · {sel.firstName} {sel.lastName}
+                    </p>
+                  ) : null;
+                })()}
               </div>
               <div>
                 <label className="text-sm font-medium text-slate-700 block mb-1">Subject</label>
