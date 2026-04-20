@@ -99,12 +99,13 @@ export default function PaymentsBilling() {
   const pendingCount = pendingEnrollments.length;
 
   const monthlySpend = activeEnrollments
-    .filter(e => e.programBillingCycle === "monthly")
-    .reduce((sum, e) => sum + (parseFloat(e.invoiceAmount) || parseFloat(e.programTuition) || 0), 0);
+    .filter(e => (e.billingCycleOverride || e.programBillingCycle) === "monthly")
+    .reduce((sum, e) => sum + (e.invoiceAmount != null ? parseFloat(e.invoiceAmount) : (parseFloat(e.programTuition) || 0)), 0);
 
   const annualSpend = activeEnrollments.reduce((sum, e) => {
-    const amount = parseFloat(e.invoiceAmount) || parseFloat(e.programTuition) || 0;
-    return sum + (e.programBillingCycle === "annual" ? amount : amount * 12);
+    const cycle = e.billingCycleOverride || e.programBillingCycle;
+    const amount = e.invoiceAmount != null ? parseFloat(e.invoiceAmount) : (parseFloat(e.programTuition) || 0);
+    return sum + (cycle === "annual" ? amount : amount * 12);
   }, 0);
 
   return (
@@ -114,12 +115,18 @@ export default function PaymentsBilling() {
           <h1 className="text-3xl font-bold text-[#1a3c5e]">Payments & Billing</h1>
           <p className="text-slate-500 text-sm mt-0.5">Manage your enrollments and payment history</p>
         </div>
-        {billingAccount?.stripeCustomerId && (
-          <Button variant="outline" className="gap-2" onClick={openBillingPortal} disabled={portalLoading}>
-            {portalLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ExternalLink className="w-4 h-4" />}
-            Manage Subscription
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" className="gap-2" onClick={() => refetch()} disabled={isLoading}>
+            {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            Refresh
           </Button>
-        )}
+          {billingAccount?.stripeCustomerId && (
+            <Button variant="outline" className="gap-2" onClick={openBillingPortal} disabled={portalLoading}>
+              {portalLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <ExternalLink className="w-4 h-4" />}
+              Manage Subscription
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Payment success banner */}
@@ -248,7 +255,9 @@ export default function PaymentsBilling() {
             const studentName = e.studentFirstName
               ? `${e.studentFirstName} ${e.studentLastName || ""}`.trim()
               : null;
-            const displayAmount = parseFloat(e.invoiceAmount) || parseFloat(e.programTuition) || null;
+            const effectiveCycle = e.billingCycleOverride || e.programBillingCycle;
+            const displayAmount = e.invoiceAmount != null ? parseFloat(e.invoiceAmount) : (parseFloat(e.programTuition) || null);
+            const enrolledDate = e.startDate || e.createdAt;
             return (
               <div key={e.id} className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
                 <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -265,25 +274,28 @@ export default function PaymentsBilling() {
                       <p className="text-xs text-slate-500 mb-2">Student: {studentName}</p>
                     )}
                     <div className="flex flex-wrap gap-4 text-xs text-slate-500">
-                      {e.programBillingCycle && (
-                        <span className="capitalize">💳 {e.programBillingCycle} billing</span>
+                      {effectiveCycle && (
+                        <span className="capitalize">💳 {effectiveCycle.replace(/_/g, " ")} billing</span>
                       )}
                       {displayAmount != null && (
                         <span>
                           <DollarSign className="w-3 h-3 inline" />
-                          {e.programBillingCycle === "annual"
-                            ? `$${displayAmount.toLocaleString()} / year`
-                            : `$${displayAmount.toLocaleString()} / month`}
+                          {effectiveCycle === "annual"
+                            ? `$${displayAmount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} / year`
+                            : `$${displayAmount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} / month`}
                         </span>
                       )}
                       {e.invoiceStatus && (
-                        <span className="capitalize">Invoice: {e.invoiceStatus}</span>
+                        <span className="capitalize">Invoice: {e.invoiceStatus.replace(/_/g, " ")}</span>
                       )}
                       {e.invoiceDueDate && (
-                        <span>Due: {e.invoiceDueDate}</span>
+                        <span>Due: {new Date(e.invoiceDueDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
                       )}
-                      {e.createdAt && (
-                        <span>Enrolled: {new Date(e.createdAt).toLocaleDateString()}</span>
+                      {e.invoicePaidDate && (
+                        <span className="text-green-600">Paid: {new Date(e.invoicePaidDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
+                      )}
+                      {enrolledDate && (
+                        <span>Enrolled: {new Date(enrolledDate).toLocaleDateString()}</span>
                       )}
                     </div>
                   </div>

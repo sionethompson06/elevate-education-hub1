@@ -80,8 +80,8 @@ function derivePaymentStatus(enrollment) {
 
 // Derive amount due from invoice data when an explicit amount_due is absent
 function deriveAmountDue(enrollment) {
-  if (enrollment.amount_due != null) return enrollment.amount_due;
-  if (enrollment.invoiceAmount) return enrollment.invoiceAmount / 100; // cents → dollars if needed
+  if (enrollment.amount_due != null) return parseFloat(enrollment.amount_due);
+  if (enrollment.invoiceAmount != null) return parseFloat(enrollment.invoiceAmount);
   return 0;
 }
 
@@ -91,7 +91,7 @@ export default function EnrollmentStatusCard({ enrollment }) {
 
   // Support both legacy snake_case fields and new camelCase API fields
   const programName = enrollment.programName || enrollment.program_name || "—";
-  const billingCycle = enrollment.programBillingCycle || enrollment.billing_cycle;
+  const billingCycle = enrollment.billingCycleOverride || enrollment.programBillingCycle || enrollment.billing_cycle;
   const enrolledDate = enrollment.createdAt || enrollment.enrolled_date;
   const paymentStatus = derivePaymentStatus(enrollment);
   const amountDue = deriveAmountDue(enrollment);
