@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSearchParams, Link } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
 import { useQuery } from "@tanstack/react-query";
@@ -33,12 +33,26 @@ export default function Checkout() {
     enabled: !!enrollmentId && !!user,
   });
 
+  // Once enrollment loads, set billing cycle to admin-configured cycle
+  useEffect(() => {
+    if (enrollment) {
+      const cycle = enrollment.billingCycleOverride || enrollment.programBillingCycle || "monthly";
+      setBillingCycle(cycle);
+    }
+  }, [enrollment?.id]);
+
   const programName = enrollment?.programName || enrollment?.program_name || "Program";
   const studentName = enrollment?.studentFirstName
     ? `${enrollment.studentFirstName} ${enrollment.studentLastName || ""}`.trim()
     : null;
+
+  // Use the admin-edited invoice amount if set; fall back to program default tuition
+  const invoiceAmount = enrollment?.invoiceAmount != null ? parseFloat(enrollment.invoiceAmount) : null;
+  const effectiveAmount = invoiceAmount ?? parseFloat(enrollment?.programTuition ?? 0);
+  const effectiveCycle = enrollment?.billingCycleOverride || enrollment?.programBillingCycle || "monthly";
+
   const program = enrollment
-    ? { tuitionAmount: enrollment.programTuition, billingCycle: enrollment.programBillingCycle }
+    ? { tuitionAmount: effectiveAmount, billingCycle: effectiveCycle }
     : null;
 
   const handleCheckout = async () => {
