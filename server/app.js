@@ -130,11 +130,21 @@ async function ensureMessageColumns() {
   }
 }
 
+async function ensureEnrollmentBillingCycleColumn() {
+  try {
+    await rawSql`ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS billing_cycle_override VARCHAR(30)`;
+    console.log('[migration] enrollments billing_cycle_override column ready');
+  } catch (err) {
+    console.error('[migration] ensureEnrollmentBillingCycleColumn error:', err.message);
+  }
+}
+
 normalizeEnrollmentStatuses();
 ensureOverridesTable();
 ensureSubmissionContentColumn();
 ensureMedicalInfoTable();
 ensureMessageColumns();
+ensureEnrollmentBillingCycleColumn();
 seedDemoUsers();
 import applicationsRouter from './routes/applications.js';
 import authRouter from './routes/auth.js';

@@ -106,10 +106,18 @@ export default function ApplicationDetailModal({ application: initialApp, status
         });
         setApp(res.application);
         if (res.inviteUrl) setInviteUrl(res.inviteUrl);
-        toast({
-          title: "Application approved!",
-          description: `Parent account and student record created. Invite sent to ${res.parentUser?.email}.`,
-        });
+        if (res.enrolledProgramId) {
+          toast({
+            title: "Application approved!",
+            description: `Parent account and student record created. Invite sent to ${res.parentUser?.email}.`,
+          });
+        } else {
+          toast({
+            title: "Application approved — no enrollment created",
+            description: "No active program matched. Go to Enrollments → Create Enrollment to add one manually.",
+            variant: "destructive",
+          });
+        }
         onUpdated();
       } else if (newStatus === "denied") {
         const res = await apiPost(`/applications/${app.id}/deny`, {
@@ -349,6 +357,11 @@ export default function ApplicationDetailModal({ application: initialApp, status
               This will create a parent account for {contactForm.email}, create a student record for {app.student_first_name} {app.student_last_name}, and send a login invitation. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {!selectedProgramId && (
+            <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mx-1">
+              No program selected — an enrollment will not be auto-created. Select a program above or create the enrollment manually afterward.
+            </p>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction

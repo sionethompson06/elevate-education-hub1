@@ -4,7 +4,7 @@ import { eq, desc, ne, and } from 'drizzle-orm';
 import { Resend } from 'resend';
 import db from '../db-postgres.js';
 import { users, staffProfiles, guardianStudents, students } from '../schema.js';
-import { requireAuth, requireRole } from '../middleware/auth.js';
+import { requireAuth, requireRole, generateImpersonationToken } from '../middleware/auth.js';
 import { logAudit } from '../services/audit.service.js';
 
 let resend = null;
@@ -465,6 +465,55 @@ router.delete('/:id', requireAuth, requireRole('admin'), async (req, res) => {
     });
     res.json({ success: true });
   } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/users/:id/impersonate — admin-only: issue a short-lived JWT for the target user
+router.post('/:id/impersonate', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const targetId = parseInt(req.params.id);
+    if (isNaN(targetId)) return res.status(400).json({ success: false, error: 'Invalid user ID' });
+    if (targetId === req.user.id) return res.status(400).json({ success: false, error: 'Cannot impersonate yourself' });
+
+    const [targetUser] = await db.select({
+      id: users.id,
+      email: users.email,
+      role: users.role,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      status: users.status,
+    }).from(users).where(eq(users.id, targetId));
+
+    if (!targetUser) return res.status(404).json({ success: false, error: 'User not found' });
+    if (targetUser.role === 'admin') return res.status(403).json({ success: false, error: 'Cannot impersonate another admin' });
+    if (targetUser.status === 'archived') return res.status(403).json({ success: false, error: 'Cannot impersonate an archived user' });
+
+    const token = generateImpersonationToken(targetUser, req.user.id);
+
+    await logAudit({
+      userId: req.user.id,
+      action: 'impersonate',
+      entityType: 'user',
+      entityId: targetId,
+      details: { targetEmail: targetUser.email, targetRole: targetUser.role },
+      ipAddress: req.ip,
+    });
+
+    res.json({
+      success: true,
+      token,
+      user: {
+        id: targetUser.id,
+        email: targetUser.email,
+        role: targetUser.role,
+        firstName: targetUser.firstName,
+        lastName: targetUser.lastName,
+        full_name: `${targetUser.firstName} ${targetUser.lastName}`.trim(),
+      },
+    });
+  } catch (err) {
+    console.error('Impersonate error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

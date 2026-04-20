@@ -182,6 +182,7 @@ router.post('/:id/approve', requireAuth, requireRole('admin'), async (req, res) 
     }
 
     // Auto-create pending enrollment if program can be matched
+    let autoEnrolledProgramId = null;
     try {
       let [currentYear] = await db.select().from(schoolYears).where(eq(schoolYears.isCurrent, true));
       if (!currentYear) {
@@ -195,17 +196,30 @@ router.post('/:id/approve', requireAuth, requireRole('admin'), async (req, res) 
       }
 
       const allPrograms = await db.select().from(programs).where(eq(programs.status, 'active'));
-      // Use explicitly selected programId if provided, otherwise fall back to fuzzy name matching
+      // Use explicitly selected programId if provided, otherwise fall back to fuzzy name matching.
+      // Normalise both sides: strip parentheses, hyphens, extra spaces before comparing so that
+      // dropdown values like "Microschool (In-Person Hybrid)" match program names like "Hybrid".
+      const normalise = (s) => s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
       const matchedProgram = programId
         ? allPrograms.find(p => p.id === parseInt(programId))
         : (app.programInterest
-            ? allPrograms.find(p =>
-                p.name.toLowerCase().includes(app.programInterest.toLowerCase()) ||
-                p.type.toLowerCase() === app.programInterest.toLowerCase()
-              )
+            ? (() => {
+                const interest = normalise(app.programInterest);
+                const interestWords = interest.split(' ').filter(w => w.length > 3);
+                return allPrograms.find(p => {
+                  const pName = normalise(p.name);
+                  const pType = normalise(p.type || '');
+                  // Exact substring match (either direction)
+                  if (pName.includes(interest) || interest.includes(pName)) return true;
+                  if (pType === interest || interest.includes(pType)) return true;
+                  // Any significant keyword from the interest appears in the program name
+                  return interestWords.some(w => pName.includes(w));
+                });
+              })()
             : null);
 
       if (matchedProgram) {
+        autoEnrolledProgramId = matchedProgram.id;
         const [existingEnrollment] = await db.select().from(enrollments).where(
           and(
             eq(enrollments.studentId, studentRecord.id),
@@ -239,10 +253,14 @@ router.post('/:id/approve', requireAuth, requireRole('admin'), async (req, res) 
             amount: matchedProgram.tuitionAmount,
             dueDate: dueDate.toISOString().split('T')[0],
           });
+        } else {
+          // Enrollment already existed — still report it as enrolled
+          autoEnrolledProgramId = matchedProgram.id;
         }
       }
     } catch (enrollErr) {
       console.warn('[approve] auto-enrollment failed (non-fatal):', enrollErr.message);
+      autoEnrolledProgramId = null;
     }
 
     // Auto-invite parent — generate token and send email
@@ -282,7 +300,7 @@ router.post('/:id/approve', requireAuth, requireRole('admin'), async (req, res) 
       parentUser: { id: parentUser.id, email: parentUser.email },
       student: { id: studentRecord.id, firstName: studentRecord.firstName, lastName: studentRecord.lastName },
       inviteUrl,
-      enrolledProgramId: programId ? parseInt(programId) : null,
+      enrolledProgramId: autoEnrolledProgramId,
     });
   } catch (err) {
     console.error('Approve application error:', err);

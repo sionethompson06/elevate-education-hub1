@@ -1,11 +1,13 @@
 import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet } from "@/api/apiClient";
-import { ClipboardList, Search } from "lucide-react";
+import { ClipboardList, Search, Plus } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import ApplicationRow from "@/components/admin/admissions/ApplicationRow";
 import ApplicationDetailModal from "@/components/admin/admissions/ApplicationDetailModal";
+import CreateApplicationModal from "@/components/admin/admissions/CreateApplicationModal";
 
 const STATUS_FILTERS = ["all", "submitted", "under_review", "approved", "denied", "waitlisted", "draft"];
 
@@ -22,6 +24,7 @@ export default function Admissions() {
   const [statusFilter, setStatusFilter] = useState("submitted");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
+  const [showCreate, setShowCreate] = useState(false);
   const qc = useQueryClient();
   const { toast } = useToast();
 
@@ -49,12 +52,20 @@ export default function Admissions() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <div className="mb-6">
-        <div className="inline-block px-3 py-1 bg-red-100 text-red-700 rounded-full text-xs font-semibold mb-2">Admin</div>
-        <h1 className="text-3xl font-bold text-[#1a3c5e] flex items-center gap-3">
-          <ClipboardList className="w-8 h-8" /> Admissions
-        </h1>
-        <p className="text-slate-500 mt-1">Review and process student applications.</p>
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <div className="inline-block px-3 py-1 bg-red-100 text-red-700 rounded-full text-xs font-semibold mb-2">Admin</div>
+          <h1 className="text-3xl font-bold text-[#1a3c5e] flex items-center gap-3">
+            <ClipboardList className="w-8 h-8" /> Admissions
+          </h1>
+          <p className="text-slate-500 mt-1">Review and process student applications.</p>
+        </div>
+        <Button
+          onClick={() => setShowCreate(true)}
+          className="bg-[#1a3c5e] hover:bg-[#0d2540] gap-2 shrink-0 mt-1"
+        >
+          <Plus className="w-4 h-4" /> New Application
+        </Button>
       </div>
 
       {/* Status filter tabs */}
@@ -118,6 +129,17 @@ export default function Admissions() {
           )}
         </CardContent>
       </Card>
+
+      {showCreate && (
+        <CreateApplicationModal
+          onClose={() => setShowCreate(false)}
+          onCreated={(app) => {
+            qc.invalidateQueries({ queryKey: ["applications"] });
+            setSelected(app);
+            setShowCreate(false);
+          }}
+        />
+      )}
 
       {selected && (
         <ApplicationDetailModal

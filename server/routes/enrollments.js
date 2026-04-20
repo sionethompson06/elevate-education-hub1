@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { eq, desc, and, ne } from 'drizzle-orm';
+import { eq, desc, and, ne, inArray } from 'drizzle-orm';
 import db from '../db-postgres.js';
 import { enrollments, programs, students, users, billingAccounts, invoices, schoolYears, sections, guardianStudents, enrollmentOverrides, coachAssignments, staffProfiles } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
@@ -111,19 +111,37 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
       endDate: enrollments.endDate,
       enrolledBy: enrollments.enrolledBy,
       createdAt: enrollments.createdAt,
+      billingCycleOverride: enrollments.billingCycleOverride,
       studentFirstName: students.firstName,
       studentLastName: students.lastName,
       programName: programs.name,
       programTuition: programs.tuitionAmount,
       programBillingCycle: programs.billingCycle,
-      parentFirstName: users.firstName,
-      parentLastName: users.lastName,
-      parentEmail: users.email,
     }).from(enrollments)
       .leftJoin(students, eq(enrollments.studentId, students.id))
       .leftJoin(programs, eq(enrollments.programId, programs.id))
-      .leftJoin(users, eq(enrollments.enrolledBy, users.id))
       .orderBy(desc(enrollments.createdAt));
+
+    // Resolve actual parent/guardian via guardianStudents → users (not enrolledBy admin)
+    const studentIds = [...new Set(result.map(e => e.studentId).filter(Boolean))];
+    const guardianMap = {};
+    if (studentIds.length > 0) {
+      const guardianRows = await db.select({
+        studentId: guardianStudents.studentId,
+        isPrimary: guardianStudents.isPrimary,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        email: users.email,
+      }).from(guardianStudents)
+        .leftJoin(users, eq(guardianStudents.guardianUserId, users.id))
+        .where(inArray(guardianStudents.studentId, studentIds));
+
+      for (const row of guardianRows) {
+        if (!guardianMap[row.studentId] || row.isPrimary) {
+          guardianMap[row.studentId] = { firstName: row.firstName, lastName: row.lastName, email: row.email };
+        }
+      }
+    }
 
     // Fetch all invoices and map to the latest per enrollment
     const allInvoices = await db.select().from(invoices).orderBy(desc(invoices.createdAt));
@@ -134,15 +152,22 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
       }
     }
 
-    const enriched = result.map(e => ({
-      ...e,
-      invoiceId: invoiceMap[e.id]?.id || null,
-      invoiceAmount: invoiceMap[e.id]?.amount || null,
-      invoiceStatus: invoiceMap[e.id]?.status || null,
-      invoiceDueDate: invoiceMap[e.id]?.dueDate || null,
-      invoicePaidDate: invoiceMap[e.id]?.paidDate || null,
-      invoiceDescription: invoiceMap[e.id]?.description || null,
-    }));
+    const enriched = result.map(e => {
+      const guardian = guardianMap[e.studentId] || {};
+      return {
+        ...e,
+        parentFirstName: guardian.firstName || null,
+        parentLastName: guardian.lastName || null,
+        parentEmail: guardian.email || null,
+        billingCycle: e.billingCycleOverride || e.programBillingCycle,
+        invoiceId: invoiceMap[e.id]?.id || null,
+        invoiceAmount: invoiceMap[e.id]?.amount || null,
+        invoiceStatus: invoiceMap[e.id]?.status || null,
+        invoiceDueDate: invoiceMap[e.id]?.dueDate || null,
+        invoicePaidDate: invoiceMap[e.id]?.paidDate || null,
+        invoiceDescription: invoiceMap[e.id]?.description || null,
+      };
+    });
 
     res.json({ success: true, enrollments: enriched });
   } catch (err) {
@@ -295,10 +320,12 @@ router.get('/:id', requireAuth, async (req, res) => {
 router.patch('/:id', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const { status, sectionId } = req.body;
+    const { status, sectionId, startDate, billingCycleOverride } = req.body;
     const updateData = {};
     if (status !== undefined) updateData.status = status;
     if (sectionId !== undefined) updateData.sectionId = sectionId ? parseInt(sectionId) : null;
+    if (startDate !== undefined) updateData.startDate = startDate || null;
+    if (billingCycleOverride !== undefined) updateData.billingCycleOverride = billingCycleOverride || null;
 
     if (Object.keys(updateData).length === 0) {
       return res.status(400).json({ success: false, error: 'No fields to update' });
@@ -318,6 +345,79 @@ router.patch('/:id', requireAuth, requireRole('admin'), async (req, res) => {
 
     res.json({ success: true, enrollment: updated });
   } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// PATCH /api/enrollments/:id/invoice — update the invoice linked to this enrollment
+router.patch('/:id/invoice', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const enrollmentId = parseInt(req.params.id);
+    if (isNaN(enrollmentId)) return res.status(400).json({ success: false, error: 'Invalid enrollment ID' });
+
+    const { description, amount, dueDate, paidDate } = req.body;
+
+    let [invoice] = await db.select().from(invoices).where(eq(invoices.enrollmentId, enrollmentId));
+
+    // If no invoice exists, create one linked to the parent's billing account
+    if (!invoice) {
+      const [enrollment] = await db.select().from(enrollments).where(eq(enrollments.id, enrollmentId));
+      if (!enrollment) return res.status(404).json({ success: false, error: 'Enrollment not found' });
+
+      // Find parent via guardian link on the student
+      const [guardianLink] = await db.select().from(guardianStudents)
+        .where(eq(guardianStudents.studentId, enrollment.studentId));
+      const parentUserId = guardianLink?.guardianUserId || null;
+
+      let billingAccountId = null;
+      if (parentUserId) {
+        let [billingAccount] = await db.select().from(billingAccounts)
+          .where(eq(billingAccounts.parentUserId, parentUserId));
+        if (!billingAccount) {
+          [billingAccount] = await db.insert(billingAccounts).values({ parentUserId }).returning();
+        }
+        billingAccountId = billingAccount.id;
+      }
+
+      if (!billingAccountId) {
+        return res.status(400).json({ success: false, error: 'Cannot create invoice: no parent billing account found for this student' });
+      }
+
+      const defaultDueDate = new Date();
+      defaultDueDate.setDate(defaultDueDate.getDate() + 30);
+      [invoice] = await db.insert(invoices).values({
+        billingAccountId,
+        enrollmentId,
+        description: description || 'Tuition',
+        amount: amount ? String(amount) : '0',
+        dueDate: dueDate || defaultDueDate.toISOString().split('T')[0],
+      }).returning();
+    }
+
+    const updateData = {};
+    if (description !== undefined) updateData.description = description;
+    if (amount !== undefined) updateData.amount = String(amount);
+    if (dueDate !== undefined) updateData.dueDate = dueDate || null;
+    if (paidDate !== undefined) updateData.paidDate = paidDate || null;
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(200).json({ success: true, invoice });
+    }
+
+    const [updated] = await db.update(invoices).set(updateData).where(eq(invoices.id, invoice.id)).returning();
+
+    await logAudit({
+      userId: req.user.id,
+      action: 'update',
+      entityType: 'invoice',
+      entityId: invoice.id,
+      details: { enrollmentId, ...updateData },
+      ipAddress: req.ip,
+    });
+
+    res.json({ success: true, invoice: updated });
+  } catch (err) {
+    console.error('Update invoice error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
