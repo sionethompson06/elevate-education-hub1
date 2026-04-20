@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost, apiDelete } from "@/api/apiClient";
 import { Link } from "react-router-dom";
 import { useState } from "react";
-import { Users, DollarSign, ShieldCheck, FileText, BookOpen, Activity, Star, MessageCircle, TrendingUp, GraduationCap, Home, Trophy, ChevronRight, Database, Loader2, CheckCircle, Megaphone, Trash2, Send } from "lucide-react";
+import { Users, DollarSign, ShieldCheck, FileText, BookOpen, Activity, Star, MessageCircle, TrendingUp, GraduationCap, ChevronRight, Database, Loader2, CheckCircle, Megaphone, Trash2, Send, PlusCircle } from "lucide-react";
 import { format } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,19 +15,12 @@ const QUICK_LINKS = [
   { label: "Admissions", href: "/admin/admissions", description: "Review and process applications", icon: FileText, color: "text-blue-600", bg: "bg-blue-50" },
   { label: "Enrollments", href: "/admin/enrollments", description: "Manage enrollments & payment overrides", icon: DollarSign, color: "text-green-600", bg: "bg-green-50" },
   { label: "Rewards", href: "/admin/rewards", description: "Redemption queue, catalog, transactions", icon: Star, color: "text-yellow-600", bg: "bg-yellow-50" },
-  { label: "Messages", href: "/admin/messages", description: "Broadcast announcements & channel messages", icon: MessageCircle, color: "text-purple-600", bg: "bg-purple-50" },
-  { label: "Resources", href: "/admin/resources", description: "Manage program resources & documents", icon: BookOpen, color: "text-orange-600", bg: "bg-orange-50" },
+  { label: "Messages", href: "/hub/messages", description: "Broadcast announcements & channel messages", icon: MessageCircle, color: "text-purple-600", bg: "bg-purple-50" },
+  { label: "Resources", href: "/hub/resources", description: "Manage program resources & documents", icon: BookOpen, color: "text-orange-600", bg: "bg-orange-50" },
   { label: "Access Logs", href: "/admin/access-logs", description: "Review denied access attempts", icon: ShieldCheck, color: "text-red-600", bg: "bg-red-50" },
   { label: "CMS Editor", href: "/admin/cms", description: "Edit public-facing site content", icon: GraduationCap, color: "text-slate-600", bg: "bg-slate-100" },
 ];
 
-const PROGRAMS = [
-  { label: "Academic Program", icon: BookOpen, color: "text-blue-600", bg: "bg-blue-50" },
-  { label: "Homeschool Support", icon: Home, color: "text-purple-600", bg: "bg-purple-50" },
-  { label: "Athletic Performance", icon: Activity, color: "text-orange-600", bg: "bg-orange-50" },
-  { label: "Recruitment & College", icon: Trophy, color: "text-emerald-600", bg: "bg-emerald-50" },
-  { label: "Family Resource Center", icon: Users, color: "text-pink-600", bg: "bg-pink-50" },
-];
 
 export default function AdminDashboard() {
   const { user } = useAuth();
@@ -62,6 +55,12 @@ export default function AdminDashboard() {
     queryKey: ["admin-contacts"],
     queryFn: () => apiGet('/contact'),
   });
+
+  const { data: programsData = { programs: [] } } = useQuery({
+    queryKey: ["admin-programs-dashboard"],
+    queryFn: () => apiGet('/programs'),
+  });
+  const programs = programsData.programs || [];
 
   const postAnnouncement = async (status) => {
     if (!annForm.title.trim() || !annForm.body.trim()) return;
@@ -137,20 +136,39 @@ export default function AdminDashboard() {
         ))}
       </div>
 
-      {/* 5 Program hubs status */}
+      {/* Programs — live data */}
       <div>
-        <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">5 Core Program Hubs</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-          {PROGRAMS.map(({ label, icon: Icon, color, bg }) => (
-            <div key={label} className="rounded-xl border border-slate-100 p-4 text-center">
-              <div className={`w-10 h-10 rounded-xl ${bg} flex items-center justify-center mx-auto mb-2`}>
-                <Icon className={`w-5 h-5 ${color}`} />
-              </div>
-              <p className="text-xs font-semibold text-slate-700 leading-tight">{label}</p>
-              <p className="text-xs text-green-600 font-medium mt-1">Active</p>
-            </div>
-          ))}
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide">Programs</h2>
+          <Link to="/admin/programs" className="text-xs text-[#1a3c5e] hover:underline flex items-center gap-1">
+            <PlusCircle className="w-3.5 h-3.5" /> Manage Programs
+          </Link>
         </div>
+        {programs.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-200 p-6 text-center">
+            <p className="text-sm text-slate-400 mb-2">No programs yet.</p>
+            <Link to="/admin/programs"><Button size="sm" className="bg-[#1a3c5e] hover:bg-[#0d2540]"><PlusCircle className="w-3.5 h-3.5 mr-1.5" /> Create First Program</Button></Link>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            {programs.map(p => {
+              const enrollCount = allEnrollments.filter(e => e.programId === p.id && ["active", "active_override"].includes(e.status)).length;
+              return (
+                <Link key={p.id} to="/admin/programs">
+                  <div className="rounded-xl border border-slate-100 hover:border-[#1a3c5e] hover:shadow-sm transition-all p-4 text-center bg-white">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center mx-auto mb-2 ${p.status === 'active' ? 'bg-blue-50' : 'bg-slate-100'}`}>
+                      <BookOpen className={`w-5 h-5 ${p.status === 'active' ? 'text-blue-600' : 'text-slate-400'}`} />
+                    </div>
+                    <p className="text-xs font-semibold text-slate-700 leading-tight truncate">{p.name}</p>
+                    <p className={`text-xs font-medium mt-1 ${p.status === 'active' ? 'text-green-600' : 'text-slate-400'}`}>
+                      {p.status === 'active' ? `${enrollCount} enrolled` : 'Inactive'}
+                    </p>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Portal Hub access */}

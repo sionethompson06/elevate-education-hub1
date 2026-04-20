@@ -5,11 +5,13 @@ import { useSearchParams, Link } from "react-router-dom";
 import {
   CreditCard, Calendar, MessageCircle, FileText, TrendingUp,
   PlusCircle, UserPlus, Users, GraduationCap, User,
+  ChevronDown, ChevronUp, Heart, Phone, Pencil, Trash2, Plus, Check, X, Loader2,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/use-toast";
 import { isPast } from "date-fns";
-import { apiGet } from "@/api/apiClient";
+import { apiGet, apiPost, apiPut, apiPatch, apiDelete } from "@/api/apiClient";
 import EnrollmentStatusCard from "@/components/parent/EnrollmentStatusCard";
 import PaymentSuccessBanner from "@/components/parent/PaymentSuccessBanner";
 import StudentGradebook from "@/components/parent/StudentGradebook";
@@ -50,6 +52,236 @@ function useStudentStats(studentId) {
     ).length;
     return { overdue, complete, total };
   }, [data]);
+}
+
+function MedicalEmergencySection({ studentId }) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [editingContactId, setEditingContactId] = useState(null);
+  const [editContact, setEditContact] = useState({});
+  const [addingContact, setAddingContact] = useState(false);
+  const [newContact, setNewContact] = useState({ name: "", relationship: "", phone: "" });
+  const [savingContact, setSavingContact] = useState(false);
+  const [editingMedical, setEditingMedical] = useState(false);
+  const [medicalForm, setMedicalForm] = useState({});
+  const [savingMedical, setSavingMedical] = useState(false);
+
+  const { data: contactsData, refetch: refetchContacts } = useQuery({
+    queryKey: ["emergency-contacts", studentId],
+    queryFn: () => apiGet(`/students/${studentId}/emergency-contacts`),
+    enabled: open,
+  });
+  const contacts = contactsData?.emergencyContacts || [];
+
+  const { data: medicalData, refetch: refetchMedical } = useQuery({
+    queryKey: ["medical-info", studentId],
+    queryFn: () => apiGet(`/students/${studentId}/medical-info`),
+    enabled: open,
+  });
+  const medicalInfo = medicalData?.medicalInfo || null;
+
+  const saveNewContact = async () => {
+    if (!newContact.name.trim() || !newContact.phone.trim()) return;
+    setSavingContact(true);
+    try {
+      await apiPost(`/students/${studentId}/emergency-contacts`, newContact);
+      setNewContact({ name: "", relationship: "", phone: "" });
+      setAddingContact(false);
+      refetchContacts();
+      toast({ title: "Contact added" });
+    } catch (err) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSavingContact(false);
+    }
+  };
+
+  const saveEditContact = async (id) => {
+    setSavingContact(true);
+    try {
+      await apiPatch(`/students/${studentId}/emergency-contacts/${id}`, editContact);
+      setEditingContactId(null);
+      refetchContacts();
+      toast({ title: "Contact updated" });
+    } catch (err) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSavingContact(false);
+    }
+  };
+
+  const deleteContact = async (id) => {
+    try {
+      await apiDelete(`/students/${studentId}/emergency-contacts/${id}`);
+      refetchContacts();
+      toast({ title: "Contact removed" });
+    } catch (err) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const saveMedical = async () => {
+    setSavingMedical(true);
+    try {
+      await apiPut(`/students/${studentId}/medical-info`, medicalForm);
+      setEditingMedical(false);
+      refetchMedical();
+      toast({ title: "Medical info saved" });
+    } catch (err) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSavingMedical(false);
+    }
+  };
+
+  const startEditMedical = () => {
+    setMedicalForm({
+      allergies: medicalInfo?.allergies || "",
+      medications: medicalInfo?.medications || "",
+      medicalConditions: medicalInfo?.medicalConditions || "",
+      doctorName: medicalInfo?.doctorName || "",
+      doctorPhone: medicalInfo?.doctorPhone || "",
+      notes: medicalInfo?.notes || "",
+    });
+    setEditingMedical(true);
+  };
+
+  return (
+    <div className="border-t border-slate-100 pt-4">
+      <button onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-2 text-xs font-semibold text-slate-500 hover:text-slate-700 uppercase tracking-wide w-full text-left">
+        <Heart className="w-3.5 h-3.5 text-rose-400" />
+        Medical & Emergency
+        {open ? <ChevronUp className="w-3.5 h-3.5 ml-auto" /> : <ChevronDown className="w-3.5 h-3.5 ml-auto" />}
+      </button>
+
+      {open && (
+        <div className="mt-4 space-y-5">
+          {/* Emergency Contacts */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold text-slate-600 flex items-center gap-1.5"><Phone className="w-3.5 h-3.5" /> Emergency Contacts</p>
+              <button onClick={() => setAddingContact(true)} className="text-xs text-[#1a3c5e] hover:underline flex items-center gap-1">
+                <Plus className="w-3 h-3" /> Add
+              </button>
+            </div>
+
+            {addingContact && (
+              <div className="mb-3 p-3 border border-slate-200 rounded-lg space-y-2 bg-slate-50">
+                <div className="grid grid-cols-3 gap-2">
+                  <input className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none"
+                    placeholder="Name *" value={newContact.name} onChange={e => setNewContact(f => ({ ...f, name: e.target.value }))} />
+                  <input className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none"
+                    placeholder="Relationship" value={newContact.relationship} onChange={e => setNewContact(f => ({ ...f, relationship: e.target.value }))} />
+                  <input className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none"
+                    placeholder="Phone *" value={newContact.phone} onChange={e => setNewContact(f => ({ ...f, phone: e.target.value }))} />
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={saveNewContact} disabled={savingContact || !newContact.name.trim() || !newContact.phone.trim()}
+                    className="text-xs bg-[#1a3c5e] text-white px-3 py-1.5 rounded-lg hover:bg-[#0d2540] disabled:opacity-50 flex items-center gap-1">
+                    {savingContact ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />} Save
+                  </button>
+                  <button onClick={() => setAddingContact(false)} className="text-xs text-slate-500 hover:text-slate-700">Cancel</button>
+                </div>
+              </div>
+            )}
+
+            {contacts.length === 0 && !addingContact ? (
+              <p className="text-xs text-slate-400">No emergency contacts on file.</p>
+            ) : (
+              <div className="space-y-2">
+                {contacts.map(c => (
+                  <div key={c.id} className="border border-slate-100 rounded-lg p-2.5 bg-white">
+                    {editingContactId === c.id ? (
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-3 gap-2">
+                          <input className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none"
+                            value={editContact.name ?? c.name} onChange={e => setEditContact(f => ({ ...f, name: e.target.value }))} />
+                          <input className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none"
+                            value={editContact.relationship ?? c.relationship} onChange={e => setEditContact(f => ({ ...f, relationship: e.target.value }))} />
+                          <input className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none"
+                            value={editContact.phone ?? c.phone} onChange={e => setEditContact(f => ({ ...f, phone: e.target.value }))} />
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={() => saveEditContact(c.id)} disabled={savingContact}
+                            className="text-xs bg-[#1a3c5e] text-white px-3 py-1 rounded-lg hover:bg-[#0d2540] flex items-center gap-1">
+                            {savingContact ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />} Save
+                          </button>
+                          <button onClick={() => setEditingContactId(null)} className="text-xs text-slate-500">Cancel</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <p className="text-xs font-medium text-slate-700">{c.name}</p>
+                          <p className="text-xs text-slate-400">{c.relationship && `${c.relationship} · `}{c.phone}</p>
+                        </div>
+                        <div className="flex gap-1 shrink-0">
+                          <button onClick={() => { setEditingContactId(c.id); setEditContact({}); }}
+                            className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600"><Pencil className="w-3 h-3" /></button>
+                          <button onClick={() => deleteContact(c.id)}
+                            className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-500"><Trash2 className="w-3 h-3" /></button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Medical Info */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold text-slate-600">Medical Information</p>
+              {!editingMedical && (
+                <button onClick={startEditMedical} className="text-xs text-[#1a3c5e] hover:underline flex items-center gap-1">
+                  <Pencil className="w-3 h-3" /> {medicalInfo ? "Edit" : "Add"}
+                </button>
+              )}
+            </div>
+
+            {editingMedical ? (
+              <div className="border border-slate-200 rounded-lg p-3 space-y-2 bg-slate-50">
+                {[
+                  ["allergies", "Allergies"],
+                  ["medications", "Medications"],
+                  ["medicalConditions", "Medical Conditions"],
+                  ["doctorName", "Doctor Name"],
+                  ["doctorPhone", "Doctor Phone"],
+                  ["notes", "Additional Notes"],
+                ].map(([field, label]) => (
+                  <div key={field}>
+                    <label className="block text-xs text-slate-500 mb-0.5">{label}</label>
+                    <input className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[#1a3c5e]/30"
+                      value={medicalForm[field] || ""} onChange={e => setMedicalForm(f => ({ ...f, [field]: e.target.value }))} />
+                  </div>
+                ))}
+                <div className="flex gap-2 pt-1">
+                  <button onClick={saveMedical} disabled={savingMedical}
+                    className="text-xs bg-[#1a3c5e] text-white px-3 py-1.5 rounded-lg hover:bg-[#0d2540] flex items-center gap-1">
+                    {savingMedical ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />} Save
+                  </button>
+                  <button onClick={() => setEditingMedical(false)} className="text-xs text-slate-500">Cancel</button>
+                </div>
+              </div>
+            ) : medicalInfo ? (
+              <div className="border border-slate-100 rounded-lg p-3 bg-white space-y-1.5 text-xs text-slate-600">
+                {medicalInfo.allergies && <p><span className="font-medium">Allergies:</span> {medicalInfo.allergies}</p>}
+                {medicalInfo.medications && <p><span className="font-medium">Medications:</span> {medicalInfo.medications}</p>}
+                {medicalInfo.medicalConditions && <p><span className="font-medium">Conditions:</span> {medicalInfo.medicalConditions}</p>}
+                {medicalInfo.doctorName && <p><span className="font-medium">Doctor:</span> {medicalInfo.doctorName}{medicalInfo.doctorPhone && ` · ${medicalInfo.doctorPhone}`}</p>}
+                {medicalInfo.notes && <p><span className="font-medium">Notes:</span> {medicalInfo.notes}</p>}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400">No medical information on file.</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function StudentCard({ student, studentEnrollments, onViewProfile }) {
@@ -123,6 +355,7 @@ function StudentCard({ student, studentEnrollments, onViewProfile }) {
           <StudentGradebook studentId={student.id} studentName={studentName} />
           <ParentRewardsSummary studentId={student.id} studentName={studentName} />
         </div>
+        <MedicalEmergencySection studentId={student.id} />
       </div>
     </div>
   );
