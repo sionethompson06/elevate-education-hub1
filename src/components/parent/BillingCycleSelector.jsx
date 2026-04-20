@@ -1,32 +1,29 @@
 import { Check } from "lucide-react";
 
-const FALLBACK_PRICING = { monthly: 250, annual: 2400 };
-
 export default function BillingCycleSelector({ value, onChange, program }) {
-  const monthly = program?.price_monthly || program?.tuitionAmount || FALLBACK_PRICING.monthly;
-  const annual = program?.price_annual || FALLBACK_PRICING.annual;
-  const annualMonthly = Math.round(annual / 12);
-  const savings = Math.round(((monthly * 12 - annual) / (monthly * 12)) * 100);
+  // Use the admin-edited invoice amount (or program default) as the base price
+  const baseAmount = parseFloat(program?.tuitionAmount) || 0;
+  const effectiveCycle = program?.billingCycle || "monthly";
 
   const options = [
     {
       id: "monthly",
       label: "Monthly",
-      price: `$${Number(monthly).toLocaleString()}/mo`,
+      price: baseAmount > 0 ? `$${baseAmount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}/mo` : "—",
       sub: "Billed each month",
       badge: null,
     },
     {
       id: "annual",
       label: "Annual",
-      price: `$${annualMonthly.toLocaleString()}/mo`,
-      sub: `$${Number(annual).toLocaleString()} billed once per year`,
-      badge: savings > 0 ? `Save ${savings}%` : null,
+      price: baseAmount > 0 ? `$${(baseAmount * 12).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}/yr` : "—",
+      sub: `$${baseAmount > 0 ? baseAmount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 }) : "—"}/mo equivalent`,
+      badge: null,
     },
     {
       id: "one_time",
       label: "One-Time Deposit",
-      price: "$500",
+      price: baseAmount > 0 ? `$${baseAmount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}` : "—",
       sub: "Enrollment deposit only",
       badge: null,
     },

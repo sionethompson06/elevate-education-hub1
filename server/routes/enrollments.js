@@ -317,7 +317,23 @@ router.get('/:id', requireAuth, async (req, res) => {
       if (!link) return res.status(403).json({ success: false, error: 'Not authorized' });
     }
 
-    res.json({ success: true, enrollment: row });
+    // Attach invoice data so checkout sees the admin-edited amount
+    const [invoice] = await db.select().from(invoices)
+      .where(eq(invoices.enrollmentId, id))
+      .orderBy(desc(invoices.createdAt));
+
+    res.json({
+      success: true,
+      enrollment: {
+        ...row,
+        invoiceId: invoice?.id || null,
+        invoiceAmount: invoice?.amount ?? null,
+        invoiceStatus: invoice?.status || null,
+        invoiceDueDate: invoice?.dueDate || null,
+        invoicePaidDate: invoice?.paidDate || null,
+        invoiceDescription: invoice?.description || null,
+      },
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
