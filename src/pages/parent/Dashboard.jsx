@@ -8,6 +8,8 @@ import {
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { isPast } from "date-fns";
+import { apiGet } from "@/api/apiClient";
 import EnrollmentStatusCard from "@/components/parent/EnrollmentStatusCard";
 import PaymentSuccessBanner from "@/components/parent/PaymentSuccessBanner";
 import StudentGradebook from "@/components/parent/StudentGradebook";
@@ -29,6 +31,102 @@ const COACH_TYPE_LABELS = {
   academic_coach: "Academic",
   performance_coach: "Performance",
 };
+
+function useStudentStats(studentId) {
+  const { data } = useQuery({
+    queryKey: ["student-progress-stats", studentId],
+    queryFn: () => apiGet(`/progress/student/${studentId}`),
+    staleTime: 5 * 60 * 1000,
+  });
+  return useMemo(() => {
+    if (!data) return { overdue: 0, complete: 0, total: 0 };
+    const scoredIds = new Set(
+      (data.submissions || []).filter(s => s.score !== null).map(s => s.assignmentId)
+    );
+    const total = (data.assignments || []).length;
+    const complete = scoredIds.size;
+    const overdue = (data.assignments || []).filter(
+      a => a.dueDate && isPast(new Date(a.dueDate)) && !scoredIds.has(a.id)
+    ).length;
+    return { overdue, complete, total };
+  }, [data]);
+}
+
+function StudentCard({ student, studentEnrollments, onViewProfile }) {
+  const stats = useStudentStats(student.id);
+  const studentName = `${student.firstName} ${student.lastName}`;
+  const coaches = student.coaches || [];
+  const hasOverdue = stats.overdue > 0;
+
+  return (
+    <div className={`bg-white border rounded-2xl overflow-hidden shadow-sm ${hasOverdue ? "border-amber-300" : "border-slate-200"}`}>
+      <div className="px-5 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-[#1a3c5e] flex items-center justify-center text-white font-bold text-sm shrink-0">
+            {student.firstName?.charAt(0)}{student.lastName?.charAt(0)}
+          </div>
+          <div>
+            <p className="font-semibold text-slate-800">{studentName}</p>
+            <div className="flex items-center gap-3 flex-wrap">
+              {student.grade && (
+                <span className="text-xs text-slate-500 flex items-center gap-1">
+                  <GraduationCap className="w-3 h-3" /> Grade {student.grade}
+                </span>
+              )}
+              {coaches.map((c, i) => (
+                <span key={i} className="text-xs text-slate-500 flex items-center gap-1">
+                  <User className="w-3 h-3" />
+                  {COACH_TYPE_LABELS[c.coachType] || "Coach"}: {c.coachFirstName} {c.coachLastName}
+                </span>
+              ))}
+            </div>
+            {stats.total > 0 && (
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                {stats.overdue > 0 && (
+                  <span className="text-xs font-semibold text-red-600">{stats.overdue} overdue</span>
+                )}
+                <span className="text-xs text-green-600">{stats.complete} complete</span>
+                <span className="text-xs text-slate-400">{stats.total} total</span>
+              </div>
+            )}
+          </div>
+        </div>
+        <button
+          onClick={onViewProfile}
+          className="text-xs text-[#1a3c5e] border border-[#1a3c5e]/30 hover:bg-[#1a3c5e]/5 px-3 py-1.5 rounded-lg transition-colors font-medium"
+        >
+          View / Edit Profile
+        </button>
+      </div>
+
+      <div className="p-5 space-y-5">
+        {studentEnrollments.length > 0 ? (
+          <div>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Enrolled Programs</p>
+            <div className="space-y-2">
+              {studentEnrollments.map(e => (
+                <EnrollmentStatusCard key={e.id} enrollment={e} />
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="text-center py-4">
+            <p className="text-sm text-slate-400 mb-3">Not yet enrolled in any programs.</p>
+            <Link to="/parent/programs">
+              <Button size="sm" className="bg-[#1a3c5e] hover:bg-[#0d2540]">
+                <PlusCircle className="w-3.5 h-3.5 mr-1.5" /> Browse Programs
+              </Button>
+            </Link>
+          </div>
+        )}
+        <div className="grid md:grid-cols-2 gap-4">
+          <StudentGradebook studentId={student.id} studentName={studentName} />
+          <ParentRewardsSummary studentId={student.id} studentName={studentName} />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function ParentDashboard() {
   const { user } = useAuth();
@@ -178,81 +276,14 @@ export default function ParentDashboard() {
             </button>
           </div>
 
-          {students.map(student => {
-            const studentName = `${student.firstName} ${student.lastName}`;
-            const studentEnrollments = enrollmentsByStudent[student.id] || [];
-            const activeEnrollments = studentEnrollments.filter(e =>
-              ["active", "active_override"].includes(e.status)
-            );
-            const pendingEnrollments = studentEnrollments.filter(e =>
-              ["pending_payment", "pending", "payment_failed"].includes(e.status)
-            );
-            const coaches = student.coaches || [];
-
-            return (
-              <div key={student.id} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-                {/* Student header */}
-                <div className="px-5 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between gap-3 flex-wrap">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-[#1a3c5e] flex items-center justify-center text-white font-bold text-sm shrink-0">
-                      {student.firstName?.charAt(0)}{student.lastName?.charAt(0)}
-                    </div>
-                    <div>
-                      <p className="font-semibold text-slate-800">{studentName}</p>
-                      <div className="flex items-center gap-3 flex-wrap">
-                        {student.grade && (
-                          <span className="text-xs text-slate-500 flex items-center gap-1">
-                            <GraduationCap className="w-3 h-3" /> Grade {student.grade}
-                          </span>
-                        )}
-                        {coaches.length > 0 && coaches.map((c, i) => (
-                          <span key={i} className="text-xs text-slate-500 flex items-center gap-1">
-                            <User className="w-3 h-3" />
-                            {COACH_TYPE_LABELS[c.coachType] || "Coach"}: {c.coachFirstName} {c.coachLastName}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setProfileStudent(student)}
-                    className="text-xs text-[#1a3c5e] border border-[#1a3c5e]/30 hover:bg-[#1a3c5e]/5 px-3 py-1.5 rounded-lg transition-colors font-medium"
-                  >
-                    View / Edit Profile
-                  </button>
-                </div>
-
-                <div className="p-5 space-y-5">
-                  {/* Programs */}
-                  {studentEnrollments.length > 0 ? (
-                    <div>
-                      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-3">Enrolled Programs</p>
-                      <div className="space-y-2">
-                        {studentEnrollments.map(e => (
-                          <EnrollmentStatusCard key={e.id} enrollment={e} />
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-center py-4">
-                      <p className="text-sm text-slate-400 mb-3">Not yet enrolled in any programs.</p>
-                      <Link to="/parent/programs">
-                        <Button size="sm" className="bg-[#1a3c5e] hover:bg-[#0d2540]">
-                          <PlusCircle className="w-3.5 h-3.5 mr-1.5" /> Browse Programs
-                        </Button>
-                      </Link>
-                    </div>
-                  )}
-
-                  {/* Gradebook & Rewards */}
-                  <div className="grid md:grid-cols-2 gap-4">
-                    <StudentGradebook studentId={student.id} studentName={studentName} />
-                    <ParentRewardsSummary studentId={student.id} studentName={studentName} />
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+          {students.map(student => (
+            <StudentCard
+              key={student.id}
+              student={student}
+              studentEnrollments={enrollmentsByStudent[student.id] || []}
+              onViewProfile={() => setProfileStudent(student)}
+            />
+          ))}
 
           {/* Orphaned enrollments (linked to students not in guardian_students) */}
           {orphanedEnrollments.length > 0 && (

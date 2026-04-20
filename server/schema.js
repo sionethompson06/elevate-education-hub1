@@ -258,6 +258,8 @@ export const messages = pgTable('messages', {
   subject: varchar('subject', { length: 300 }).notNull(),
   body: text('body').notNull(),
   isRead: boolean('is_read').notNull().default(false),
+  parentMessageId: integer('parent_message_id'),
+  deletedAt: timestamp('deleted_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 

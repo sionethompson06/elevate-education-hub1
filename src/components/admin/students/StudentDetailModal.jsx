@@ -4,6 +4,7 @@ import { apiGet, apiPatch, apiPost } from "@/api/apiClient";
 import { X, Plus, Trash2, BookOpen, Activity, Users, Pencil, Save, Loader2, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 
 const GRADE_OPTIONS = ["K","1","2","3","4","5","6","7","8","9","10","11","12"];
 
@@ -21,6 +22,7 @@ export default function StudentDetailModal({ student: initialStudent, onClose, o
   const [saving, setSaving] = useState(false);
   const [editingStudent, setEditingStudent] = useState(false);
   const [editingParent, setEditingParent] = useState(false);
+  const [revokeTargetId, setRevokeTargetId] = useState(null);
 
   const { data: detail, refetch: refetchDetail } = useQuery({
     queryKey: ["student-detail", initialStudent.id],
@@ -334,7 +336,7 @@ export default function StudentDetailModal({ student: initialStudent, onClose, o
                           <p className="text-xs text-slate-400 capitalize">{a.coachType.replace("_", " ")}</p>
                         </div>
                       </div>
-                      <button onClick={() => revokeAssignment(a.id)} className="text-red-400 hover:text-red-600 p-1">
+                      <button onClick={() => setRevokeTargetId(a.id)} className="text-red-400 hover:text-red-600 p-1">
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
@@ -345,6 +347,26 @@ export default function StudentDetailModal({ student: initialStudent, onClose, o
           </div>
         </div>
       </div>
+
+      <AlertDialog open={!!revokeTargetId} onOpenChange={open => !open && setRevokeTargetId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove coach assignment?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will deactivate the coach assignment for {fullName}. The coach will no longer have access to this student's data.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              onClick={() => { revokeAssignment(revokeTargetId); setRevokeTargetId(null); }}
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { Users, DollarSign, ShieldCheck, FileText, BookOpen, Activity, Star, Mes
 import { format } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 
 const QUICK_LINKS = [
   { label: "Parents & Guardians", href: "/admin/parents", description: "Edit parent profiles & link students", icon: Users, color: "text-purple-600", bg: "bg-purple-50" },
@@ -35,6 +36,7 @@ export default function AdminDashboard() {
   const [seedResult, setSeedResult] = useState(null);
   const [annForm, setAnnForm] = useState({ title: "", body: "", targetRole: "all" });
   const [postingAnn, setPostingAnn] = useState(false);
+  const [deleteAnnId, setDeleteAnnId] = useState(null);
 
   const { data: enrollmentsData = { enrollments: [] } } = useQuery({
     queryKey: ["admin-enrollment-count"],
@@ -260,7 +262,7 @@ export default function AdminDashboard() {
                     <p className="text-sm font-medium text-slate-800">{a.title}</p>
                     <p className="text-xs text-slate-400 capitalize">{a.status} · {a.targetRole}</p>
                   </div>
-                  <button onClick={() => deleteAnnouncement(a.id)} className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-500 shrink-0">
+                  <button onClick={() => setDeleteAnnId(a.id)} className="p-1 rounded hover:bg-red-50 text-slate-400 hover:text-red-500 shrink-0">
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
@@ -317,6 +319,26 @@ export default function AdminDashboard() {
           ))}
         </div>
       </div>
+
+      <AlertDialog open={!!deleteAnnId} onOpenChange={open => !open && setDeleteAnnId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete announcement?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This announcement will be permanently removed and hidden from all users.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              onClick={() => { deleteAnnouncement(deleteAnnId); setDeleteAnnId(null); }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -2,17 +2,37 @@ import { useState } from "react";
 import { useAuth } from "@/lib/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost } from "@/api/apiClient";
-import { BookOpen, CheckCircle, AlertCircle, Send, Loader2 } from "lucide-react";
+import { BookOpen, CheckCircle, AlertCircle, Send, Loader2, ArrowUpDown } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import KPIBar from "@/components/gradebook/KPIBar";
 import LessonRow from "@/components/gradebook/LessonRow";
 import LessonDetailPanel from "@/components/gradebook/LessonDetailPanel";
-import { format } from "date-fns";
+import { format, isPast, isWithinInterval, addDays } from "date-fns";
 
 const SUBJECTS = ["all", "Math", "English", "Science", "History", "Reading", "Writing", "PE", "General"];
 const STATUS_TABS = ["all", "incomplete", "complete"];
 const PAGE_TABS = ["lessons", "assignments"];
+const SORT_OPTS = ["due_date", "subject"];
+
+function sortLessons(lessons) {
+  const now = new Date();
+  const soon = addDays(now, 3);
+  const priority = (l) => {
+    if (l.status === 'complete') return 3;
+    if (l.due_at && isPast(new Date(l.due_at))) return 0;
+    if (l.due_at && isWithinInterval(new Date(l.due_at), { start: now, end: soon })) return 1;
+    return 2;
+  };
+  return [...lessons].sort((a, b) => {
+    const pd = priority(a) - priority(b);
+    if (pd !== 0) return pd;
+    if (a.due_at && b.due_at) return new Date(a.due_at) - new Date(b.due_at);
+    if (a.due_at) return -1;
+    if (b.due_at) return 1;
+    return 0;
+  });
+}
 
 export default function StudentProgress() {
   const { user } = useAuth();
@@ -21,6 +41,7 @@ export default function StudentProgress() {
   const [statusTab, setStatusTab] = useState("all");
   const [selected, setSelected] = useState(null);
   const [pageTab, setPageTab] = useState("lessons");
+  const [sortBy, setSortBy] = useState("due_date");
   const [submitContent, setSubmitContent] = useState({});
   const [submitting, setSubmitting] = useState(null);
 
@@ -43,7 +64,10 @@ export default function StudentProgress() {
 
   const allLessons = data?.lessons || [];
   const kpis = data?.kpis;
-  const filtered = allLessons.filter(l => statusTab === "all" || l.status === statusTab);
+  const baseFiltered = allLessons.filter(l => statusTab === "all" || l.status === statusTab);
+  const filtered = sortBy === "due_date"
+    ? sortLessons(baseFiltered)
+    : [...baseFiltered].sort((a, b) => (a.subject || "").localeCompare(b.subject || ""));
   const mySubmissions = submissionsData?.submissions || [];
 
   const submitWork = async (assignmentId) => {
@@ -89,7 +113,7 @@ export default function StudentProgress() {
             </div>
           )}
 
-          <div className="flex flex-wrap gap-4 items-center">
+          <div className="flex flex-wrap gap-4 items-center justify-between">
             <div className="flex gap-1 flex-wrap">
               {SUBJECTS.map(s => (
                 <button key={s} onClick={() => setSubject(s)}
@@ -98,13 +122,23 @@ export default function StudentProgress() {
                 </button>
               ))}
             </div>
-            <div className="flex gap-1">
-              {STATUS_TABS.map(s => (
-                <button key={s} onClick={() => setStatusTab(s)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors capitalize ${statusTab === s ? "bg-emerald-700 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
-                  {s}
-                </button>
-              ))}
+            <div className="flex gap-2 items-center">
+              <div className="flex gap-1">
+                {STATUS_TABS.map(s => (
+                  <button key={s} onClick={() => setStatusTab(s)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors capitalize ${statusTab === s ? "bg-emerald-700 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => setSortBy(s => s === "due_date" ? "subject" : "due_date")}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
+                title={`Sort by ${sortBy === "due_date" ? "subject" : "due date"}`}
+              >
+                <ArrowUpDown className="w-3 h-3" />
+                {sortBy === "due_date" ? "Due Date" : "Subject"}
+              </button>
             </div>
           </div>
 

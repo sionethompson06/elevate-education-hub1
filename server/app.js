@@ -120,10 +120,21 @@ async function seedDemoUsers() {
   }
 }
 
+async function ensureMessageColumns() {
+  try {
+    await rawSql`ALTER TABLE messages ADD COLUMN IF NOT EXISTS parent_message_id INTEGER REFERENCES messages(id)`;
+    await rawSql`ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP`;
+    console.log('[migration] messages threading/soft-delete columns ready');
+  } catch (err) {
+    console.error('[migration] ensureMessageColumns error:', err.message);
+  }
+}
+
 normalizeEnrollmentStatuses();
 ensureOverridesTable();
 ensureSubmissionContentColumn();
 ensureMedicalInfoTable();
+ensureMessageColumns();
 seedDemoUsers();
 import applicationsRouter from './routes/applications.js';
 import authRouter from './routes/auth.js';

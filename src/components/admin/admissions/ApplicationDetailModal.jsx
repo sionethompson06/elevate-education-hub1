@@ -25,6 +25,8 @@ export default function ApplicationDetailModal({ application: initialApp, status
   const [inviteUrl, setInviteUrl] = useState(null);
 
   const [showDenyConfirm, setShowDenyConfirm] = useState(false);
+  const [showApproveConfirm, setShowApproveConfirm] = useState(false);
+  const [showWaitlistConfirm, setShowWaitlistConfirm] = useState(false);
   const [editingContact, setEditingContact] = useState(false);
   const [contactForm, setContactForm] = useState({
     full_name: `${initialApp.parent_first_name} ${initialApp.parent_last_name}`.trim(),
@@ -284,7 +286,7 @@ export default function ApplicationDetailModal({ application: initialApp, status
             <Button
               variant="outline"
               className="text-purple-700 border-purple-200 hover:bg-purple-50"
-              onClick={() => makeDecision("waitlisted")}
+              onClick={() => setShowWaitlistConfirm(true)}
               disabled={saving}
             >
               <Clock className="w-4 h-4 mr-2" />Waitlist
@@ -299,7 +301,7 @@ export default function ApplicationDetailModal({ application: initialApp, status
             </Button>
             <Button
               className="bg-green-700 hover:bg-green-800"
-              onClick={() => makeDecision("approved")}
+              onClick={() => setShowApproveConfirm(true)}
               disabled={saving}
             >
               {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-2" />}
@@ -308,6 +310,46 @@ export default function ApplicationDetailModal({ application: initialApp, status
           </div>
         )}
       </div>
+
+      <AlertDialog open={showApproveConfirm} onOpenChange={setShowApproveConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Approve this application?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will create a parent account for {contactForm.email}, create a student record for {app.student_first_name} {app.student_last_name}, and send a login invitation. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-green-700 hover:bg-green-800"
+              onClick={() => { setShowApproveConfirm(false); makeDecision("approved"); }}
+            >
+              Approve & Enroll
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showWaitlistConfirm} onOpenChange={setShowWaitlistConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Waitlist this application?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {app.student_first_name} {app.student_last_name}'s application will be moved to the waitlist.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-purple-700 hover:bg-purple-800"
+              onClick={() => { setShowWaitlistConfirm(false); makeDecision("waitlisted"); }}
+            >
+              Move to Waitlist
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={showDenyConfirm} onOpenChange={setShowDenyConfirm}>
         <AlertDialogContent>
