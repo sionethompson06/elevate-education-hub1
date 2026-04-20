@@ -334,8 +334,42 @@ router.patch('/:id/invoice', requireAuth, requireRole('admin'), async (req, res)
 
     const { description, amount, dueDate, paidDate } = req.body;
 
-    const [invoice] = await db.select().from(invoices).where(eq(invoices.enrollmentId, enrollmentId));
-    if (!invoice) return res.status(404).json({ success: false, error: 'No invoice found for this enrollment' });
+    let [invoice] = await db.select().from(invoices).where(eq(invoices.enrollmentId, enrollmentId));
+
+    // If no invoice exists, create one linked to the parent's billing account
+    if (!invoice) {
+      const [enrollment] = await db.select().from(enrollments).where(eq(enrollments.id, enrollmentId));
+      if (!enrollment) return res.status(404).json({ success: false, error: 'Enrollment not found' });
+
+      // Find parent via guardian link on the student
+      const [guardianLink] = await db.select().from(guardianStudents)
+        .where(eq(guardianStudents.studentId, enrollment.studentId));
+      const parentUserId = guardianLink?.guardianUserId || null;
+
+      let billingAccountId = null;
+      if (parentUserId) {
+        let [billingAccount] = await db.select().from(billingAccounts)
+          .where(eq(billingAccounts.parentUserId, parentUserId));
+        if (!billingAccount) {
+          [billingAccount] = await db.insert(billingAccounts).values({ parentUserId }).returning();
+        }
+        billingAccountId = billingAccount.id;
+      }
+
+      if (!billingAccountId) {
+        return res.status(400).json({ success: false, error: 'Cannot create invoice: no parent billing account found for this student' });
+      }
+
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + 30);
+      [invoice] = await db.insert(invoices).values({
+        billingAccountId,
+        enrollmentId,
+        description: description || 'Tuition',
+        amount: amount ? String(amount) : '0',
+        dueDate: dueDate.toISOString().split('T')[0],
+      }).returning();
+    }
 
     const updateData = {};
     if (description !== undefined) updateData.description = description;
@@ -344,7 +378,7 @@ router.patch('/:id/invoice', requireAuth, requireRole('admin'), async (req, res)
     if (paidDate !== undefined) updateData.paidDate = paidDate || null;
 
     if (Object.keys(updateData).length === 0) {
-      return res.status(400).json({ success: false, error: 'No fields to update' });
+      return res.status(200).json({ success: true, invoice });
     }
 
     const [updated] = await db.update(invoices).set(updateData).where(eq(invoices.id, invoice.id)).returning();

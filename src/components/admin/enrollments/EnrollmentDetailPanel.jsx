@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { X, CreditCard, ShieldCheck, Pencil, Save, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { apiPatch } from "@/api/apiClient";
@@ -6,20 +7,19 @@ import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import EnrollmentOverridePanel from "./EnrollmentOverridePanel";
 
-const Row = ({ label, value }) => (
-  <div className="flex justify-between py-2 border-b border-slate-100 last:border-0 gap-4">
-    <span className="text-sm text-slate-500 shrink-0">{label}</span>
-    <span className="text-sm font-medium text-slate-800 text-right">{value || "—"}</span>
-  </div>
-);
-
 const inputCls = "w-full border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30";
-
 const BILLING_CYCLES = ["monthly", "annual", "one_time", "quarterly"];
+
+function formatDate(val) {
+  if (!val) return null;
+  try { return format(new Date(val), "MMM d, yyyy"); } catch { return val; }
+}
 
 export default function EnrollmentDetailPanel({ enrollment, statusColors, onClose, onUpdated }) {
   const { toast } = useToast();
+  const qc = useQueryClient();
   const sc = statusColors[enrollment.status] || "bg-slate-100 text-slate-500";
+
   const studentName = enrollment.studentFirstName
     ? `${enrollment.studentFirstName} ${enrollment.studentLastName || ""}`.trim()
     : `Student #${enrollment.studentId}`;
@@ -27,25 +27,36 @@ export default function EnrollmentDetailPanel({ enrollment, statusColors, onClos
     ? `${enrollment.parentFirstName} ${enrollment.parentLastName || ""}`.trim()
     : enrollment.parentEmail || null;
 
-  const [editing, setEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({
+  // Local display data — updated optimistically after save so panel stays open
+  const [display, setDisplay] = useState({
     invoiceDescription: enrollment.invoiceDescription || "",
-    invoiceAmount: enrollment.invoiceAmount != null ? String(parseFloat(enrollment.invoiceAmount)) : "",
+    invoiceAmount: enrollment.invoiceAmount,
     invoiceDueDate: enrollment.invoiceDueDate || "",
     invoicePaidDate: enrollment.invoicePaidDate || "",
     billingCycle: enrollment.billingCycle || enrollment.programBillingCycle || "",
     startDate: enrollment.startDate || "",
+    status: enrollment.status,
   });
 
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ ...display });
+
   const setF = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
+
+  const handleEdit = () => {
+    setForm({ ...display });
+    setEditing(true);
+  };
+
+  const handleCancel = () => setEditing(false);
 
   const handleSave = async () => {
     setSaving(true);
     try {
       await apiPatch(`/enrollments/${enrollment.id}/invoice`, {
         description: form.invoiceDescription,
-        amount: form.invoiceAmount ? parseFloat(form.invoiceAmount) : undefined,
+        amount: form.invoiceAmount !== "" ? parseFloat(form.invoiceAmount) : undefined,
         dueDate: form.invoiceDueDate || null,
         paidDate: form.invoicePaidDate || null,
       });
@@ -53,26 +64,16 @@ export default function EnrollmentDetailPanel({ enrollment, statusColors, onClos
         startDate: form.startDate || null,
         billingCycleOverride: form.billingCycle || null,
       });
-      toast({ title: "Enrollment details updated" });
+      // Update local display — panel stays open
+      setDisplay({ ...form });
       setEditing(false);
-      onUpdated();
+      toast({ title: "Enrollment details updated" });
+      qc.invalidateQueries({ queryKey: ["admin-enrollments"] });
     } catch (err) {
       toast({ title: "Save failed", description: err.message, variant: "destructive" });
     } finally {
       setSaving(false);
     }
-  };
-
-  const handleCancel = () => {
-    setForm({
-      invoiceDescription: enrollment.invoiceDescription || "",
-      invoiceAmount: enrollment.invoiceAmount != null ? String(parseFloat(enrollment.invoiceAmount)) : "",
-      invoiceDueDate: enrollment.invoiceDueDate || "",
-      invoicePaidDate: enrollment.invoicePaidDate || "",
-      billingCycle: enrollment.billingCycle || enrollment.programBillingCycle || "",
-      startDate: enrollment.startDate || "",
-    });
-    setEditing(false);
   };
 
   return (
@@ -85,7 +86,7 @@ export default function EnrollmentDetailPanel({ enrollment, statusColors, onClos
             </h2>
             <p className="text-sm text-slate-500 mt-0.5">{studentName}</p>
             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold capitalize mt-1 ${sc}`}>
-              {enrollment.status?.replace(/_/g, " ")}
+              {display.status?.replace(/_/g, " ")}
             </span>
           </div>
           <button onClick={onClose} className="p-1 rounded hover:bg-slate-100">
@@ -102,7 +103,7 @@ export default function EnrollmentDetailPanel({ enrollment, statusColors, onClos
               </p>
               {!editing && (
                 <button
-                  onClick={() => setEditing(true)}
+                  onClick={handleEdit}
                   className="text-xs text-[#1a3c5e] flex items-center gap-1 hover:underline"
                 >
                   <Pencil className="w-3 h-3" /> Edit Details
@@ -110,33 +111,44 @@ export default function EnrollmentDetailPanel({ enrollment, statusColors, onClos
               )}
             </div>
 
-            <div className="bg-slate-50 rounded-xl p-4">
-              <Row label="Student" value={studentName} />
-              <Row label="Parent / Guardian" value={parentName} />
-              <Row label="Parent Email" value={enrollment.parentEmail} />
-              <Row label="Program" value={enrollment.programName} />
-              <Row label="Enrollment Status" value={enrollment.status?.replace(/_/g, " ")} />
-              <Row label="Invoice Status" value={enrollment.invoiceStatus?.replace(/_/g, " ")} />
+            <div className="bg-slate-50 rounded-xl p-4 space-y-0">
+              {/* Fixed read-only rows */}
+              {[
+                ["Student", studentName],
+                ["Parent / Guardian", parentName],
+                ["Parent Email", enrollment.parentEmail],
+                ["Program", enrollment.programName],
+                ["Enrollment Status", display.status?.replace(/_/g, " ")],
+                ["Invoice Status", enrollment.invoiceStatus?.replace(/_/g, " ")],
+              ].map(([label, value]) => (
+                <div key={label} className="flex justify-between py-2 border-b border-slate-100 last:border-0 gap-4">
+                  <span className="text-sm text-slate-500 shrink-0">{label}</span>
+                  <span className="text-sm font-medium text-slate-800 text-right">{value || "—"}</span>
+                </div>
+              ))}
 
+              {/* Editable rows */}
               {editing ? (
                 <>
-                  {/* Editable fields */}
-                  <div className="flex justify-between py-2 border-b border-slate-100 gap-4 items-center">
-                    <span className="text-sm text-slate-500 shrink-0">Invoice Description</span>
-                    <input className={`${inputCls} max-w-[240px]`} value={form.invoiceDescription} onChange={setF("invoiceDescription")} />
-                  </div>
-                  <div className="flex justify-between py-2 border-b border-slate-100 gap-4 items-center">
-                    <span className="text-sm text-slate-500 shrink-0">Amount Due ($)</span>
-                    <input type="number" step="0.01" min="0" className={`${inputCls} max-w-[160px]`} value={form.invoiceAmount} onChange={setF("invoiceAmount")} />
-                  </div>
-                  <div className="flex justify-between py-2 border-b border-slate-100 gap-4 items-center">
-                    <span className="text-sm text-slate-500 shrink-0">Due Date</span>
-                    <input type="date" className={`${inputCls} max-w-[180px]`} value={form.invoiceDueDate} onChange={setF("invoiceDueDate")} />
-                  </div>
-                  <div className="flex justify-between py-2 border-b border-slate-100 gap-4 items-center">
-                    <span className="text-sm text-slate-500 shrink-0">Pay Date</span>
-                    <input type="date" className={`${inputCls} max-w-[180px]`} value={form.invoicePaidDate} onChange={setF("invoicePaidDate")} />
-                  </div>
+                  {[
+                    { label: "Invoice Description", key: "invoiceDescription", type: "text" },
+                    { label: "Amount Due ($)", key: "invoiceAmount", type: "number" },
+                    { label: "Due Date", key: "invoiceDueDate", type: "date" },
+                    { label: "Pay Date", key: "invoicePaidDate", type: "date" },
+                    { label: "Enrollment Date", key: "startDate", type: "date" },
+                  ].map(({ label, key, type }) => (
+                    <div key={key} className="flex justify-between py-2 border-b border-slate-100 gap-4 items-center">
+                      <span className="text-sm text-slate-500 shrink-0">{label}</span>
+                      <input
+                        type={type}
+                        step={type === "number" ? "0.01" : undefined}
+                        min={type === "number" ? "0" : undefined}
+                        className={`${inputCls} max-w-[220px]`}
+                        value={form[key]}
+                        onChange={setF(key)}
+                      />
+                    </div>
+                  ))}
                   <div className="flex justify-between py-2 border-b border-slate-100 gap-4 items-center">
                     <span className="text-sm text-slate-500 shrink-0">Billing Cycle</span>
                     <select className={`${inputCls} max-w-[180px] bg-white`} value={form.billingCycle} onChange={setF("billingCycle")}>
@@ -146,14 +158,11 @@ export default function EnrollmentDetailPanel({ enrollment, statusColors, onClos
                       ))}
                     </select>
                   </div>
-                  <div className="flex justify-between py-2 border-b border-slate-100 gap-4 items-center">
-                    <span className="text-sm text-slate-500 shrink-0">Enrollment Date</span>
-                    <input type="date" className={`${inputCls} max-w-[180px]`} value={form.startDate} onChange={setF("startDate")} />
-                  </div>
-                  <Row label="Enrollment ID" value={`#${enrollment.id}`} />
-
-                  <div className="flex gap-2 mt-3 justify-end">
-                    <button onClick={handleCancel} className="text-xs text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded border border-slate-200">
+                  <div className="flex gap-2 pt-3 justify-end">
+                    <button
+                      onClick={handleCancel}
+                      className="text-xs text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded border border-slate-200"
+                    >
                       Cancel
                     </button>
                     <Button size="sm" onClick={handleSave} disabled={saving} className="bg-[#1a3c5e] hover:bg-[#0d2540] gap-1">
@@ -164,19 +173,20 @@ export default function EnrollmentDetailPanel({ enrollment, statusColors, onClos
                 </>
               ) : (
                 <>
-                  <Row label="Invoice Description" value={enrollment.invoiceDescription} />
-                  <Row
-                    label="Amount Due"
-                    value={enrollment.invoiceAmount != null ? `$${parseFloat(enrollment.invoiceAmount).toLocaleString()}` : null}
-                  />
-                  <Row label="Due Date" value={enrollment.invoiceDueDate} />
-                  <Row label="Paid Date" value={enrollment.invoicePaidDate} />
-                  <Row label="Billing Cycle" value={(enrollment.billingCycle || enrollment.programBillingCycle)?.replace(/_/g, " ")} />
-                  <Row
-                    label="Enrolled Date"
-                    value={enrollment.startDate || (enrollment.createdAt ? format(new Date(enrollment.createdAt), "MMM d, yyyy") : null)}
-                  />
-                  <Row label="Enrollment ID" value={`#${enrollment.id}`} />
+                  {[
+                    ["Invoice Description", display.invoiceDescription],
+                    ["Amount Due", display.invoiceAmount != null ? `$${parseFloat(display.invoiceAmount).toLocaleString()}` : null],
+                    ["Due Date", formatDate(display.invoiceDueDate)],
+                    ["Paid Date", formatDate(display.invoicePaidDate)],
+                    ["Billing Cycle", (display.billingCycle)?.replace(/_/g, " ")],
+                    ["Enrollment Date", formatDate(display.startDate) || formatDate(enrollment.createdAt)],
+                    ["Enrollment ID", `#${enrollment.id}`],
+                  ].map(([label, value]) => (
+                    <div key={label} className="flex justify-between py-2 border-b border-slate-100 last:border-0 gap-4">
+                      <span className="text-sm text-slate-500 shrink-0">{label}</span>
+                      <span className="text-sm font-medium text-slate-800 text-right">{value || "—"}</span>
+                    </div>
+                  ))}
                 </>
               )}
             </div>
