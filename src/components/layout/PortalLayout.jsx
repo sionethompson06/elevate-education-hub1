@@ -1,11 +1,13 @@
 import { Outlet, Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
-import { GraduationCap, LogOut, Menu, X, ArrowLeft } from "lucide-react";
+import { GraduationCap, LogOut, Menu, X, ArrowLeft, Users } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiGet } from "@/api/apiClient";
 import { ROLE_LABELS } from "@/lib/rbac";
 import NotificationBell from "@/components/NotificationBell";
+import ImpersonationBanner from "@/components/ImpersonationBanner";
+import ImpersonateModal from "@/components/admin/ImpersonateModal";
 
 const ROLE_COLORS = {
   student: "bg-blue-600",
@@ -73,9 +75,10 @@ const ROLE_NAV = {
 };
 
 export default function PortalLayout() {
-  const { user, logout } = useAuth();
+  const { user, logout, isImpersonating } = useAuth();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [showImpersonateModal, setShowImpersonateModal] = useState(false);
 
   const { data: inboxData } = useQuery({
     queryKey: ["inbox-unread"],
@@ -87,9 +90,9 @@ export default function PortalLayout() {
 
   const role = user?.role || "student";
 
-  // If admin is browsing a non-admin hub, show that hub's nav + a back button
+  // If admin is browsing a non-admin hub (NOT via impersonation), show that hub's nav + a back button
   const path = location.pathname;
-  const isAdminViewingOtherHub = role === "admin" && !path.startsWith("/admin");
+  const isAdminViewingOtherHub = role === "admin" && !path.startsWith("/admin") && !isImpersonating;
   const viewingHubRole = isAdminViewingOtherHub
     ? path.startsWith("/student") ? "student"
     : path.startsWith("/parent") ? "parent"
@@ -151,6 +154,15 @@ export default function PortalLayout() {
           <div className="flex items-center justify-end px-2 pb-1">
             <NotificationBell />
           </div>
+          {role === "admin" && !isImpersonating && (
+            <button
+              onClick={() => setShowImpersonateModal(true)}
+              className="flex items-center gap-2 text-amber-300 hover:text-amber-200 text-sm w-full px-4 py-2 rounded-lg hover:bg-white/10 transition-colors font-semibold"
+            >
+              <Users className="w-4 h-4" />
+              Switch User
+            </button>
+          )}
           {isAdminViewingOtherHub && (
             <Link
               to="/admin/dashboard"
@@ -221,8 +233,13 @@ export default function PortalLayout() {
 
       {/* Main content */}
       <main className="flex-1 md:overflow-auto md:h-screen pt-14 md:pt-0">
+        <ImpersonationBanner />
         <Outlet />
       </main>
+
+      {showImpersonateModal && (
+        <ImpersonateModal onClose={() => setShowImpersonateModal(false)} />
+      )}
     </div>
   );
 }

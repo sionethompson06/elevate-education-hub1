@@ -13,6 +13,15 @@ export function generateToken(user) {
   );
 }
 
+export function generateImpersonationToken(targetUser, adminId) {
+  return jwt.sign(
+    { id: targetUser.id, email: targetUser.email, role: targetUser.role,
+      isImpersonation: true, originalAdminId: adminId },
+    JWT_SECRET,
+    { expiresIn: '4h' }
+  );
+}
+
 export function verifyToken(token) {
   return jwt.verify(token, JWT_SECRET);
 }
