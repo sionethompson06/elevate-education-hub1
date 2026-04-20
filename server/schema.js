@@ -147,6 +147,7 @@ export const enrollments = pgTable('enrollments', {
   startDate: date('start_date'),
   endDate: date('end_date'),
   enrolledBy: integer('enrolled_by').references(() => users.id),
+  billingCycleOverride: varchar('billing_cycle_override', { length: 30 }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 

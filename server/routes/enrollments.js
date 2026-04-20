@@ -111,6 +111,7 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
       endDate: enrollments.endDate,
       enrolledBy: enrollments.enrolledBy,
       createdAt: enrollments.createdAt,
+      billingCycleOverride: enrollments.billingCycleOverride,
       studentFirstName: students.firstName,
       studentLastName: students.lastName,
       programName: programs.name,
@@ -136,6 +137,7 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
 
     const enriched = result.map(e => ({
       ...e,
+      billingCycle: e.billingCycleOverride || e.programBillingCycle,
       invoiceId: invoiceMap[e.id]?.id || null,
       invoiceAmount: invoiceMap[e.id]?.amount || null,
       invoiceStatus: invoiceMap[e.id]?.status || null,
@@ -295,10 +297,12 @@ router.get('/:id', requireAuth, async (req, res) => {
 router.patch('/:id', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const { status, sectionId } = req.body;
+    const { status, sectionId, startDate, billingCycleOverride } = req.body;
     const updateData = {};
     if (status !== undefined) updateData.status = status;
     if (sectionId !== undefined) updateData.sectionId = sectionId ? parseInt(sectionId) : null;
+    if (startDate !== undefined) updateData.startDate = startDate || null;
+    if (billingCycleOverride !== undefined) updateData.billingCycleOverride = billingCycleOverride || null;
 
     if (Object.keys(updateData).length === 0) {
       return res.status(400).json({ success: false, error: 'No fields to update' });
@@ -318,6 +322,45 @@ router.patch('/:id', requireAuth, requireRole('admin'), async (req, res) => {
 
     res.json({ success: true, enrollment: updated });
   } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// PATCH /api/enrollments/:id/invoice — update the invoice linked to this enrollment
+router.patch('/:id/invoice', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const enrollmentId = parseInt(req.params.id);
+    if (isNaN(enrollmentId)) return res.status(400).json({ success: false, error: 'Invalid enrollment ID' });
+
+    const { description, amount, dueDate, paidDate } = req.body;
+
+    const [invoice] = await db.select().from(invoices).where(eq(invoices.enrollmentId, enrollmentId));
+    if (!invoice) return res.status(404).json({ success: false, error: 'No invoice found for this enrollment' });
+
+    const updateData = {};
+    if (description !== undefined) updateData.description = description;
+    if (amount !== undefined) updateData.amount = String(amount);
+    if (dueDate !== undefined) updateData.dueDate = dueDate || null;
+    if (paidDate !== undefined) updateData.paidDate = paidDate || null;
+
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ success: false, error: 'No fields to update' });
+    }
+
+    const [updated] = await db.update(invoices).set(updateData).where(eq(invoices.id, invoice.id)).returning();
+
+    await logAudit({
+      userId: req.user.id,
+      action: 'update',
+      entityType: 'invoice',
+      entityId: invoice.id,
+      details: { enrollmentId, ...updateData },
+      ipAddress: req.ip,
+    });
+
+    res.json({ success: true, invoice: updated });
+  } catch (err) {
+    console.error('Update invoice error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
