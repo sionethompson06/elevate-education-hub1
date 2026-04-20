@@ -30,6 +30,8 @@ router.get('/my-students', requireAuth, async (req, res) => {
         programId: enrollments.programId,
         sectionId: enrollments.sectionId,
         status: enrollments.status,
+        startDate: enrollments.startDate,
+        billingCycleOverride: enrollments.billingCycleOverride,
         createdAt: enrollments.createdAt,
         programName: programs.name,
         programBillingCycle: programs.billingCycle,
@@ -43,11 +45,14 @@ router.get('/my-students', requireAuth, async (req, res) => {
       myEnrollments.push(...enrs);
     }
 
-    // Attach latest invoice data to each enrollment
+    // Attach latest invoice data — scoped to this parent's enrollments only
     if (myEnrollments.length > 0) {
-      const allInvoices = await db.select().from(invoices).orderBy(desc(invoices.createdAt));
+      const enrollmentIds = myEnrollments.map(e => e.id).filter(Boolean);
+      const scopedInvoices = await db.select().from(invoices)
+        .where(inArray(invoices.enrollmentId, enrollmentIds))
+        .orderBy(desc(invoices.createdAt));
       const invoiceMap = {};
-      for (const inv of allInvoices) {
+      for (const inv of scopedInvoices) {
         if (inv.enrollmentId && !invoiceMap[inv.enrollmentId]) {
           invoiceMap[inv.enrollmentId] = inv;
         }
@@ -55,9 +60,10 @@ router.get('/my-students', requireAuth, async (req, res) => {
       for (const enr of myEnrollments) {
         const inv = invoiceMap[enr.id];
         enr.invoiceId = inv?.id || null;
-        enr.invoiceAmount = inv?.amount || null;
+        enr.invoiceAmount = inv?.amount ?? null;
         enr.invoiceStatus = inv?.status || null;
         enr.invoiceDueDate = inv?.dueDate || null;
+        enr.invoicePaidDate = inv?.paidDate || null;
         enr.invoiceDescription = inv?.description || null;
       }
     }
@@ -357,7 +363,9 @@ router.patch('/:id/invoice', requireAuth, requireRole('admin'), async (req, res)
 
     const { description, amount, dueDate, paidDate } = req.body;
 
-    let [invoice] = await db.select().from(invoices).where(eq(invoices.enrollmentId, enrollmentId));
+    let [invoice] = await db.select().from(invoices)
+      .where(eq(invoices.enrollmentId, enrollmentId))
+      .orderBy(desc(invoices.createdAt));
 
     // If no invoice exists, create one linked to the parent's billing account
     if (!invoice) {
