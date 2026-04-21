@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, inArray } from 'drizzle-orm';
 import db from '../db-postgres.js';
 import { billingAccounts, invoices, payments, enrollments, students, programs, guardianStudents, users } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
@@ -264,6 +264,131 @@ router.patch('/invoices/:id', requireAuth, requireRole('admin'), async (req, res
 
     res.json({ success: true, invoice: updated });
   } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /billing/accounting — unified per-enrollment accounting view (admin only)
+router.get('/accounting', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    // Query 1: enrollments + students + programs
+    const enrollmentRows = await db.select({
+      enrollmentId: enrollments.id,
+      enrollmentStatus: enrollments.status,
+      startDate: enrollments.startDate,
+      billingCycleOverride: enrollments.billingCycleOverride,
+      studentId: students.id,
+      studentFirstName: students.firstName,
+      studentLastName: students.lastName,
+      programName: programs.name,
+      programBillingCycle: programs.billingCycle,
+    }).from(enrollments)
+      .leftJoin(students, eq(enrollments.studentId, students.id))
+      .leftJoin(programs, eq(enrollments.programId, programs.id))
+      .orderBy(desc(enrollments.createdAt));
+
+    if (!enrollmentRows.length) return res.json({ success: true, rows: [] });
+
+    const studentIds = [...new Set(enrollmentRows.map(r => r.studentId).filter(Boolean))];
+    const enrollmentIds = enrollmentRows.map(r => r.enrollmentId);
+
+    // Query 2: parent info per student via guardianStudents
+    const guardianRows = studentIds.length
+      ? await db.select({
+          studentId: guardianStudents.studentId,
+          parentFirstName: users.firstName,
+          parentLastName: users.lastName,
+          parentEmail: users.email,
+        }).from(guardianStudents)
+          .leftJoin(users, eq(guardianStudents.guardianUserId, users.id))
+          .where(inArray(guardianStudents.studentId, studentIds))
+      : [];
+
+    // Query 3: all invoices for these enrollments, latest per enrollment resolved in JS
+    const invoiceRows = await db.select().from(invoices)
+      .where(inArray(invoices.enrollmentId, enrollmentIds))
+      .orderBy(desc(invoices.createdAt));
+
+    // Query 4: all payments for those invoices
+    const invoiceIds = [...new Set(invoiceRows.map(r => r.id))];
+    const paymentRows = invoiceIds.length
+      ? await db.select().from(payments)
+          .where(inArray(payments.invoiceId, invoiceIds))
+          .orderBy(desc(payments.processedAt))
+      : [];
+
+    // Build lookup maps
+    const parentMap = {};
+    for (const g of guardianRows) {
+      if (!parentMap[g.studentId]) parentMap[g.studentId] = g;
+    }
+
+    const invoiceMap = {};
+    for (const inv of invoiceRows) {
+      if (!invoiceMap[inv.enrollmentId]) invoiceMap[inv.enrollmentId] = inv;
+    }
+
+    const paymentsByInvoice = {};
+    for (const p of paymentRows) {
+      if (!paymentsByInvoice[p.invoiceId]) paymentsByInvoice[p.invoiceId] = [];
+      paymentsByInvoice[p.invoiceId].push(p);
+    }
+
+    const result = enrollmentRows.map(row => {
+      const parent = parentMap[row.studentId] || {};
+      const invoice = invoiceMap[row.enrollmentId] || null;
+      const pmts = invoice ? (paymentsByInvoice[invoice.id] || []) : [];
+      const effectiveCycle = row.billingCycleOverride || row.programBillingCycle || 'one_time';
+
+      const totalPaid = pmts
+        .filter(p => p.status === 'paid' || p.status === 'completed')
+        .reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+
+      const totalOwed = invoice && ['pending', 'past_due'].includes(invoice.status)
+        ? parseFloat(invoice.amount || 0)
+        : 0;
+
+      const lastPayment = pmts.find(p => p.status === 'paid' || p.status === 'completed');
+      const lastPaymentDate = lastPayment?.processedAt || null;
+
+      let nextDueDate = null;
+      if (invoice?.status === 'paid' && lastPaymentDate) {
+        const d = new Date(lastPaymentDate);
+        if (effectiveCycle === 'monthly') {
+          d.setMonth(d.getMonth() + 1);
+          nextDueDate = d.toISOString().split('T')[0];
+        } else if (effectiveCycle === 'annual') {
+          d.setFullYear(d.getFullYear() + 1);
+          nextDueDate = d.toISOString().split('T')[0];
+        }
+      } else if (invoice?.dueDate) {
+        nextDueDate = invoice.dueDate;
+      }
+
+      return {
+        enrollmentId: row.enrollmentId,
+        enrollmentStatus: row.enrollmentStatus,
+        startDate: row.startDate,
+        studentName: [row.studentFirstName, row.studentLastName].filter(Boolean).join(' ') || '—',
+        parentName: [parent.parentFirstName, parent.parentLastName].filter(Boolean).join(' ') || '—',
+        parentEmail: parent.parentEmail || null,
+        programName: row.programName || '—',
+        billingCycle: effectiveCycle,
+        invoiceAmount: invoice?.amount ?? null,
+        invoiceStatus: invoice?.status ?? null,
+        dueDate: invoice?.dueDate ?? null,
+        paidDate: invoice?.paidDate ?? null,
+        totalPaid: totalPaid.toFixed(2),
+        totalOwed: totalOwed.toFixed(2),
+        lastPaymentDate,
+        nextDueDate,
+        payments: pmts,
+      };
+    });
+
+    res.json({ success: true, rows: result });
+  } catch (err) {
+    console.error('[billing/accounting] error:', err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });

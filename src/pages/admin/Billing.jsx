@@ -3,31 +3,50 @@ import { useQuery } from "@tanstack/react-query";
 import { apiGet } from "@/api/apiClient";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, Loader2, CreditCard, Receipt } from "lucide-react";
+import { RefreshCw, Loader2, CreditCard, BookOpen, ChevronDown, ChevronRight, Search } from "lucide-react";
 
-const INVOICE_STATUS = {
-  paid:     { label: "Paid",     color: "bg-green-100 text-green-700 border-green-200" },
-  pending:  { label: "Pending",  color: "bg-yellow-100 text-yellow-700 border-yellow-200" },
-  past_due: { label: "Past Due", color: "bg-red-100 text-red-700 border-red-200" },
-  waived:   { label: "Waived",   color: "bg-slate-100 text-slate-500 border-slate-200" },
+// ── Status config ─────────────────────────────────────────────────────────────
+const ENROLLMENT_STATUS = {
+  active:          { label: "Active",    color: "bg-green-100 text-green-700 border-green-200" },
+  active_override: { label: "Active",    color: "bg-green-100 text-green-700 border-green-200" },
+  pending_payment: { label: "Pending",   color: "bg-yellow-100 text-yellow-700 border-yellow-200" },
+  pending:         { label: "Pending",   color: "bg-yellow-100 text-yellow-700 border-yellow-200" },
+  payment_failed:  { label: "Past Due",  color: "bg-red-100 text-red-700 border-red-200" },
+  cancelled:       { label: "Cancelled", color: "bg-slate-100 text-slate-500 border-slate-200" },
+  paused:          { label: "Paused",    color: "bg-orange-100 text-orange-600 border-orange-200" },
+};
+
+const CYCLE_BADGE = {
+  monthly:  { label: "Monthly",  color: "bg-blue-50 text-blue-700" },
+  annual:   { label: "Annual",   color: "bg-purple-50 text-purple-700" },
+  one_time: { label: "One-Time", color: "bg-slate-100 text-slate-500" },
 };
 
 const PAYMENT_STATUS = {
-  paid:      { label: "Paid",     color: "bg-green-100 text-green-700" },
-  completed: { label: "Paid",     color: "bg-green-100 text-green-700" },
-  pending:   { label: "Pending",  color: "bg-yellow-100 text-yellow-700" },
-  failed:    { label: "Failed",   color: "bg-red-100 text-red-700" },
-  refunded:  { label: "Refunded", color: "bg-slate-100 text-slate-500" },
+  paid:      { label: "Paid",     color: "text-green-600" },
+  completed: { label: "Paid",     color: "text-green-600" },
+  pending:   { label: "Pending",  color: "text-yellow-600" },
+  failed:    { label: "Failed",   color: "text-red-500" },
+  refunded:  { label: "Refunded", color: "text-slate-500" },
 };
 
-const INVOICE_FILTERS = [
-  { key: "all",      label: "All" },
-  { key: "pending",  label: "Pending" },
-  { key: "paid",     label: "Paid" },
-  { key: "past_due", label: "Past Due" },
-  { key: "waived",   label: "Waived" },
+// ── Filter config ─────────────────────────────────────────────────────────────
+const STATUS_FILTERS = [
+  { key: "all",      label: "All",       match: () => true },
+  { key: "active",   label: "Active",    match: r => ["active","active_override"].includes(r.enrollmentStatus) },
+  { key: "pending",  label: "Pending",   match: r => ["pending_payment","pending"].includes(r.enrollmentStatus) },
+  { key: "past_due", label: "Past Due",  match: r => r.enrollmentStatus === "payment_failed" },
+  { key: "cancelled",label: "Cancelled", match: r => r.enrollmentStatus === "cancelled" },
 ];
 
+const CYCLE_FILTERS = [
+  { key: "all",      label: "All" },
+  { key: "monthly",  label: "Monthly" },
+  { key: "annual",   label: "Annual" },
+  { key: "one_time", label: "One-Time" },
+];
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function fmtDate(str) {
   if (!str) return "—";
   return new Date(str.includes("T") ? str : str + "T00:00:00").toLocaleDateString("en-US", {
@@ -38,20 +57,111 @@ function fmtDate(str) {
 function fmtDateTime(str) {
   if (!str) return "—";
   return new Date(str).toLocaleString("en-US", {
-    month: "short", day: "numeric", year: "numeric",
-    hour: "numeric", minute: "2-digit",
+    month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit",
   });
 }
 
+function fmtMoney(val) {
+  const n = parseFloat(val || 0);
+  return "$" + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// ── Expanded row detail ───────────────────────────────────────────────────────
+function RowDetail({ row }) {
+  const cycle = CYCLE_BADGE[row.billingCycle] || CYCLE_BADGE.one_time;
+  return (
+    <tr>
+      <td colSpan={7} className="px-0 pb-0 bg-slate-50 border-b border-slate-200">
+        <div className="px-6 py-4 space-y-4">
+          {/* Summary grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+            <div>
+              <p className="text-xs text-slate-400 uppercase tracking-wide mb-0.5">Invoice Amount</p>
+              <p className="font-semibold text-slate-800">
+                {row.invoiceAmount != null ? fmtMoney(row.invoiceAmount) : "—"}
+                {row.billingCycle !== "one_time" && row.invoiceAmount != null && (
+                  <span className="text-xs text-slate-400 font-normal ml-1">
+                    /{row.billingCycle === "annual" ? "yr" : "mo"}
+                  </span>
+                )}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400 uppercase tracking-wide mb-0.5">Last Paid</p>
+              <p className="font-semibold text-slate-800">{fmtDate(row.paidDate || row.lastPaymentDate)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400 uppercase tracking-wide mb-0.5">Next Due</p>
+              <p className={`font-semibold ${row.nextDueDate ? "text-slate-800" : "text-slate-400"}`}>
+                {row.nextDueDate ? fmtDate(row.nextDueDate) : "—"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400 uppercase tracking-wide mb-0.5">Enrolled</p>
+              <p className="font-semibold text-slate-800">{fmtDate(row.startDate)}</p>
+            </div>
+          </div>
+
+          {/* Payment history */}
+          <div>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Payment History</p>
+            {row.payments.length === 0 ? (
+              <p className="text-xs text-slate-400 italic">No payments on record.</p>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-slate-400 uppercase tracking-wide">
+                      <th className="text-left px-4 py-2 font-semibold">Date</th>
+                      <th className="text-right px-4 py-2 font-semibold">Amount</th>
+                      <th className="text-left px-4 py-2 font-semibold">Method</th>
+                      <th className="text-left px-4 py-2 font-semibold">Status</th>
+                      <th className="text-left px-4 py-2 font-semibold">Stripe Ref</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {row.payments.map(p => {
+                      const sc = PAYMENT_STATUS[p.status] || PAYMENT_STATUS.pending;
+                      return (
+                        <tr key={p.id} className="hover:bg-slate-50">
+                          <td className="px-4 py-2 text-slate-600">{fmtDateTime(p.processedAt || p.createdAt)}</td>
+                          <td className="px-4 py-2 text-right font-semibold text-slate-800">{fmtMoney(p.amount)}</td>
+                          <td className="px-4 py-2">
+                            <span className="capitalize px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded font-medium">
+                              {p.method || "—"}
+                            </span>
+                          </td>
+                          <td className={`px-4 py-2 font-semibold ${sc.color}`}>{sc.label}</td>
+                          <td className="px-4 py-2 font-mono text-slate-400">
+                            {p.stripePaymentIntentId ? `…${p.stripePaymentIntentId.slice(-14)}` : "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 export default function AdminBilling() {
-  const [tab, setTab] = useState("invoices");
-  const [invoiceFilter, setInvoiceFilter] = useState("all");
+  const [tab, setTab] = useState("accounting");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [cycleFilter, setCycleFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [expandedRow, setExpandedRow] = useState(null);
 
   const {
-    data: invoiceData, isLoading: invoicesLoading, refetch: refetchInvoices,
+    data: accountingData, isLoading: accountingLoading, refetch: refetchAccounting,
   } = useQuery({
-    queryKey: ["admin-billing-invoices"],
-    queryFn: () => apiGet("/billing/invoices"),
+    queryKey: ["admin-accounting"],
+    queryFn: () => apiGet("/billing/accounting"),
   });
 
   const {
@@ -61,47 +171,54 @@ export default function AdminBilling() {
     queryFn: () => apiGet("/billing/payments"),
   });
 
-  const allInvoices = invoiceData?.invoices || [];
+  const allRows = accountingData?.rows || [];
   const allPayments = paymentData?.payments || [];
-  const isLoading = invoicesLoading || paymentsLoading;
+  const isLoading = accountingLoading || paymentsLoading;
 
-  const filteredInvoices = invoiceFilter === "all"
-    ? allInvoices
-    : allInvoices.filter(i => i.status === invoiceFilter);
+  // ── Client-side filtering ──────────────────────────────────────────────────
+  const statusMatcher = STATUS_FILTERS.find(f => f.key === statusFilter)?.match || (() => true);
+  const filtered = allRows
+    .filter(statusMatcher)
+    .filter(r => cycleFilter === "all" || r.billingCycle === cycleFilter)
+    .filter(r => {
+      if (!search.trim()) return true;
+      const q = search.toLowerCase();
+      return r.studentName.toLowerCase().includes(q) || r.parentName.toLowerCase().includes(q);
+    });
 
-  const totalCollected = allPayments
-    .filter(p => p.status === "paid" || p.status === "completed")
-    .reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
-  const paidCount    = allInvoices.filter(i => i.status === "paid").length;
-  const pendingCount = allInvoices.filter(i => i.status === "pending").length;
-  const pastDueCount = allInvoices.filter(i => i.status === "past_due").length;
+  // ── Stats ──────────────────────────────────────────────────────────────────
+  const totalCollected = allRows.reduce((s, r) => s + parseFloat(r.totalPaid || 0), 0);
+  const activeCount  = allRows.filter(r => ["active","active_override"].includes(r.enrollmentStatus)).length;
+  const pendingCount = allRows.filter(r => ["pending_payment","pending"].includes(r.enrollmentStatus)).length;
+  const pastDueCount = allRows.filter(r => r.enrollmentStatus === "payment_failed").length;
+
+  const handleRefresh = () => { refetchAccounting(); refetchPayments(); };
+  const toggleRow = (id) => setExpandedRow(prev => prev === id ? null : id);
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
+
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-3xl font-bold text-[#1a3c5e]">Payments & Billing</h1>
-          <p className="text-slate-500 text-sm mt-0.5">All invoice and payment records across the platform</p>
+          <p className="text-slate-500 text-sm mt-0.5">Accounting records across all enrollments</p>
         </div>
-        <Button variant="outline" size="sm" className="gap-2"
-          onClick={() => { refetchInvoices(); refetchPayments(); }} disabled={isLoading}>
+        <Button variant="outline" size="sm" className="gap-2" onClick={handleRefresh} disabled={isLoading}>
           {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
           Refresh
         </Button>
       </div>
 
-      {/* Stats */}
+      {/* Stats bar */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
-          <p className="text-2xl font-bold text-green-700">
-            ${totalCollected.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
-          </p>
+          <p className="text-2xl font-bold text-green-700">{fmtMoney(totalCollected)}</p>
           <p className="text-xs text-slate-500 mt-0.5">Total Collected</p>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
-          <p className="text-2xl font-bold text-[#1a3c5e]">{paidCount}</p>
-          <p className="text-xs text-slate-500 mt-0.5">Paid Invoices</p>
+          <p className="text-2xl font-bold text-[#1a3c5e]">{activeCount}</p>
+          <p className="text-xs text-slate-500 mt-0.5">Active</p>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
           <p className="text-2xl font-bold text-yellow-600">{pendingCount}</p>
@@ -116,8 +233,8 @@ export default function AdminBilling() {
       {/* Tab bar */}
       <div className="flex gap-0 border-b border-slate-200">
         {[
-          { key: "invoices",  label: "Invoices",         icon: Receipt },
-          { key: "payments",  label: "Payment Records",  icon: CreditCard },
+          { key: "accounting",   label: "Accounting",      icon: BookOpen },
+          { key: "transactions", label: "Transaction Log",  icon: CreditCard },
         ].map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setTab(key)}
             className={`flex items-center gap-2 px-5 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
@@ -131,35 +248,63 @@ export default function AdminBilling() {
         ))}
       </div>
 
-      {/* ── Invoices tab ─────────────────────────────────────────────────────── */}
-      {tab === "invoices" && (
+      {/* ── Accounting tab ────────────────────────────────────────────────────── */}
+      {tab === "accounting" && (
         <div className="space-y-4">
-          <div className="flex gap-1.5 flex-wrap">
-            {INVOICE_FILTERS.map(f => (
-              <button key={f.key} onClick={() => setInvoiceFilter(f.key)}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                  invoiceFilter === f.key
-                    ? "bg-[#1a3c5e] text-white border-[#1a3c5e]"
-                    : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
-                }`}
-              >
-                {f.label}
-                {f.key !== "all" && (
-                  <span className="ml-1 opacity-60">
-                    ({allInvoices.filter(i => i.status === f.key).length})
-                  </span>
-                )}
-              </button>
-            ))}
+
+          {/* Filter bar */}
+          <div className="flex flex-wrap gap-3 items-center">
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Student or parent name…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-full bg-white focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/20 focus:border-[#1a3c5e] w-48"
+              />
+            </div>
+            {/* Status pills */}
+            <div className="flex gap-1.5 flex-wrap">
+              {STATUS_FILTERS.map(f => (
+                <button key={f.key} onClick={() => setStatusFilter(f.key)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                    statusFilter === f.key
+                      ? "bg-[#1a3c5e] text-white border-[#1a3c5e]"
+                      : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            {/* Cycle pills */}
+            <div className="flex gap-1.5 flex-wrap ml-auto">
+              {CYCLE_FILTERS.map(f => (
+                <button key={f.key} onClick={() => setCycleFilter(f.key)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                    cycleFilter === f.key
+                      ? "bg-slate-800 text-white border-slate-800"
+                      : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          {invoicesLoading ? (
+          {/* Table */}
+          {accountingLoading ? (
             <div className="flex justify-center py-10">
               <div className="w-5 h-5 border-4 border-slate-200 border-t-[#1a3c5e] rounded-full animate-spin" />
             </div>
-          ) : filteredInvoices.length === 0 ? (
+          ) : filtered.length === 0 ? (
             <Card>
-              <CardContent className="py-10 text-center text-sm text-slate-400">No invoices found.</CardContent>
+              <CardContent className="py-10 text-center text-sm text-slate-400">
+                {allRows.length === 0 ? "No enrollments on record yet." : "No records match the current filters."}
+              </CardContent>
             </Card>
           ) : (
             <Card>
@@ -167,52 +312,71 @@ export default function AdminBilling() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-100 text-xs text-slate-400 uppercase tracking-wide">
-                      <th className="text-left px-5 py-3 font-semibold">Program / Student</th>
-                      <th className="text-left px-5 py-3 font-semibold">Description</th>
-                      <th className="text-right px-5 py-3 font-semibold">Amount</th>
-                      <th className="text-left px-5 py-3 font-semibold">Status</th>
-                      <th className="text-left px-5 py-3 font-semibold">Due</th>
-                      <th className="text-left px-5 py-3 font-semibold">Paid</th>
+                      <th className="w-8 px-3 py-3" />
+                      <th className="text-left px-4 py-3 font-semibold">Student</th>
+                      <th className="text-left px-4 py-3 font-semibold">Parent</th>
+                      <th className="text-left px-4 py-3 font-semibold">Program</th>
+                      <th className="text-left px-4 py-3 font-semibold">Status</th>
+                      <th className="text-right px-4 py-3 font-semibold">Total Paid</th>
+                      <th className="text-right px-4 py-3 font-semibold">Owed</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {filteredInvoices.map(inv => {
-                      const sc = INVOICE_STATUS[inv.status] || INVOICE_STATUS.pending;
-                      const student = [inv.studentFirstName, inv.studentLastName].filter(Boolean).join(" ");
+                  <tbody>
+                    {filtered.map(row => {
+                      const sc = ENROLLMENT_STATUS[row.enrollmentStatus] || ENROLLMENT_STATUS.pending;
+                      const cb = CYCLE_BADGE[row.billingCycle] || CYCLE_BADGE.one_time;
+                      const isExpanded = expandedRow === row.enrollmentId;
+                      const owed = parseFloat(row.totalOwed || 0);
                       return (
-                        <tr key={inv.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-5 py-3">
-                            <p className="font-medium text-slate-800">{inv.programName || "—"}</p>
-                            {student && <p className="text-xs text-slate-400 mt-0.5">{student}</p>}
-                          </td>
-                          <td className="px-5 py-3 text-slate-500 max-w-[180px] truncate">{inv.description || "—"}</td>
-                          <td className="px-5 py-3 text-right font-semibold text-slate-800">
-                            ${parseFloat(inv.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </td>
-                          <td className="px-5 py-3">
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${sc.color}`}>
-                              {sc.label}
-                            </span>
-                          </td>
-                          <td className="px-5 py-3 text-xs text-slate-500">{fmtDate(inv.dueDate)}</td>
-                          <td className="px-5 py-3 text-xs">
-                            {inv.paidDate
-                              ? <span className="text-green-600 font-medium">{fmtDate(inv.paidDate)}</span>
-                              : <span className="text-slate-400">—</span>}
-                          </td>
-                        </tr>
+                        <>
+                          <tr
+                            key={row.enrollmentId}
+                            onClick={() => toggleRow(row.enrollmentId)}
+                            className="border-b border-slate-100 hover:bg-slate-50 cursor-pointer transition-colors"
+                          >
+                            <td className="px-3 py-3 text-slate-400">
+                              {isExpanded
+                                ? <ChevronDown className="w-4 h-4" />
+                                : <ChevronRight className="w-4 h-4" />}
+                            </td>
+                            <td className="px-4 py-3 font-medium text-slate-800">{row.studentName}</td>
+                            <td className="px-4 py-3 text-slate-600">{row.parentName}</td>
+                            <td className="px-4 py-3">
+                              <p className="text-slate-800 font-medium leading-tight">{row.programName}</p>
+                              <span className={`text-xs px-1.5 py-0.5 rounded font-medium mt-0.5 inline-block ${cb.color}`}>
+                                {cb.label}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${sc.color}`}>
+                                {sc.label}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-right font-semibold text-green-700">
+                              {fmtMoney(row.totalPaid)}
+                            </td>
+                            <td className={`px-4 py-3 text-right font-semibold ${owed > 0 ? "text-red-600" : "text-slate-400"}`}>
+                              {owed > 0 ? fmtMoney(owed) : "—"}
+                            </td>
+                          </tr>
+                          {isExpanded && <RowDetail key={`detail-${row.enrollmentId}`} row={row} />}
+                        </>
                       );
                     })}
                   </tbody>
                 </table>
+              </div>
+              <div className="px-5 py-3 border-t border-slate-100 text-xs text-slate-400">
+                {filtered.length} enrollment{filtered.length !== 1 ? "s" : ""}
+                {filtered.length !== allRows.length && ` (filtered from ${allRows.length})`}
               </div>
             </Card>
           )}
         </div>
       )}
 
-      {/* ── Payments tab ─────────────────────────────────────────────────────── */}
-      {tab === "payments" && (
+      {/* ── Transaction Log tab ──────────────────────────────────────────────── */}
+      {tab === "transactions" && (
         <div className="space-y-4">
           {paymentsLoading ? (
             <div className="flex justify-center py-10">
@@ -220,7 +384,7 @@ export default function AdminBilling() {
             </div>
           ) : allPayments.length === 0 ? (
             <Card>
-              <CardContent className="py-10 text-center text-sm text-slate-400">No payment records found.</CardContent>
+              <CardContent className="py-10 text-center text-sm text-slate-400">No payment transactions on record.</CardContent>
             </Card>
           ) : (
             <Card>
@@ -240,9 +404,6 @@ export default function AdminBilling() {
                     {allPayments.map(p => {
                       const sc = PAYMENT_STATUS[p.status] || PAYMENT_STATUS.pending;
                       const parent = [p.parentFirstName, p.parentLastName].filter(Boolean).join(" ");
-                      const stripeRef = p.stripePaymentIntentId
-                        ? `…${p.stripePaymentIntentId.slice(-14)}`
-                        : null;
                       return (
                         <tr key={p.id} className="hover:bg-slate-50 transition-colors">
                           <td className="px-5 py-3">
@@ -251,26 +412,25 @@ export default function AdminBilling() {
                                   {p.parentEmail && <p className="text-xs text-slate-400">{p.parentEmail}</p>}</>
                               : <span className="text-slate-400 text-xs">—</span>}
                           </td>
-                          <td className="px-5 py-3 text-right font-semibold text-slate-800">
-                            ${parseFloat(p.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </td>
+                          <td className="px-5 py-3 text-right font-semibold text-slate-800">{fmtMoney(p.amount)}</td>
                           <td className="px-5 py-3">
                             <span className="capitalize text-xs px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full font-medium">
                               {p.method || "—"}
                             </span>
                           </td>
-                          <td className="px-5 py-3">
-                            <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${sc.color}`}>
-                              {sc.label}
-                            </span>
-                          </td>
+                          <td className={`px-5 py-3 font-semibold text-sm ${sc.color}`}>{sc.label}</td>
                           <td className="px-5 py-3 text-xs text-slate-500">{fmtDateTime(p.processedAt || p.createdAt)}</td>
-                          <td className="px-5 py-3 text-xs font-mono text-slate-400">{stripeRef || "—"}</td>
+                          <td className="px-5 py-3 text-xs font-mono text-slate-400">
+                            {p.stripePaymentIntentId ? `…${p.stripePaymentIntentId.slice(-14)}` : "—"}
+                          </td>
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
+              </div>
+              <div className="px-5 py-3 border-t border-slate-100 text-xs text-slate-400">
+                {allPayments.length} transaction{allPayments.length !== 1 ? "s" : ""}
               </div>
             </Card>
           )}
