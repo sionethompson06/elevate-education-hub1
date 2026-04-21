@@ -28,9 +28,10 @@ export default function Enrollments() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [selected, setSelected] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
-  const [createForm, setCreateForm] = useState({ studentId: "", programId: "" });
+  const [createForm, setCreateForm] = useState({ studentId: "", programIds: [] });
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState(null);
+  const [createResult, setCreateResult] = useState(null);
   const qc = useQueryClient();
 
   const { data: allEnrollments = [], isLoading } = useQuery({
@@ -56,23 +57,42 @@ export default function Enrollments() {
       ? allEnrollments.filter(e => e.status === "pending_payment" || e.status === "pending")
       : allEnrollments.filter(e => e.status === statusFilter);
 
+  const toggleProgram = (id) => {
+    setCreateForm(f => ({
+      ...f,
+      programIds: f.programIds.includes(id)
+        ? f.programIds.filter(p => p !== id)
+        : [...f.programIds, id],
+    }));
+  };
+
   const handleCreate = async () => {
-    if (!createForm.studentId || !createForm.programId) return;
+    if (!createForm.studentId || createForm.programIds.length === 0) return;
     setCreating(true);
     setCreateError(null);
-    try {
-      await apiPost("/enrollments", {
-        studentId: parseInt(createForm.studentId),
-        programId: parseInt(createForm.programId),
-      });
-      qc.invalidateQueries({ queryKey: ["admin-enrollments"] });
-      setShowCreate(false);
-      setCreateForm({ studentId: "", programId: "" });
-    } catch (err) {
-      setCreateError(err.message || "Failed to create enrollment.");
-    } finally {
-      setCreating(false);
+    setCreateResult(null);
+    let created = 0, skipped = 0;
+    for (const programId of createForm.programIds) {
+      try {
+        await apiPost("/enrollments", {
+          studentId: parseInt(createForm.studentId),
+          programId: parseInt(programId),
+        });
+        created++;
+      } catch (err) {
+        if (err.message?.toLowerCase().includes("already enrolled")) skipped++;
+        else setCreateError(err.message || "Failed to create enrollment.");
+      }
     }
+    qc.invalidateQueries({ queryKey: ["admin-enrollments"] });
+    if (created > 0 && skipped === 0) {
+      setShowCreate(false);
+      setCreateForm({ studentId: "", programIds: [] });
+    } else {
+      setCreateResult(`${created} enrollment${created !== 1 ? "s" : ""} created${skipped > 0 ? `, ${skipped} already existed` : ""}.`);
+      if (created > 0) setCreateForm(f => ({ ...f, programIds: [] }));
+    }
+    setCreating(false);
   };
 
   return (
@@ -205,29 +225,50 @@ export default function Enrollments() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Program *</label>
-              <select
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
-                value={createForm.programId}
-                onChange={e => setCreateForm(f => ({ ...f, programId: e.target.value }))}
-              >
-                <option value="">Select program...</option>
-                {programsData.filter(p => p.status === "active").map(p => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Programs * <span className="text-xs text-slate-400 font-normal">(select one or more)</span>
+              </label>
+              <div className="border border-slate-200 rounded-lg divide-y max-h-48 overflow-y-auto">
+                {programsData.filter(p => p.status === "active").length === 0 ? (
+                  <p className="text-xs text-slate-400 px-3 py-2">No active programs available.</p>
+                ) : (
+                  programsData.filter(p => p.status === "active").map(p => (
+                    <label key={p.id} className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-slate-50">
+                      <input
+                        type="checkbox"
+                        checked={createForm.programIds.includes(String(p.id))}
+                        onChange={() => toggleProgram(String(p.id))}
+                        className="rounded border-slate-300 text-[#1a3c5e] focus:ring-[#1a3c5e]"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-800">{p.name}</p>
+                        <p className="text-xs text-slate-400">${parseFloat(p.tuitionAmount || 0).toLocaleString()}/{p.billingCycle?.replace(/_/g, " ") || "mo"}</p>
+                      </div>
+                    </label>
+                  ))
+                )}
+              </div>
+              {createForm.programIds.length > 0 && (
+                <p className="text-xs text-slate-500 mt-1">{createForm.programIds.length} program{createForm.programIds.length !== 1 ? "s" : ""} selected</p>
+              )}
             </div>
             {createError && (
               <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{createError}</p>
             )}
+            {createResult && (
+              <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">{createResult}</p>
+            )}
             <div className="flex gap-2 pt-2">
-              <button onClick={() => { setShowCreate(false); setCreateError(null); }} className="flex-1 py-2 rounded-lg border border-slate-200 text-sm text-slate-600 hover:bg-slate-50">Cancel</button>
+              <button
+                onClick={() => { setShowCreate(false); setCreateError(null); setCreateResult(null); setCreateForm({ studentId: "", programIds: [] }); }}
+                className="flex-1 py-2 rounded-lg border border-slate-200 text-sm text-slate-600 hover:bg-slate-50"
+              >Cancel</button>
               <Button
                 onClick={handleCreate}
-                disabled={creating || !createForm.studentId || !createForm.programId}
+                disabled={creating || !createForm.studentId || createForm.programIds.length === 0}
                 className="flex-1 bg-[#1a3c5e] hover:bg-[#0d2540]"
               >
-                {creating ? "Creating..." : "Create Enrollment"}
+                {creating ? "Creating..." : `Enroll in ${createForm.programIds.length || 0} Program${createForm.programIds.length !== 1 ? "s" : ""}`}
               </Button>
             </div>
           </div>

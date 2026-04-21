@@ -65,6 +65,7 @@ router.get('/my-students', requireAuth, async (req, res) => {
         enr.invoiceDueDate = inv?.dueDate || null;
         enr.invoicePaidDate = inv?.paidDate || null;
         enr.invoiceDescription = inv?.description || null;
+        enr.invoiceDiscountPercent = inv?.discountPercent ?? null;
       }
     }
 
@@ -172,6 +173,7 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
         invoiceDueDate: invoiceMap[e.id]?.dueDate || null,
         invoicePaidDate: invoiceMap[e.id]?.paidDate || null,
         invoiceDescription: invoiceMap[e.id]?.description || null,
+        invoiceDiscountPercent: invoiceMap[e.id]?.discountPercent ?? null,
       };
     });
 
@@ -332,6 +334,7 @@ router.get('/:id', requireAuth, async (req, res) => {
         invoiceDueDate: invoice?.dueDate || null,
         invoicePaidDate: invoice?.paidDate || null,
         invoiceDescription: invoice?.description || null,
+        invoiceDiscountPercent: invoice?.discountPercent ?? null,
       },
     });
   } catch (err) {
@@ -393,7 +396,7 @@ router.patch('/:id/invoice', requireAuth, requireRole('admin'), async (req, res)
     const enrollmentId = parseInt(req.params.id);
     if (isNaN(enrollmentId)) return res.status(400).json({ success: false, error: 'Invalid enrollment ID' });
 
-    const { description, amount, dueDate, paidDate } = req.body;
+    const { description, amount, dueDate, paidDate, discountPercent } = req.body;
 
     let [invoice] = await db.select().from(invoices)
       .where(eq(invoices.enrollmentId, enrollmentId))
@@ -436,9 +439,20 @@ router.patch('/:id/invoice', requireAuth, requireRole('admin'), async (req, res)
 
     const updateData = {};
     if (description !== undefined) updateData.description = description;
-    if (amount !== undefined) updateData.amount = String(amount);
     if (dueDate !== undefined) updateData.dueDate = dueDate || null;
     if (paidDate !== undefined) updateData.paidDate = paidDate || null;
+
+    // Apply discount: compute final amount from base and discount percent
+    let finalAmount = amount !== undefined ? parseFloat(amount) : undefined;
+    if (discountPercent != null && parseFloat(discountPercent) >= 0) {
+      const pct = parseFloat(discountPercent);
+      const base = finalAmount ?? parseFloat(invoice?.amount ?? 0);
+      finalAmount = Math.round(base * (1 - pct / 100) * 100) / 100;
+      updateData.discountPercent = String(pct);
+    } else if (discountPercent === null) {
+      updateData.discountPercent = null;
+    }
+    if (finalAmount !== undefined) updateData.amount = String(finalAmount);
 
     if (Object.keys(updateData).length === 0) {
       return res.status(200).json({ success: true, invoice });

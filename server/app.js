@@ -139,12 +139,40 @@ async function ensureEnrollmentBillingCycleColumn() {
   }
 }
 
+async function ensureInvoiceDiscountColumn() {
+  try {
+    await rawSql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS discount_percent NUMERIC(5,2)`;
+    console.log('[migration] invoices discount_percent column ready');
+  } catch (err) {
+    console.error('[migration] ensureInvoiceDiscountColumn error:', err.message);
+  }
+}
+
+async function seedProgramTuitions() {
+  try {
+    await rawSql`UPDATE programs SET tuition_amount = 750, billing_cycle = 'monthly',
+      metadata = jsonb_set(COALESCE(metadata, '{}'), '{prices}', '{"monthly":750,"one_time":7500}')
+      WHERE name ILIKE '%hybrid%'`;
+    await rawSql`UPDATE programs SET tuition_amount = 199, billing_cycle = 'monthly'
+      WHERE name ILIKE '%1-day%' OR name ILIKE '%1 day%' OR name ILIKE '%virtual school 1%'`;
+    await rawSql`UPDATE programs SET tuition_amount = 299, billing_cycle = 'monthly'
+      WHERE name ILIKE '%2-day%' OR name ILIKE '%2 day%' OR name ILIKE '%virtual school 2%'`;
+    await rawSql`UPDATE programs SET tuition_amount = 500, billing_cycle = 'monthly'
+      WHERE name ILIKE '%performance training%'`;
+    console.log('[seed] Program tuitions updated');
+  } catch (err) {
+    console.error('[seed] seedProgramTuitions error:', err.message);
+  }
+}
+
 normalizeEnrollmentStatuses();
 ensureOverridesTable();
 ensureSubmissionContentColumn();
 ensureMedicalInfoTable();
 ensureMessageColumns();
 ensureEnrollmentBillingCycleColumn();
+ensureInvoiceDiscountColumn();
+seedProgramTuitions();
 seedDemoUsers();
 import applicationsRouter from './routes/applications.js';
 import authRouter from './routes/auth.js';

@@ -170,6 +170,7 @@ export const invoices = pgTable('invoices', {
   dueDate: date('due_date'),
   paidDate: date('paid_date'),
   stripePaymentId: varchar('stripe_payment_id', { length: 255 }),
+  discountPercent: numeric('discount_percent', { precision: 5, scale: 2 }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
