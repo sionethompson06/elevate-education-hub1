@@ -582,7 +582,7 @@ router.post('/:id/override', requireAuth, requireRole('admin'), async (req, res)
           .where(eq(invoices.id, linkedInvoice.id));
       } else {
         await db.update(invoices)
-          .set({ amount: String(amountDueNowCents / 100) })
+          .set({ amount: String(amountDueNowCents / 100), status: 'pending' })
           .where(eq(invoices.id, linkedInvoice.id));
       }
     }

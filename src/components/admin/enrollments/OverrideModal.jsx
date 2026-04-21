@@ -13,20 +13,28 @@ const OVERRIDE_TYPES = [
 ];
 
 export default function OverrideModal({ enrollment, onClose, onSuccess }) {
+  const originalCents = Math.round(parseFloat(enrollment.invoiceAmount || 0) * 100);
+
   const [form, setForm] = useState({
-    overrideType:         "scholarship",
-    reason:               "",
-    amountWaivedCents:    0,
-    amountDeferredCents:  0,
-    amountDueNowCents:    0,
-    effectiveStartAt:     new Date().toISOString().split("T")[0],
-    effectiveEndAt:       "",
-    notes:                "",
+    overrideType:        "scholarship",
+    reason:              "",
+    amountWaivedCents:   0,
+    amountDeferredCents: 0,
+    effectiveStartAt:    new Date().toISOString().split("T")[0],
+    effectiveEndAt:      "",
+    notes:               "",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
   const update = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  // Computed — never stored in form state
+  const waivedCents   = Math.round(Number(form.amountWaivedCents   || 0) * 100);
+  const deferredCents = Math.round(Number(form.amountDeferredCents || 0) * 100);
+  const dueNowCents   = Math.max(0, originalCents - waivedCents - deferredCents);
+
+  const fmt = (cents) => `$${(cents / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -37,9 +45,9 @@ export default function OverrideModal({ enrollment, onClose, onSuccess }) {
       await apiPost(`/enrollments/${enrollment.id}/override`, {
         overrideType:        form.overrideType,
         reason:              form.reason.trim(),
-        amountWaivedCents:   Math.round(Number(form.amountWaivedCents) * 100),
-        amountDeferredCents: Math.round(Number(form.amountDeferredCents) * 100),
-        amountDueNowCents:   Math.round(Number(form.amountDueNowCents) * 100),
+        amountWaivedCents:   waivedCents,
+        amountDeferredCents: deferredCents,
+        amountDueNowCents:   dueNowCents,
         effectiveStartAt:    form.effectiveStartAt || null,
         effectiveEndAt:      form.effectiveEndAt || null,
         notes:               form.notes || null,
@@ -72,6 +80,9 @@ export default function OverrideModal({ enrollment, onClose, onSuccess }) {
           <div className="bg-slate-50 rounded-xl px-4 py-3 text-sm">
             <p className="font-semibold text-slate-800">{programLabel}</p>
             {studentLabel && <p className="text-slate-500 text-xs mt-0.5">Student: {studentLabel}</p>}
+            <p className="text-xs text-slate-500 mt-1">
+              Original invoice amount: <span className="font-semibold text-slate-700">{fmt(originalCents)}</span>
+            </p>
             <p className="text-xs text-yellow-700 mt-1 font-medium">
               Enrollment will be set to <span className="font-bold">Active (Override)</span> immediately.
             </p>
@@ -86,11 +97,6 @@ export default function OverrideModal({ enrollment, onClose, onSuccess }) {
             >
               {OVERRIDE_TYPES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
-            {["comped", "scholarship"].includes(form.overrideType) && (
-              <p className="text-xs text-green-600 mt-1">
-                Invoice will be marked as waived for this override type.
-              </p>
-            )}
           </div>
 
           <div>
@@ -104,24 +110,39 @@ export default function OverrideModal({ enrollment, onClose, onSuccess }) {
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { key: "amountWaivedCents",   label: "Amount Waived ($)" },
-              { key: "amountDeferredCents", label: "Amount Deferred ($)" },
-              { key: "amountDueNowCents",   label: "Due Now ($)" },
-            ].map(({ key, label }) => (
-              <div key={key}>
-                <label className="block text-xs font-medium text-slate-700 mb-1">{label}</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30"
-                  value={form[key]}
-                  onChange={e => update(key, e.target.value)}
-                />
+          {/* Amount breakdown — Due Now is auto-calculated */}
+          <div>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              {[
+                { key: "amountWaivedCents",   label: "Amount Waived ($)" },
+                { key: "amountDeferredCents", label: "Amount Deferred ($)" },
+              ].map(({ key, label }) => (
+                <div key={key}>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">{label}</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30"
+                    value={form[key]}
+                    onChange={e => update(key, e.target.value)}
+                  />
+                </div>
+              ))}
+            </div>
+
+            {/* Auto-calculated summary */}
+            <div className="bg-purple-50 border border-purple-200 rounded-xl px-4 py-3 flex items-center justify-between">
+              <div className="text-xs text-purple-700 space-y-0.5">
+                <p>{fmt(originalCents)} original − {fmt(waivedCents)} waived − {fmt(deferredCents)} deferred</p>
               </div>
-            ))}
+              <div className="text-right">
+                <p className="text-xs text-purple-600 font-medium">Due Now (auto)</p>
+                <p className={`text-lg font-bold ${dueNowCents === 0 ? "text-green-700" : "text-purple-800"}`}>
+                  {fmt(dueNowCents)}
+                </p>
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
