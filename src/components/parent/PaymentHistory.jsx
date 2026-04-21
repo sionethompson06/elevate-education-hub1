@@ -8,6 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 const STATUS_CONFIG = {
   paid:     { icon: CheckCircle, color: "text-green-600",  bg: "bg-green-50",  label: "Paid" },
   pending:  { icon: Clock,       color: "text-yellow-500", bg: "bg-yellow-50", label: "Pending" },
+  past_due: { icon: XCircle,     color: "text-red-600",    bg: "bg-red-50",    label: "Past Due" },
+  waived:   { icon: CheckCircle, color: "text-slate-500",  bg: "bg-slate-50",  label: "Waived" },
   failed:   { icon: XCircle,     color: "text-red-500",    bg: "bg-red-50",    label: "Failed" },
   refunded: { icon: XCircle,     color: "text-slate-500",  bg: "bg-slate-50",  label: "Refunded" },
 };
