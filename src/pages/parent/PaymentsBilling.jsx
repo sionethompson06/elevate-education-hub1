@@ -105,7 +105,9 @@ export default function PaymentsBilling() {
   const annualSpend = activeEnrollments.reduce((sum, e) => {
     const cycle = e.billingCycleOverride || e.programBillingCycle;
     const amount = e.invoiceAmount != null ? parseFloat(e.invoiceAmount) : (parseFloat(e.programTuition) || 0);
-    return sum + (cycle === "annual" ? amount : amount * 12);
+    if (cycle === "annual") return sum + amount;
+    if (cycle === "monthly") return sum + amount * 12;
+    return sum; // one_time: exclude from annual projection
   }, 0);
 
   return (

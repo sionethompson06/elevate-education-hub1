@@ -4,7 +4,7 @@ import db from '../db-postgres.js';
 import { enrollments, users, programs, billingAccounts, payments, invoices, students } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import {
-  getOrCreateCustomer, createCheckoutSession, createPortalSession, constructWebhookEvent
+  getStripe, getOrCreateCustomer, createCheckoutSession, createPortalSession, constructWebhookEvent
 } from '../services/stripe.service.js';
 import { sendPaymentConfirmationEmail, sendPaymentFailedEmail } from '../services/email.service.js';
 
@@ -18,6 +18,11 @@ router.post('/checkout', requireAuth, requireRole('parent', 'admin'), async (req
 
     const [enrollment] = await db.select().from(enrollments).where(eq(enrollments.id, Number(enrollment_id)));
     if (!enrollment) return res.status(404).json({ error: 'Enrollment not found' });
+
+    // Block duplicate payments for already-active enrollments
+    if (['active', 'active_override'].includes(enrollment.status)) {
+      return res.status(400).json({ error: 'Enrollment is already active and paid.' });
+    }
 
     // Verify parent owns this enrollment (skip for admin)
     if (req.user.role === 'parent') {
@@ -117,26 +122,23 @@ export async function stripeWebhookHandler(req, res) {
   }
 
   try {
+    // ── Initial payment: one-time or first subscription charge ─────────────
     if (event.type === 'checkout.session.completed') {
       const session = event.data.object;
       const enrollmentId = session.metadata?.enrollment_id;
       const parentUserId = session.metadata?.parent_user_id;
 
       if (enrollmentId) {
-        // Activate enrollment
         await db.update(enrollments).set({ status: 'active' })
           .where(eq(enrollments.id, Number(enrollmentId)));
 
-        // Fetch enrollment to get studentId
         const [enrollment] = await db.select().from(enrollments).where(eq(enrollments.id, Number(enrollmentId)));
 
-        // Update student status to active
         if (enrollment?.studentId) {
           await db.update(students).set({ status: 'active' })
             .where(eq(students.id, enrollment.studentId));
         }
 
-        // Fetch billing account for payment record + invoice update
         let billingAccountId = null;
         if (parentUserId) {
           const [billingAccount] = await db.select().from(billingAccounts)
@@ -144,31 +146,34 @@ export async function stripeWebhookHandler(req, res) {
           billingAccountId = billingAccount?.id ?? null;
         }
 
-        // Find invoice linked to this enrollment and mark it paid
         let invoiceId = null;
         const [linkedInvoice] = await db.select().from(invoices)
-          .where(eq(invoices.enrollmentId, Number(enrollmentId)));
+          .where(eq(invoices.enrollmentId, Number(enrollmentId)))
+          .orderBy(desc(invoices.createdAt))
+          .limit(1);
         if (linkedInvoice) {
           invoiceId = linkedInvoice.id;
           await db.update(invoices)
-            .set({ status: 'paid', paidDate: new Date().toISOString().split('T')[0], stripePaymentId: session.payment_intent || session.id })
+            .set({
+              status: 'paid',
+              paidDate: new Date().toISOString().split('T')[0],
+              stripePaymentId: session.payment_intent || session.subscription || session.id,
+            })
             .where(eq(invoices.id, linkedInvoice.id));
         }
 
-        // Insert payment record linked to billing account + invoice
         if (billingAccountId) {
           await db.insert(payments).values({
             billingAccountId,
             invoiceId,
             amount: String(session.amount_total / 100),
             method: 'stripe',
-            stripePaymentIntentId: session.payment_intent || session.subscription || session.id,
+            stripePaymentIntentId: String(session.payment_intent || session.subscription || session.id),
             status: 'paid',
             processedAt: new Date(),
           }).catch(err => console.error('[webhook] payment record error:', err));
         }
 
-        // Notify parent via email
         if (parentUserId && enrollment) {
           const [prog] = enrollment.programId
             ? await db.select().from(programs).where(eq(programs.id, enrollment.programId))
@@ -180,19 +185,132 @@ export async function stripeWebhookHandler(req, res) {
               `${parentUser.firstName} ${parentUser.lastName}`,
               session.amount_total,
               prog?.name || 'your program'
-            );
+            ).catch(err => console.error('[webhook] confirmation email error:', err));
           }
         }
-        console.log(`[stripe] Enrollment ${enrollmentId} activated, invoice marked paid, student activated`);
+        console.log(`[stripe] Enrollment ${enrollmentId} activated, invoice paid, student activated`);
       }
     }
 
+    // ── Recurring subscription charge succeeded ─────────────────────────────
+    if (event.type === 'invoice.payment_succeeded') {
+      const stripeInvoice = event.data.object;
+      const subscriptionId = stripeInvoice.subscription;
+      // Skip first payment — already handled by checkout.session.completed
+      if (subscriptionId && stripeInvoice.billing_reason !== 'subscription_create') {
+        const stripe = getStripe();
+        const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+        const enrollmentId = subscription.metadata?.enrollment_id;
+        const parentUserId = subscription.metadata?.parent_user_id;
+
+        if (enrollmentId) {
+          let billingAccountId = null;
+          if (parentUserId) {
+            const [billingAccount] = await db.select().from(billingAccounts)
+              .where(eq(billingAccounts.parentUserId, Number(parentUserId)));
+            billingAccountId = billingAccount?.id ?? null;
+          }
+
+          const [linkedInvoice] = await db.select().from(invoices)
+            .where(eq(invoices.enrollmentId, Number(enrollmentId)))
+            .orderBy(desc(invoices.createdAt))
+            .limit(1);
+
+          // Update invoice to reflect latest payment date
+          if (linkedInvoice) {
+            await db.update(invoices)
+              .set({
+                status: 'paid',
+                paidDate: new Date().toISOString().split('T')[0],
+                stripePaymentId: String(stripeInvoice.payment_intent || subscriptionId),
+              })
+              .where(eq(invoices.id, linkedInvoice.id));
+          }
+
+          // Create a payment record for this recurring charge
+          if (billingAccountId) {
+            await db.insert(payments).values({
+              billingAccountId,
+              invoiceId: linkedInvoice?.id || null,
+              amount: String(stripeInvoice.amount_paid / 100),
+              method: 'stripe',
+              stripePaymentIntentId: String(stripeInvoice.payment_intent || subscriptionId),
+              status: 'paid',
+              processedAt: new Date(),
+            }).catch(err => console.error('[webhook] recurring payment record error:', err));
+          }
+
+          // Send renewal confirmation email
+          if (parentUserId) {
+            const [parentUser] = await db.select().from(users).where(eq(users.id, Number(parentUserId)));
+            const [enrollment] = await db.select().from(enrollments).where(eq(enrollments.id, Number(enrollmentId)));
+            if (parentUser && enrollment) {
+              const [prog] = enrollment.programId
+                ? await db.select().from(programs).where(eq(programs.id, enrollment.programId))
+                : [null];
+              await sendPaymentConfirmationEmail(
+                parentUser.email,
+                `${parentUser.firstName} ${parentUser.lastName}`,
+                stripeInvoice.amount_paid,
+                prog?.name || 'your program'
+              ).catch(err => console.error('[webhook] renewal email error:', err));
+            }
+          }
+          console.log(`[stripe] Recurring payment recorded for enrollment ${enrollmentId}`);
+        }
+      }
+    }
+
+    // ── Subscription payment failed ─────────────────────────────────────────
     if (event.type === 'invoice.payment_failed') {
-      const invoice = event.data.object;
-      const subscriptionId = invoice.subscription;
+      const stripeInvoice = event.data.object;
+      const subscriptionId = stripeInvoice.subscription;
       if (subscriptionId) {
-        // Find enrollment with this subscription and mark payment_failed
-        console.log(`[stripe] Payment failed for subscription ${subscriptionId}`);
+        const stripe = getStripe();
+        const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+        const enrollmentId = subscription.metadata?.enrollment_id;
+        const parentUserId = subscription.metadata?.parent_user_id;
+
+        if (enrollmentId) {
+          await db.update(enrollments).set({ status: 'payment_failed' })
+            .where(eq(enrollments.id, Number(enrollmentId)));
+
+          const [linkedInvoice] = await db.select().from(invoices)
+            .where(eq(invoices.enrollmentId, Number(enrollmentId)))
+            .orderBy(desc(invoices.createdAt))
+            .limit(1);
+          if (linkedInvoice) {
+            await db.update(invoices).set({ status: 'past_due' })
+              .where(eq(invoices.id, linkedInvoice.id));
+          }
+
+          if (parentUserId) {
+            const [parentUser] = await db.select().from(users).where(eq(users.id, Number(parentUserId)));
+            const [enrollment] = await db.select().from(enrollments).where(eq(enrollments.id, Number(enrollmentId)));
+            if (parentUser && enrollment) {
+              const [prog] = enrollment.programId
+                ? await db.select().from(programs).where(eq(programs.id, enrollment.programId))
+                : [null];
+              await sendPaymentFailedEmail(
+                parentUser.email,
+                `${parentUser.firstName} ${parentUser.lastName}`,
+                prog?.name || 'your program'
+              ).catch(err => console.error('[webhook] failure email error:', err));
+            }
+          }
+          console.log(`[stripe] Payment failed, enrollment ${enrollmentId} marked payment_failed`);
+        }
+      }
+    }
+
+    // ── Subscription cancelled (non-payment or admin action in Stripe) ──────
+    if (event.type === 'customer.subscription.deleted') {
+      const subscription = event.data.object;
+      const enrollmentId = subscription.metadata?.enrollment_id;
+      if (enrollmentId) {
+        await db.update(enrollments).set({ status: 'cancelled' })
+          .where(eq(enrollments.id, Number(enrollmentId)));
+        console.log(`[stripe] Subscription deleted, enrollment ${enrollmentId} marked cancelled`);
       }
     }
   } catch (err) {
