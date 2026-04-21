@@ -9,7 +9,7 @@ import db, { rawSql } from './db-postgres.js';
 import {
   users, enrollments, students, guardianStudents, coachAssignments,
   lessonAssignments, rewardCatalog, studentPoints, pointTransactions,
-  emergencyContacts, cmsContent,
+  emergencyContacts, cmsContent, programs, invoices,
 } from './schema.js';
 import { requireAdmin } from './middleware/auth.js';
 
@@ -165,6 +165,39 @@ async function seedProgramTuitions() {
   }
 }
 
+async function syncPendingInvoicesToProgramTuitions() {
+  try {
+    // Fetch all pending invoices joined to their enrollment + program
+    const rows = await db.select({
+      invoiceId: invoices.id,
+      invoiceAmount: invoices.amount,
+      billingCycleOverride: enrollments.billingCycleOverride,
+      programTuition: programs.tuitionAmount,
+      programBillingCycle: programs.billingCycle,
+      programMetadata: programs.metadata,
+    }).from(invoices)
+      .leftJoin(enrollments, eq(invoices.enrollmentId, enrollments.id))
+      .leftJoin(programs, eq(enrollments.programId, programs.id))
+      .where(eq(invoices.status, 'pending'));
+
+    let updated = 0;
+    for (const row of rows) {
+      if (!row.programTuition) continue;
+      const cycle = row.billingCycleOverride || row.programBillingCycle || 'monthly';
+      const prices = row.programMetadata?.prices;
+      const targetAmount = (prices && prices[cycle] != null) ? Number(prices[cycle]) : Number(row.programTuition);
+      const currentAmount = parseFloat(row.invoiceAmount);
+      if (targetAmount > 0 && Math.abs(targetAmount - currentAmount) > 0.01) {
+        await db.update(invoices).set({ amount: String(targetAmount) }).where(eq(invoices.id, row.invoiceId));
+        updated++;
+      }
+    }
+    if (updated > 0) console.log(`[migration] Synced ${updated} pending invoice(s) to current program tuitions`);
+  } catch (err) {
+    console.error('[migration] syncPendingInvoicesToProgramTuitions error:', err.message);
+  }
+}
+
 normalizeEnrollmentStatuses();
 ensureOverridesTable();
 ensureSubmissionContentColumn();
@@ -172,7 +205,7 @@ ensureMedicalInfoTable();
 ensureMessageColumns();
 ensureEnrollmentBillingCycleColumn();
 ensureInvoiceDiscountColumn();
-seedProgramTuitions();
+seedProgramTuitions().then(() => syncPendingInvoicesToProgramTuitions());
 seedDemoUsers();
 import applicationsRouter from './routes/applications.js';
 import authRouter from './routes/auth.js';
