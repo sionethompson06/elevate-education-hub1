@@ -139,7 +139,13 @@ export default function EnrollmentDetailPanel({ enrollment, studentEnrollments =
   };
 
   const handleEdit = () => {
-    setForm({ ...data });
+    const storedAmt = parseFloat(data.invoiceAmount) || 0;
+    const storedPct = parseFloat(data.discountPercent) || 0;
+    // Reconstruct pre-discount base so editing again doesn't compound the discount
+    const baseAmt = storedPct > 0
+      ? Math.round(storedAmt / (1 - storedPct / 100) * 100) / 100
+      : storedAmt;
+    setForm({ ...data, invoiceAmount: baseAmt ? String(baseAmt) : "" });
     setEditing(true);
   };
 
