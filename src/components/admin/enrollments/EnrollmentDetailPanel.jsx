@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
-import { X, CreditCard, ShieldCheck, Pencil, Save, X as XIcon, Loader2 } from "lucide-react";
+import { X, CreditCard, ShieldCheck, Pencil, Save, X as XIcon, Loader2, Plus } from "lucide-react";
 import { format } from "date-fns";
-import { apiPatch, apiGet } from "@/api/apiClient";
+import { apiPatch, apiGet, apiPost } from "@/api/apiClient";
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import EnrollmentOverridePanel from "./EnrollmentOverridePanel";
@@ -34,7 +34,7 @@ function EditRow({ label, children }) {
 
 const inputCls = "border border-slate-300 rounded-lg px-3 py-1.5 text-sm w-full max-w-[220px] focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30 bg-white";
 
-export default function EnrollmentDetailPanel({ enrollment, statusColors, onClose, onUpdated }) {
+export default function EnrollmentDetailPanel({ enrollment, studentEnrollments = [], statusColors, onClose, onUpdated }) {
   const { toast } = useToast();
   const qc = useQueryClient();
   const sc = statusColors[enrollment.status] || "bg-slate-100 text-slate-500";
@@ -103,6 +103,40 @@ export default function EnrollmentDetailPanel({ enrollment, statusColors, onClos
   const discountPct = parseFloat(form.discountPercent) || 0;
   const discountAmt = Math.round(baseAmount * discountPct) / 100;
   const finalAmt = Math.round((baseAmount - discountAmt) * 100) / 100;
+
+  // Additional program enrollment state
+  const enrolledProgramIds = new Set(studentEnrollments.map(e => String(e.programId)));
+  const availablePrograms = programsList.filter(p => p.status !== "inactive" && !enrolledProgramIds.has(String(p.id)));
+  const [addProgramIds, setAddProgramIds] = useState([]);
+  const [addingPrograms, setAddingPrograms] = useState(false);
+  const [addProgramsResult, setAddProgramsResult] = useState(null);
+
+  const toggleAddProgram = (id) => {
+    setAddProgramIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const handleAddPrograms = async () => {
+    if (addProgramIds.length === 0) return;
+    setAddingPrograms(true);
+    setAddProgramsResult(null);
+    let created = 0, skipped = 0;
+    for (const programId of addProgramIds) {
+      try {
+        await apiPost("/enrollments", {
+          studentId: parseInt(enrollment.studentId),
+          programId: parseInt(programId),
+        });
+        created++;
+      } catch (err) {
+        if (err.message?.toLowerCase().includes("already enrolled")) skipped++;
+        else toast({ title: "Enrollment error", description: err.message, variant: "destructive" });
+      }
+    }
+    qc.invalidateQueries({ queryKey: ["admin-enrollments"] });
+    setAddProgramIds([]);
+    setAddProgramsResult(`${created} program${created !== 1 ? "s" : ""} added${skipped > 0 ? `, ${skipped} already existed` : ""}.`);
+    setAddingPrograms(false);
+  };
 
   const handleEdit = () => {
     setForm({ ...data });
@@ -306,6 +340,47 @@ export default function EnrollmentDetailPanel({ enrollment, statusColors, onClos
               )}
             </div>
           </div>
+
+          {/* Additional Program Enrollment */}
+          {availablePrograms.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                <Plus className="w-3.5 h-3.5" /> Enroll in Additional Programs
+              </p>
+              <div className="border border-slate-200 rounded-xl divide-y max-h-44 overflow-y-auto">
+                {availablePrograms.map(p => (
+                  <label key={p.id} className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-slate-50">
+                    <input
+                      type="checkbox"
+                      checked={addProgramIds.includes(String(p.id))}
+                      onChange={() => toggleAddProgram(String(p.id))}
+                      className="rounded border-slate-300 text-[#1a3c5e]"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-800">{p.name}</p>
+                      <p className="text-xs text-slate-400">
+                        ${parseFloat(p.tuitionAmount || 0).toLocaleString()}/{p.billingCycle?.replace(/_/g, " ") || "mo"}
+                      </p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+              {addProgramsResult && (
+                <p className="text-xs text-green-700 mt-1.5">{addProgramsResult}</p>
+              )}
+              {addProgramIds.length > 0 && (
+                <Button
+                  size="sm"
+                  className="mt-2 bg-[#1a3c5e] hover:bg-[#0d2540] gap-1.5 text-xs"
+                  onClick={handleAddPrograms}
+                  disabled={addingPrograms}
+                >
+                  {addingPrograms ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                  Enroll in {addProgramIds.length} More Program{addProgramIds.length !== 1 ? "s" : ""}
+                </Button>
+              )}
+            </div>
+          )}
 
           {/* Override Management */}
           <div>

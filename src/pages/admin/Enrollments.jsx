@@ -193,6 +193,7 @@ export default function Enrollments() {
       {selected && (
         <EnrollmentDetailPanel
           enrollment={selected}
+          studentEnrollments={allEnrollments.filter(e => e.studentId === selected.studentId)}
           statusColors={STATUS_COLORS}
           onClose={() => setSelected(null)}
           onUpdated={() => {
