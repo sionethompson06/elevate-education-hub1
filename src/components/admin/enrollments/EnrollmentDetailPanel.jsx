@@ -65,10 +65,44 @@ export default function EnrollmentDetailPanel({ enrollment, statusColors, onClos
     startDate: enrollment.startDate ?? "",
     programId: enrollment.programId ?? "",
     programName: enrollment.programName ?? "",
+    discountPercent: enrollment.invoiceDiscountPercent != null ? String(parseFloat(enrollment.invoiceDiscountPercent)) : "",
   });
 
   const [form, setForm] = useState({ ...data });
   const setF = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
+
+  // When program dropdown changes — update amount from program's default price for current cycle
+  const handleProgramChange = (e) => {
+    const newId = e.target.value;
+    const prog = programsList.find(p => String(p.id) === newId);
+    const cycle = form.billingCycle || prog?.billingCycle || "monthly";
+    const cyclePrice = prog?.metadata?.prices?.[cycle] ?? prog?.tuitionAmount;
+    setForm(f => ({
+      ...f,
+      programId: newId,
+      invoiceAmount: cyclePrice != null ? String(cyclePrice) : f.invoiceAmount,
+      discountPercent: "",
+    }));
+  };
+
+  // When billing cycle changes — update amount from program metadata per-cycle pricing
+  const handleBillingCycleChange = (e) => {
+    const newCycle = e.target.value;
+    const prog = programsList.find(p => String(p.id) === String(form.programId));
+    const cyclePrice = prog?.metadata?.prices?.[newCycle] ?? prog?.tuitionAmount;
+    setForm(f => ({
+      ...f,
+      billingCycle: newCycle,
+      invoiceAmount: cyclePrice != null ? String(cyclePrice) : f.invoiceAmount,
+      discountPercent: "",
+    }));
+  };
+
+  // Live discount calculation
+  const baseAmount = parseFloat(form.invoiceAmount) || 0;
+  const discountPct = parseFloat(form.discountPercent) || 0;
+  const discountAmt = Math.round(baseAmount * discountPct) / 100;
+  const finalAmt = Math.round((baseAmount - discountAmt) * 100) / 100;
 
   const handleEdit = () => {
     setForm({ ...data });
@@ -85,15 +119,17 @@ export default function EnrollmentDetailPanel({ enrollment, statusColors, onClos
         amount: form.invoiceAmount !== "" ? parseFloat(form.invoiceAmount) : undefined,
         dueDate: form.invoiceDueDate || null,
         paidDate: form.invoicePaidDate || null,
+        discountPercent: form.discountPercent !== "" ? parseFloat(form.discountPercent) : null,
       });
       await apiPatch(`/enrollments/${enrollment.id}`, {
         startDate: form.startDate || null,
         billingCycleOverride: form.billingCycle || null,
         programId: form.programId || null,
       });
-      // Derive updated program name from the programs list
       const selectedProg = programsList.find(p => String(p.id) === String(form.programId));
-      setData({ ...form, programName: selectedProg?.name ?? form.programName });
+      // After save: display the final discounted amount as the stored invoice amount
+      const savedAmount = discountPct > 0 ? String(finalAmt) : form.invoiceAmount;
+      setData({ ...form, programName: selectedProg?.name ?? form.programName, invoiceAmount: savedAmount });
       setEditing(false);
       toast({ title: "Enrollment details saved" });
       qc.invalidateQueries({ queryKey: ["admin-enrollments"] });
@@ -171,7 +207,7 @@ export default function EnrollmentDetailPanel({ enrollment, statusColors, onClos
                   <select
                     className={inputCls}
                     value={form.programId}
-                    onChange={e => setForm(f => ({ ...f, programId: e.target.value }))}
+                    onChange={handleProgramChange}
                   >
                     <option value="">— select program —</option>
                     {programsList.map(p => (
@@ -203,9 +239,28 @@ export default function EnrollmentDetailPanel({ enrollment, statusColors, onClos
                       min="0"
                       className={inputCls}
                       value={form.invoiceAmount}
-                      onChange={setF("invoiceAmount")}
+                      onChange={e => setForm(f => ({ ...f, invoiceAmount: e.target.value, discountPercent: "" }))}
                       placeholder="0.00"
                     />
+                  </EditRow>
+                  <EditRow label="Discount (%)">
+                    <div className="flex flex-col items-end gap-1 w-full max-w-[220px]">
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max="100"
+                        className={inputCls}
+                        value={form.discountPercent}
+                        onChange={setF("discountPercent")}
+                        placeholder="0"
+                      />
+                      {discountPct > 0 && baseAmount > 0 && (
+                        <p className="text-xs text-purple-700 text-right">
+                          {discountPct}% of ${baseAmount.toLocaleString()} = −${discountAmt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} → <span className="font-semibold">${finalAmt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> due
+                        </p>
+                      )}
+                    </div>
                   </EditRow>
                   <EditRow label="Due Date">
                     <input type="date" className={inputCls} value={form.invoiceDueDate} onChange={setF("invoiceDueDate")} />
@@ -214,7 +269,7 @@ export default function EnrollmentDetailPanel({ enrollment, statusColors, onClos
                     <input type="date" className={inputCls} value={form.invoicePaidDate} onChange={setF("invoicePaidDate")} />
                   </EditRow>
                   <EditRow label="Billing Cycle">
-                    <select className={inputCls} value={form.billingCycle} onChange={setF("billingCycle")}>
+                    <select className={inputCls} value={form.billingCycle} onChange={handleBillingCycleChange}>
                       <option value="">— inherit from program —</option>
                       {BILLING_CYCLES.map(c => (
                         <option key={c} value={c}>{c.replace(/_/g, " ")}</option>
@@ -232,9 +287,16 @@ export default function EnrollmentDetailPanel({ enrollment, statusColors, onClos
                   <ReadRow
                     label="Amount Due"
                     value={data.invoiceAmount !== "" && data.invoiceAmount != null
-                      ? `$${parseFloat(data.invoiceAmount).toLocaleString()}`
+                      ? `$${parseFloat(data.invoiceAmount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                       : null}
                   />
+                  {data.discountPercent && parseFloat(data.discountPercent) > 0 && (() => {
+                    const pct = parseFloat(data.discountPercent);
+                    const final = parseFloat(data.invoiceAmount) || 0;
+                    const original = Math.round(final / (1 - pct / 100) * 100) / 100;
+                    const saved = Math.round((original - final) * 100) / 100;
+                    return <ReadRow label="Discount Applied" value={`${pct}% (−$${saved.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} off $${original.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`} />;
+                  })()}
                   <ReadRow label="Due Date" value={safeDate(data.invoiceDueDate)} />
                   <ReadRow label="Pay Date" value={safeDate(data.invoicePaidDate)} />
                   <ReadRow label="Billing Cycle" value={data.billingCycle?.replace(/_/g, " ")} />
