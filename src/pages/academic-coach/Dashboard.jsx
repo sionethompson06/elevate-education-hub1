@@ -2,20 +2,204 @@ import { useState } from "react";
 import { useAuth } from "@/lib/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost, apiPatch, apiDelete } from "@/api/apiClient";
-import { Plus, Users, AlertTriangle, BookOpen, MessageSquare, Pencil, Trash2, Save } from "lucide-react";
+import { Plus, Users, AlertTriangle, BookOpen, MessageSquare, Pencil, Trash2, Save, CalendarCheck, CheckCircle2, XCircle, Clock, MinusCircle, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/use-toast";
 import { format } from "date-fns";
 import KPIBar from "@/components/gradebook/KPIBar";
 import LessonRow from "@/components/gradebook/LessonRow";
 import LessonDetailPanel from "@/components/gradebook/LessonDetailPanel";
 import CreateLessonModal from "@/components/gradebook/CreateLessonModal";
 
+const STATUS_CONFIG = {
+  present:  { label: "Present",  icon: CheckCircle2, cls: "text-green-600 bg-green-50 border-green-200" },
+  absent:   { label: "Absent",   icon: XCircle,      cls: "text-red-600 bg-red-50 border-red-200" },
+  tardy:    { label: "Tardy",    icon: Clock,        cls: "text-amber-600 bg-amber-50 border-amber-200" },
+  excused:  { label: "Excused",  icon: MinusCircle,  cls: "text-slate-500 bg-slate-50 border-slate-200" },
+};
+
+function AttendancePanel({ coachId }) {
+  const { toast } = useToast();
+  const today = new Date().toISOString().split("T")[0];
+  const [selectedSectionId, setSelectedSectionId] = useState("");
+  const [selectedDate, setSelectedDate] = useState(today);
+  const [draftStatuses, setDraftStatuses] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  const { data: sectionsData } = useQuery({
+    queryKey: ["coach-sections", coachId],
+    queryFn: () => apiGet("/sections"),
+    enabled: !!coachId,
+  });
+  // The /sections endpoint returns all sections; scope is enforced server-side for attendance
+  // but for display we just show them all and let the server reject if unauthorized
+  const sections = sectionsData?.sections || [];
+
+  const { data: rosterData, isLoading: rosterLoading } = useQuery({
+    queryKey: ["section-detail", selectedSectionId],
+    queryFn: () => apiGet(`/sections/${selectedSectionId}`),
+    enabled: !!selectedSectionId,
+  });
+  const roster = rosterData?.students || [];
+
+  const { data: attendanceData, refetch: refetchAttendance } = useQuery({
+    queryKey: ["attendance-section-date", selectedSectionId, selectedDate],
+    queryFn: () => apiGet(`/attendance/section/${selectedSectionId}?date=${selectedDate}`),
+    enabled: !!selectedSectionId && !!selectedDate,
+    onSuccess: (data) => {
+      const map = {};
+      for (const r of (data?.records || [])) {
+        map[r.studentId] = r.status;
+      }
+      setDraftStatuses(map);
+    },
+  });
+
+  const { data: historyData } = useQuery({
+    queryKey: ["attendance-history", selectedSectionId],
+    queryFn: () => apiGet(`/attendance/section/${selectedSectionId}`),
+    enabled: !!selectedSectionId && historyOpen,
+  });
+
+  // Collect unique dates from history, last 10
+  const historyDates = [...new Set((historyData?.records || []).map(r => r.date))].slice(0, 10);
+
+  const setStatus = (studentId, status) => {
+    setDraftStatuses(prev => ({ ...prev, [studentId]: status }));
+  };
+
+  const markAllPresent = () => {
+    const map = {};
+    for (const s of roster) map[s.studentId] = "present";
+    setDraftStatuses(map);
+  };
+
+  const saveAttendance = async () => {
+    if (!selectedSectionId || roster.length === 0) return;
+    setSaving(true);
+    try {
+      const records = roster
+        .filter(s => draftStatuses[s.studentId])
+        .map(s => ({ studentId: s.studentId, status: draftStatuses[s.studentId] }));
+      await apiPost("/attendance/mark-bulk", {
+        sectionId: parseInt(selectedSectionId),
+        date: selectedDate,
+        records,
+      });
+      refetchAttendance();
+      toast({ title: `Attendance saved for ${records.length} student(s)` });
+    } catch (err) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base text-slate-700 flex items-center gap-2">
+          <CalendarCheck className="w-4 h-4" /> Attendance
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex gap-3 flex-wrap">
+          <select className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none flex-1 min-w-[160px]"
+            value={selectedSectionId} onChange={e => { setSelectedSectionId(e.target.value); setDraftStatuses({}); }}>
+            <option value="">Select section…</option>
+            {sections.map(s => <option key={s.id} value={s.id}>{s.name} — {s.programName}</option>)}
+          </select>
+          <input type="date" className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+            value={selectedDate} onChange={e => { setSelectedDate(e.target.value); setDraftStatuses({}); }} />
+        </div>
+
+        {selectedSectionId && (
+          <>
+            {rosterLoading ? (
+              <div className="flex justify-center py-6"><div className="w-5 h-5 border-4 border-slate-200 border-t-emerald-500 rounded-full animate-spin" /></div>
+            ) : roster.length === 0 ? (
+              <p className="text-sm text-slate-400 text-center py-4">No students in this section's roster yet.</p>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-slate-500">{roster.length} student(s)</p>
+                  <button onClick={markAllPresent} className="text-xs text-emerald-600 hover:text-emerald-700 font-medium">Mark All Present</button>
+                </div>
+
+                <div className="divide-y border rounded-lg overflow-hidden">
+                  {roster.map(s => {
+                    const currentStatus = draftStatuses[s.studentId] || null;
+                    return (
+                      <div key={s.studentId} className="flex items-center justify-between px-3 py-2.5 bg-white">
+                        <p className="text-sm font-medium text-slate-800">{s.firstName} {s.lastName}</p>
+                        <div className="flex gap-1">
+                          {Object.entries(STATUS_CONFIG).map(([val, cfg]) => {
+                            const Icon = cfg.icon;
+                            const active = currentStatus === val;
+                            return (
+                              <button key={val} title={cfg.label} onClick={() => setStatus(s.studentId, val)}
+                                className={`p-1.5 rounded-md border text-xs transition-colors ${active ? cfg.cls : "border-transparent text-slate-300 hover:text-slate-500"}`}>
+                                <Icon className="w-4 h-4" />
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <Button onClick={saveAttendance} disabled={saving || Object.keys(draftStatuses).length === 0}
+                  className="w-full bg-[#1a3c5e] hover:bg-[#0d2540]">
+                  {saving ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : null}
+                  Save Attendance
+                </Button>
+              </>
+            )}
+
+            <button onClick={() => setHistoryOpen(o => !o)}
+              className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-700 font-medium mt-1">
+              {historyOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              Attendance History
+            </button>
+
+            {historyOpen && (
+              <div className="border rounded-lg overflow-hidden text-xs">
+                {historyDates.length === 0 ? (
+                  <p className="text-slate-400 text-center py-4">No attendance history yet.</p>
+                ) : historyDates.map(date => {
+                  const dayRecords = (historyData?.records || []).filter(r => r.date === date);
+                  const counts = { present: 0, absent: 0, tardy: 0, excused: 0 };
+                  for (const r of dayRecords) counts[r.status] = (counts[r.status] || 0) + 1;
+                  return (
+                    <div key={date} className="flex items-center justify-between px-3 py-2 border-b last:border-b-0 bg-white">
+                      <span className="text-slate-600 font-medium">{format(new Date(date + "T00:00:00"), "MMM d, yyyy")}</span>
+                      <div className="flex gap-2 text-slate-500">
+                        {counts.present > 0 && <span className="text-green-600">{counts.present}P</span>}
+                        {counts.absent > 0 && <span className="text-red-600">{counts.absent}A</span>}
+                        {counts.tardy > 0 && <span className="text-amber-600">{counts.tardy}T</span>}
+                        {counts.excused > 0 && <span>{counts.excused}E</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 const SUBJECTS = ["all", "Math", "English", "Science", "History", "Reading", "Writing", "PE", "General"];
 
 export default function AcademicCoachDashboard() {
   const { user } = useAuth();
   const qc = useQueryClient();
+  const { toast } = useToast();
   const [subject, setSubject] = useState("all");
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [selectedLesson, setSelectedLesson] = useState(null);
@@ -272,6 +456,8 @@ export default function AcademicCoachDashboard() {
           )}
         </div>
       )}
+
+      <AttendancePanel coachId={user?.id} />
 
       {showCreate && (
         <CreateLessonModal

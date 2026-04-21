@@ -10,21 +10,21 @@ export default function HeroSection({ headline, subheadline, ctaLabel, ctaHref, 
         backgroundImage: imageUrl ? `url(${imageUrl})` : undefined,
         backgroundSize: "cover",
         backgroundPosition: "center",
-        backgroundColor: imageUrl ? undefined : "#1a3c5e",
+        backgroundColor: imageUrl ? undefined : "#0A0F1A",
       }}
     >
       {overlay && imageUrl && (
-        <div className="absolute inset-0 bg-[#1a3c5e]/75" />
+        <div className="absolute inset-0 bg-[#0A0F1A]/80" />
       )}
-      {!imageUrl && <div className="absolute inset-0 bg-gradient-to-br from-[#1a3c5e] to-[#0d2540]" />}
+      {!imageUrl && <div className="absolute inset-0 bg-gradient-to-br from-[#0A0F1A] to-[#0D1117]" />}
       <div className="relative max-w-4xl mx-auto text-center">
-        <h1 className="text-4xl md:text-5xl font-bold mb-4 leading-tight">{headline}</h1>
+        <h1 className="text-4xl md:text-5xl font-black mb-4 leading-tight uppercase tracking-tight">{headline}</h1>
         {subheadline && (
-          <p className="text-slate-200 text-lg mb-8 max-w-2xl mx-auto">{subheadline}</p>
+          <p className="text-slate-400 text-lg mb-8 max-w-2xl mx-auto">{subheadline}</p>
         )}
         {ctaLabel && ctaHref && (
           <Link to={ctaHref}>
-            <Button size="lg" className="bg-yellow-400 text-[#1a3c5e] hover:bg-yellow-300 font-bold">
+            <Button size="lg" className="bg-[#10B981] text-white hover:bg-[#059669] font-bold">
               {ctaLabel} <ArrowRight className="ml-2 w-4 h-4" />
             </Button>
           </Link>

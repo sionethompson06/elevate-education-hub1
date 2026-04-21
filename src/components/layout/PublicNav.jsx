@@ -17,17 +17,22 @@ export default function PublicNav() {
     { label: "College & NIL", href: "/college-nil" },
     { label: "Admissions", href: "/admissions" },
     { label: "FAQ", href: "/faq" },
+    { label: "Contact", href: "/contact" },
   ];
 
   const isActive = (href) => location.pathname === href;
 
   return (
-    <nav className="bg-[#1a3c5e] text-white sticky top-0 z-50 shadow-lg">
+    <nav className="bg-[#0A0F1A] text-white sticky top-0 z-50 shadow-lg border-b border-white/5">
       <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
         <Link to="/" className="flex items-center gap-2 font-bold text-lg shrink-0">
-          <GraduationCap className="w-6 h-6 text-yellow-400" />
-          <span className="hidden sm:inline">Elevate Education Hub</span>
-          <span className="sm:hidden">Elevate</span>
+          <GraduationCap className="w-6 h-6 text-[#3B82F6]" />
+          <span className="hidden sm:inline bg-gradient-to-r from-[#3B82F6] to-[#10B981] bg-clip-text text-transparent font-black tracking-tight">
+            ELEVATE PERFORMANCE ACADEMY
+          </span>
+          <span className="sm:hidden bg-gradient-to-r from-[#3B82F6] to-[#10B981] bg-clip-text text-transparent font-black">
+            ELEVATE
+          </span>
         </Link>
 
         {/* Desktop nav */}
@@ -38,8 +43,8 @@ export default function PublicNav() {
               to={href}
               className={`px-3 py-2 rounded-md text-sm transition-colors ${
                 isActive(href)
-                  ? "bg-white/20 text-white font-semibold"
-                  : "text-slate-300 hover:text-white hover:bg-white/10"
+                  ? "bg-white/10 text-white font-semibold"
+                  : "text-slate-400 hover:text-white hover:bg-white/5"
               }`}
             >
               {label}
@@ -50,18 +55,18 @@ export default function PublicNav() {
         <div className="flex items-center gap-3">
           {user ? (
             <Link to={getDashboardForRole(user.role)}>
-              <Button size="sm" className="bg-yellow-400 text-[#1a3c5e] hover:bg-yellow-300 font-semibold">
+              <Button size="sm" className="bg-[#10B981] text-white hover:bg-[#059669] font-semibold">
                 My Portal
               </Button>
             </Link>
           ) : (
             <>
-              <Link to="/login" className="text-sm text-slate-300 hover:text-white transition-colors">
+              <Link to="/login" className="text-sm text-slate-400 hover:text-white transition-colors hidden sm:inline">
                 Sign In
               </Link>
               <Link to="/apply">
-                <Button size="sm" className="bg-yellow-400 text-[#1a3c5e] hover:bg-yellow-300 font-semibold">
-                  Apply Now
+                <Button size="sm" className="bg-[#10B981] text-white hover:bg-[#059669] font-semibold">
+                  APPLY NOW
                 </Button>
               </Link>
             </>
@@ -77,17 +82,20 @@ export default function PublicNav() {
 
       {/* Mobile menu */}
       {mobileOpen && (
-        <div className="lg:hidden border-t border-white/10 px-6 pb-4">
+        <div className="lg:hidden border-t border-white/5 px-6 pb-4">
           {navLinks.map(({ label, href }) => (
             <Link
               key={href}
               to={href}
               onClick={() => setMobileOpen(false)}
-              className="block py-3 text-sm text-slate-300 hover:text-white border-b border-white/5 last:border-0"
+              className="block py-3 text-sm text-slate-400 hover:text-white border-b border-white/5 last:border-0"
             >
               {label}
             </Link>
           ))}
+          <Link to="/login" onClick={() => setMobileOpen(false)} className="block py-3 text-sm text-slate-400 hover:text-white">
+            Sign In
+          </Link>
         </div>
       )}
     </nav>
