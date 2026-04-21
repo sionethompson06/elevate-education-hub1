@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { eq, desc } from 'drizzle-orm';
 import db from '../db-postgres.js';
-import { billingAccounts, invoices, payments, enrollments, students, programs, guardianStudents } from '../schema.js';
+import { billingAccounts, invoices, payments, enrollments, students, programs, guardianStudents, users } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { logAudit } from '../services/audit.service.js';
 import { createNotification } from '../services/notification.service.js';
@@ -92,7 +92,23 @@ router.get('/invoices', requireAuth, async (req, res) => {
 router.get('/payments', requireAuth, async (req, res) => {
   try {
     if (req.user.role === 'admin') {
-      const allPayments = await db.select().from(payments).orderBy(desc(payments.createdAt));
+      const allPayments = await db.select({
+        id: payments.id,
+        billingAccountId: payments.billingAccountId,
+        invoiceId: payments.invoiceId,
+        amount: payments.amount,
+        method: payments.method,
+        status: payments.status,
+        processedAt: payments.processedAt,
+        stripePaymentIntentId: payments.stripePaymentIntentId,
+        createdAt: payments.createdAt,
+        parentFirstName: users.firstName,
+        parentLastName: users.lastName,
+        parentEmail: users.email,
+      }).from(payments)
+        .leftJoin(billingAccounts, eq(payments.billingAccountId, billingAccounts.id))
+        .leftJoin(users, eq(billingAccounts.parentUserId, users.id))
+        .orderBy(desc(payments.createdAt));
       return res.json({ success: true, payments: allPayments });
     }
 
