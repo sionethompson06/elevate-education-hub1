@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { X, CreditCard, ShieldCheck, Pencil, Save, X as XIcon, Loader2 } from "lucide-react";
 import { format } from "date-fns";
-import { apiPatch } from "@/api/apiClient";
+import { apiPatch, apiGet } from "@/api/apiClient";
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import EnrollmentOverridePanel from "./EnrollmentOverridePanel";
@@ -49,6 +49,12 @@ export default function EnrollmentDetailPanel({ enrollment, statusColors, onClos
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  const { data: programsData } = useQuery({
+    queryKey: ["admin-programs-list"],
+    queryFn: () => apiGet("/programs"),
+  });
+  const programsList = programsData?.programs || programsData || [];
+
   // Local display state — updated after save so panel stays open
   const [data, setData] = useState({
     invoiceDescription: enrollment.invoiceDescription ?? "",
@@ -57,6 +63,8 @@ export default function EnrollmentDetailPanel({ enrollment, statusColors, onClos
     invoicePaidDate: enrollment.invoicePaidDate ?? "",
     billingCycle: enrollment.billingCycle ?? enrollment.programBillingCycle ?? "",
     startDate: enrollment.startDate ?? "",
+    programId: enrollment.programId ?? "",
+    programName: enrollment.programName ?? "",
   });
 
   const [form, setForm] = useState({ ...data });
@@ -81,11 +89,15 @@ export default function EnrollmentDetailPanel({ enrollment, statusColors, onClos
       await apiPatch(`/enrollments/${enrollment.id}`, {
         startDate: form.startDate || null,
         billingCycleOverride: form.billingCycle || null,
+        programId: form.programId || null,
       });
-      setData({ ...form });
+      // Derive updated program name from the programs list
+      const selectedProg = programsList.find(p => String(p.id) === String(form.programId));
+      setData({ ...form, programName: selectedProg?.name ?? form.programName });
       setEditing(false);
       toast({ title: "Enrollment details saved" });
       qc.invalidateQueries({ queryKey: ["admin-enrollments"] });
+      if (onUpdated) onUpdated();
     } catch (err) {
       toast({ title: "Save failed", description: err.message, variant: "destructive" });
     } finally {
@@ -154,7 +166,22 @@ export default function EnrollmentDetailPanel({ enrollment, statusColors, onClos
               <ReadRow label="Student" value={studentName} />
               <ReadRow label="Parent / Guardian" value={parentName} />
               <ReadRow label="Parent Email" value={enrollment.parentEmail} />
-              <ReadRow label="Program" value={enrollment.programName} />
+              {editing ? (
+                <EditRow label="Program">
+                  <select
+                    className={inputCls}
+                    value={form.programId}
+                    onChange={e => setForm(f => ({ ...f, programId: e.target.value }))}
+                  >
+                    <option value="">— select program —</option>
+                    {programsList.map(p => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </EditRow>
+              ) : (
+                <ReadRow label="Program" value={data.programName || enrollment.programName} />
+              )}
               <ReadRow label="Enrollment Status" value={enrollment.status?.replace(/_/g, " ")} />
               <ReadRow label="Invoice Status" value={enrollment.invoiceStatus?.replace(/_/g, " ")} />
 
