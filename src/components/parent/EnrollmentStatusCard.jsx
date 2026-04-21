@@ -34,7 +34,7 @@ const STATUS_CONFIG = {
     iconColor: "text-purple-600",
     badge: "bg-purple-100 text-purple-700",
     label: "Admin Approved",
-    showPay: false,
+    showPay: true, // show pay when a remaining balance is owed after a partial scholarship
   },
   payment_failed: {
     icon: AlertCircle,
@@ -133,7 +133,7 @@ export default function EnrollmentStatusCard({ enrollment }) {
           </div>
         </div>
 
-        {sc.showPay && (
+        {sc.showPay && !(enrollment.status === "active_override" && enrollment.invoiceStatus === "paid") && (
           <Link to={`/parent/checkout?enrollment_id=${enrollment.id}`} className="shrink-0">
             <Button size="sm" className="bg-[#1a3c5e] hover:bg-[#0d2540]">
               <CreditCard className="w-4 h-4 mr-2" />

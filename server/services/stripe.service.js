@@ -24,8 +24,11 @@ export async function createCheckoutSession({ enrollmentId, studentId, parentUse
   if (!tuition || isNaN(tuition) || tuition <= 0) {
     throw new Error('Program tuition amount is not configured. Please contact support.');
   }
+  // For annual billing prefer the explicit annual price from metadata, then one_time price,
+  // then fall back to monthly × 12 so programs without metadata still work.
+  const prices = program?.metadata?.prices;
   const unitAmount = billingCycle === 'annual'
-    ? Math.round(tuition * 12 * 100)
+    ? Math.round((prices?.annual ?? prices?.one_time ?? tuition * 12) * 100)
     : Math.round(tuition * 100);
 
   const metadata = {

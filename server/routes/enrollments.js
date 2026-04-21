@@ -370,8 +370,9 @@ router.patch('/:id', requireAuth, requireRole('admin'), async (req, res) => {
           .where(eq(invoices.enrollmentId, id))
           .orderBy(desc(invoices.createdAt));
         if (inv && !['paid', 'waived'].includes(inv.status)) {
+          // Clear discountPercent — it was tied to the old program's tuition
           await db.update(invoices)
-            .set({ description: newProg.name, amount: String(newProg.tuitionAmount) })
+            .set({ description: newProg.name, amount: String(newProg.tuitionAmount), discountPercent: null })
             .where(eq(invoices.id, inv.id));
         }
       }
@@ -446,8 +447,11 @@ router.patch('/:id/invoice', requireAuth, requireRole('admin'), async (req, res)
 
     // Apply discount: base amount must be explicitly sent alongside discountPercent
     let finalAmount = amount !== undefined ? parseFloat(amount) : undefined;
-    if (discountPercent != null && parseFloat(discountPercent) >= 0 && finalAmount !== undefined) {
+    if (discountPercent != null && finalAmount !== undefined) {
       const pct = parseFloat(discountPercent);
+      if (isNaN(pct) || pct < 0 || pct > 100) {
+        return res.status(400).json({ success: false, error: 'discountPercent must be between 0 and 100' });
+      }
       finalAmount = Math.round(finalAmount * (1 - pct / 100) * 100) / 100;
       updateData.discountPercent = String(pct);
     } else if (discountPercent === null) {
