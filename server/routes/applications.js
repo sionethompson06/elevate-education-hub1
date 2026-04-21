@@ -196,24 +196,35 @@ router.post('/:id/approve', requireAuth, requireRole('admin'), async (req, res) 
       }
 
       const allPrograms = await db.select().from(programs).where(eq(programs.status, 'active'));
-      // Use explicitly selected programId if provided, otherwise fall back to fuzzy name matching.
-      // Normalise both sides: strip parentheses, hyphens, extra spaces before comparing so that
-      // dropdown values like "Microschool (In-Person Hybrid)" match program names like "Hybrid".
+      // Use explicitly selected programId if provided, otherwise match program_interest to a program.
+      // Matching runs in priority order across ALL programs to prevent similar names (e.g.
+      // "Virtual School 1-Day" vs "Virtual School 2-Days") from incorrectly matching each other.
       const normalise = (s) => s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
       const matchedProgram = programId
         ? allPrograms.find(p => p.id === parseInt(programId))
         : (app.programInterest
             ? (() => {
                 const interest = normalise(app.programInterest);
-                const interestWords = interest.split(' ').filter(w => w.length > 3);
+                // Phase 1: exact / near-exact substring match across all programs
+                const exact = allPrograms.find(p => {
+                  const pName = normalise(p.name);
+                  return pName === interest || pName.includes(interest) || interest.includes(pName);
+                });
+                if (exact) return exact;
+                // Phase 2: program type match
+                const byType = allPrograms.find(p => {
+                  const pType = normalise(p.type || '');
+                  return pType && (pType === interest || interest.includes(pType));
+                });
+                if (byType) return byType;
+                // Phase 3: keyword fallback — only words ≥ 2 chars (keeps "1", "2" for disambiguation)
+                const interestWords = interest.split(' ').filter(w => w.length >= 2);
                 return allPrograms.find(p => {
                   const pName = normalise(p.name);
-                  const pType = normalise(p.type || '');
-                  // Exact substring match (either direction)
-                  if (pName.includes(interest) || interest.includes(pName)) return true;
-                  if (pType === interest || interest.includes(pType)) return true;
-                  // Any significant keyword from the interest appears in the program name
-                  return interestWords.some(w => pName.includes(w));
+                  return interestWords.every(w => pName.includes(w));
+                }) || allPrograms.find(p => {
+                  const pName = normalise(p.name);
+                  return interestWords.some(w => w.length > 4 && pName.includes(w));
                 });
               })()
             : null);

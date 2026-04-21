@@ -23,14 +23,24 @@ const PROGRAMS = [
     iconColor: "text-green-600",
   },
   {
-    value: "Virtual Homeschool Support",
+    value: "Virtual School 1-Day",
     icon: Globe,
-    title: "Virtual Homeschool",
-    subtitle: "Support Program",
-    description: "Flexible, accredited curriculum delivered fully online.",
+    title: "Virtual School",
+    subtitle: "1 Day / Week",
+    description: "Flexible, accredited online curriculum — one structured day of virtual instruction per week.",
     color: "border-purple-200 bg-purple-50",
     activeColor: "border-[#1a3c5e] bg-[#1a3c5e]/5",
     iconColor: "text-purple-600",
+  },
+  {
+    value: "Virtual School 2-Days",
+    icon: Globe,
+    title: "Virtual School",
+    subtitle: "2 Days / Week",
+    description: "Flexible, accredited online curriculum — two structured days of virtual instruction per week.",
+    color: "border-indigo-200 bg-indigo-50",
+    activeColor: "border-[#1a3c5e] bg-[#1a3c5e]/5",
+    iconColor: "text-indigo-600",
   },
 ];
 

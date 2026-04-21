@@ -8,7 +8,8 @@ const GRADES = ["Pre-K", "Kindergarten", "1st", "2nd", "3rd", "4th", "5th", "6th
 const PROGRAMS = [
   "Microschool (In-Person Hybrid)",
   "Athletic Performance Training",
-  "Virtual Homeschool Support",
+  "Virtual School 1-Day",
+  "Virtual School 2-Days",
   "Combination",
 ];
 const COMPETITION_LEVELS = ["Recreational", "Club", "Travel", "Elite / Select", "Varsity"];
