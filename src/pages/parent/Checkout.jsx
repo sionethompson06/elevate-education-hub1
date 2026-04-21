@@ -64,7 +64,7 @@ export default function Checkout() {
         body: JSON.stringify({
           enrollment_id: Number(enrollmentId),
           billing_cycle: billingCycle,
-          success_url: `${window.location.origin}/parent/dashboard?payment=success&enrollment=${enrollmentId}`,
+          success_url: `${window.location.origin}/parent/dashboard?payment=success&enrollment=${enrollmentId}&session_id={CHECKOUT_SESSION_ID}`,
           cancel_url: `${window.location.origin}/parent/checkout?enrollment_id=${enrollmentId}`,
         }),
       });
