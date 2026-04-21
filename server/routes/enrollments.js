@@ -124,6 +124,7 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
       programName: programs.name,
       programTuition: programs.tuitionAmount,
       programBillingCycle: programs.billingCycle,
+      programMetadata: programs.metadata,
     }).from(enrollments)
       .leftJoin(students, eq(enrollments.studentId, students.id))
       .leftJoin(programs, eq(enrollments.programId, programs.id))
@@ -167,6 +168,7 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
         parentLastName: guardian.lastName || null,
         parentEmail: guardian.email || null,
         billingCycle: e.billingCycleOverride || e.programBillingCycle,
+        programMetadata: e.programMetadata || null,
         invoiceId: invoiceMap[e.id]?.id || null,
         invoiceAmount: invoiceMap[e.id]?.amount || null,
         invoiceStatus: invoiceMap[e.id]?.status || null,
@@ -554,6 +556,18 @@ router.post('/:id/override', requireAuth, requireRole('admin'), async (req, res)
         eq(enrollmentOverrides.isActive, true)
       ));
 
+    // Compute due-now from the program's current tuition (not from the invoice's current amount,
+    // which may be stale from a previous override or manual edit)
+    const [prog] = await db.select().from(programs).where(eq(programs.id, enrollment.programId));
+    const cycle = enrollment.billingCycleOverride || prog?.billingCycle || 'monthly';
+    const prices = prog?.metadata?.prices;
+    const baseTuitionCents = Math.round(
+      (prices?.[cycle] != null ? Number(prices[cycle]) : Number(prog?.tuitionAmount || 0)) * 100
+    );
+    const finalDueNowCents = Math.max(
+      0, baseTuitionCents - Number(amountWaivedCents) - Number(amountDeferredCents)
+    );
+
     // Insert the new override record
     const [newOverride] = await db.insert(enrollmentOverrides).values({
       enrollmentId,
@@ -561,7 +575,7 @@ router.post('/:id/override', requireAuth, requireRole('admin'), async (req, res)
       reason: reason.trim(),
       amountWaivedCents: Number(amountWaivedCents),
       amountDeferredCents: Number(amountDeferredCents),
-      amountDueNowCents: Number(amountDueNowCents),
+      amountDueNowCents: finalDueNowCents,
       effectiveStartAt: effectiveStartAt || null,
       effectiveEndAt: effectiveEndAt || null,
       isActive: true,
@@ -589,13 +603,13 @@ router.post('/:id/override', requireAuth, requireRole('admin'), async (req, res)
       .orderBy(desc(invoices.createdAt));
 
     if (linkedInvoice && linkedInvoice.status !== 'paid') {
-      if (amountDueNowCents === 0) {
+      if (finalDueNowCents === 0) {
         await db.update(invoices)
           .set({ status: 'waived', amount: '0', discountPercent: null })
           .where(eq(invoices.id, linkedInvoice.id));
       } else {
         await db.update(invoices)
-          .set({ amount: String(amountDueNowCents / 100), status: 'pending', discountPercent: null })
+          .set({ amount: String(finalDueNowCents / 100), status: 'pending', discountPercent: null })
           .where(eq(invoices.id, linkedInvoice.id));
       }
     }

@@ -155,15 +155,31 @@ async function seedProgramTuitions() {
       metadata = jsonb_set(COALESCE(metadata, '{}'), '{prices}', '{"monthly":750,"one_time":7500}')
       WHERE name ILIKE '%hybrid%'`;
 
-    // Virtual School 1-day — create if missing, then ensure correct tuition
+    // Virtual School 1-day — merge "Virtual Homeschool Support" if it exists as a duplicate
+    // Step 1: rename VHS → VS1d when VS1d doesn't exist yet (preserves enrollment links)
+    await rawSql`
+      UPDATE programs SET name = 'Virtual School 1-day', tuition_amount = 199, billing_cycle = 'monthly', status = 'active'
+      WHERE (name ILIKE '%homeschool support%' OR name ILIKE '%virtual home%')
+        AND NOT EXISTS (
+          SELECT 1 FROM programs WHERE name ILIKE '%virtual school 1%' OR name ILIKE '%1-day%'
+        )`;
+    // Step 2: if both VS1d and VHS now exist, reassign VHS enrollments to VS1d then delete VHS
+    await rawSql`
+      UPDATE enrollments
+        SET program_id = (SELECT id FROM programs WHERE name ILIKE '%virtual school 1%' OR name ILIKE '%1-day%' LIMIT 1)
+      WHERE program_id IN (
+        SELECT id FROM programs WHERE name ILIKE '%homeschool support%' OR name ILIKE '%virtual home%'
+      )`;
+    await rawSql`DELETE FROM programs WHERE name ILIKE '%homeschool support%' OR name ILIKE '%virtual home%'`;
+    // Create VS1d if neither old nor new name exists, then ensure correct tuition
     await rawSql`
       INSERT INTO programs (name, type, description, tuition_amount, billing_cycle, status)
       SELECT 'Virtual School 1-day', 'academic', 'Virtual instruction program — 1 day per week.', 199, 'monthly', 'active'
       WHERE NOT EXISTS (
-        SELECT 1 FROM programs WHERE name ILIKE '%virtual school 1%' OR name ILIKE '%1-day%' OR name ILIKE '%1 day%'
+        SELECT 1 FROM programs WHERE name ILIKE '%virtual school 1%' OR name ILIKE '%1-day%'
       )`;
     await rawSql`UPDATE programs SET tuition_amount = 199, billing_cycle = 'monthly', status = 'active'
-      WHERE name ILIKE '%virtual school 1%' OR name ILIKE '%1-day%' OR name ILIKE '%1 day%'`;
+      WHERE name ILIKE '%virtual school 1%' OR name ILIKE '%1-day%'`;
 
     // Virtual School 2-days — create if missing, then ensure correct tuition
     await rawSql`
