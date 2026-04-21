@@ -442,12 +442,11 @@ router.patch('/:id/invoice', requireAuth, requireRole('admin'), async (req, res)
     if (dueDate !== undefined) updateData.dueDate = dueDate || null;
     if (paidDate !== undefined) updateData.paidDate = paidDate || null;
 
-    // Apply discount: compute final amount from base and discount percent
+    // Apply discount: base amount must be explicitly sent alongside discountPercent
     let finalAmount = amount !== undefined ? parseFloat(amount) : undefined;
-    if (discountPercent != null && parseFloat(discountPercent) >= 0) {
+    if (discountPercent != null && parseFloat(discountPercent) >= 0 && finalAmount !== undefined) {
       const pct = parseFloat(discountPercent);
-      const base = finalAmount ?? parseFloat(invoice?.amount ?? 0);
-      finalAmount = Math.round(base * (1 - pct / 100) * 100) / 100;
+      finalAmount = Math.round(finalAmount * (1 - pct / 100) * 100) / 100;
       updateData.discountPercent = String(pct);
     } else if (discountPercent === null) {
       updateData.discountPercent = null;
@@ -592,11 +591,11 @@ router.post('/:id/override', requireAuth, requireRole('admin'), async (req, res)
     if (linkedInvoice && linkedInvoice.status !== 'paid') {
       if (amountDueNowCents === 0) {
         await db.update(invoices)
-          .set({ status: 'waived', amount: '0' })
+          .set({ status: 'waived', amount: '0', discountPercent: null })
           .where(eq(invoices.id, linkedInvoice.id));
       } else {
         await db.update(invoices)
-          .set({ amount: String(amountDueNowCents / 100), status: 'pending' })
+          .set({ amount: String(amountDueNowCents / 100), status: 'pending', discountPercent: null })
           .where(eq(invoices.id, linkedInvoice.id));
       }
     }
@@ -643,13 +642,26 @@ router.patch('/overrides/:overrideId/revoke', requireAuth, requireRole('admin'),
       .set({ status: 'pending_payment' })
       .where(eq(enrollments.id, override.enrollmentId));
 
-    // Re-open waived invoices if any
-    await db.update(invoices)
-      .set({ status: 'pending' })
-      .where(and(
-        eq(invoices.enrollmentId, override.enrollmentId),
-        eq(invoices.status, 'waived')
-      ));
+    // Restore invoice to current program tuition (clears override amount and any stale discount)
+    const [enrollmentRow] = await db.select({
+      programId: enrollments.programId,
+      billingCycleOverride: enrollments.billingCycleOverride,
+    }).from(enrollments).where(eq(enrollments.id, override.enrollmentId));
+
+    if (enrollmentRow) {
+      const [prog] = await db.select().from(programs)
+        .where(eq(programs.id, enrollmentRow.programId));
+      if (prog) {
+        const cycle = enrollmentRow.billingCycleOverride || prog.billingCycle || 'monthly';
+        const prices = prog.metadata?.prices;
+        const restoredAmount = (prices && prices[cycle] != null)
+          ? Number(prices[cycle])
+          : Number(prog.tuitionAmount);
+        await db.update(invoices)
+          .set({ status: 'pending', amount: String(restoredAmount), discountPercent: null })
+          .where(eq(invoices.enrollmentId, override.enrollmentId));
+      }
+    }
 
     await logAudit({
       userId: req.user.id,

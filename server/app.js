@@ -9,7 +9,7 @@ import db, { rawSql } from './db-postgres.js';
 import {
   users, enrollments, students, guardianStudents, coachAssignments,
   lessonAssignments, rewardCatalog, studentPoints, pointTransactions,
-  emergencyContacts, cmsContent, programs, invoices,
+  emergencyContacts, cmsContent, programs, invoices, enrollmentOverrides,
 } from './schema.js';
 import { requireAdmin } from './middleware/auth.js';
 
@@ -175,13 +175,19 @@ async function syncPendingInvoicesToProgramTuitions() {
       programTuition: programs.tuitionAmount,
       programBillingCycle: programs.billingCycle,
       programMetadata: programs.metadata,
+      activeOverrideId: enrollmentOverrides.id,
     }).from(invoices)
       .leftJoin(enrollments, eq(invoices.enrollmentId, enrollments.id))
       .leftJoin(programs, eq(enrollments.programId, programs.id))
+      .leftJoin(enrollmentOverrides, and(
+        eq(enrollmentOverrides.enrollmentId, enrollments.id),
+        eq(enrollmentOverrides.isActive, true)
+      ))
       .where(eq(invoices.status, 'pending'));
 
     let updated = 0;
     for (const row of rows) {
+      if (row.activeOverrideId) continue; // skip — active scholarship/override in effect
       if (!row.programTuition) continue;
       const cycle = row.billingCycleOverride || row.programBillingCycle || 'monthly';
       const prices = row.programMetadata?.prices;
