@@ -37,9 +37,9 @@ export default function OverrideModal({ enrollment, onClose, onSuccess }) {
       await apiPost(`/enrollments/${enrollment.id}/override`, {
         overrideType:        form.overrideType,
         reason:              form.reason.trim(),
-        amountWaivedCents:   Number(form.amountWaivedCents),
-        amountDeferredCents: Number(form.amountDeferredCents),
-        amountDueNowCents:   Number(form.amountDueNowCents),
+        amountWaivedCents:   Math.round(Number(form.amountWaivedCents) * 100),
+        amountDeferredCents: Math.round(Number(form.amountDeferredCents) * 100),
+        amountDueNowCents:   Math.round(Number(form.amountDueNowCents) * 100),
         effectiveStartAt:    form.effectiveStartAt || null,
         effectiveEndAt:      form.effectiveEndAt || null,
         notes:               form.notes || null,

@@ -342,12 +342,13 @@ router.get('/:id', requireAuth, async (req, res) => {
 router.patch('/:id', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const { status, sectionId, startDate, billingCycleOverride } = req.body;
+    const { status, sectionId, startDate, billingCycleOverride, programId } = req.body;
     const updateData = {};
     if (status !== undefined) updateData.status = status;
     if (sectionId !== undefined) updateData.sectionId = sectionId ? parseInt(sectionId) : null;
     if (startDate !== undefined) updateData.startDate = startDate || null;
     if (billingCycleOverride !== undefined) updateData.billingCycleOverride = billingCycleOverride || null;
+    if (programId !== undefined) updateData.programId = programId ? parseInt(programId) : null;
 
     if (Object.keys(updateData).length === 0) {
       return res.status(400).json({ success: false, error: 'No fields to update' });
@@ -355,6 +356,21 @@ router.patch('/:id', requireAuth, requireRole('admin'), async (req, res) => {
 
     const [updated] = await db.update(enrollments).set(updateData).where(eq(enrollments.id, id)).returning();
     if (!updated) return res.status(404).json({ success: false, error: 'Enrollment not found' });
+
+    // When program changes, sync invoice description + amount (skip if already paid/waived)
+    if (programId) {
+      const [newProg] = await db.select().from(programs).where(eq(programs.id, parseInt(programId)));
+      if (newProg) {
+        const [inv] = await db.select().from(invoices)
+          .where(eq(invoices.enrollmentId, id))
+          .orderBy(desc(invoices.createdAt));
+        if (inv && !['paid', 'waived'].includes(inv.status)) {
+          await db.update(invoices)
+            .set({ description: newProg.name, amount: String(newProg.tuitionAmount) })
+            .where(eq(invoices.id, inv.id));
+        }
+      }
+    }
 
     await logAudit({
       userId: req.user.id,
@@ -554,15 +570,21 @@ router.post('/:id/override', requireAuth, requireRole('admin'), async (req, res)
         .where(eq(students.id, enrollment.studentId));
     }
 
-    // If comped or scholarship: mark linked invoice as waived (status = 'waived')
-    // If deferred: leave invoice pending, just activate the enrollment
-    if (['comped', 'scholarship'].includes(overrideType)) {
-      await db.update(invoices)
-        .set({ status: 'waived' })
-        .where(and(
-          eq(invoices.enrollmentId, enrollmentId),
-          ne(invoices.status, 'paid')
-        ));
+    // Update invoice to reflect the post-override balance
+    const [linkedInvoice] = await db.select().from(invoices)
+      .where(eq(invoices.enrollmentId, enrollmentId))
+      .orderBy(desc(invoices.createdAt));
+
+    if (linkedInvoice && linkedInvoice.status !== 'paid') {
+      if (amountDueNowCents === 0) {
+        await db.update(invoices)
+          .set({ status: 'waived', amount: '0' })
+          .where(eq(invoices.id, linkedInvoice.id));
+      } else {
+        await db.update(invoices)
+          .set({ amount: String(amountDueNowCents / 100) })
+          .where(eq(invoices.id, linkedInvoice.id));
+      }
     }
 
     await logAudit({
