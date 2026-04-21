@@ -59,6 +59,7 @@ import AdminStudents from "./pages/admin/Students";
 import AdminParents from "./pages/admin/Parents";
 import UserManagement from "./pages/admin/UserManagement.jsx";
 import AdminAnalytics from "./pages/admin/Analytics";
+import AdminBilling from "./pages/admin/Billing";
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -163,6 +164,7 @@ const AuthenticatedApp = () => {
           <Route path="/admin/analytics" element={<AdminAnalytics />} />
           <Route path="/admin/users" element={<UserManagement />} />
           <Route path="/admin/parents" element={<AdminParents />} />
+          <Route path="/admin/billing" element={<AdminBilling />} />
         </Route>
 
         <Route path="*" element={<PageNotFound />} />
