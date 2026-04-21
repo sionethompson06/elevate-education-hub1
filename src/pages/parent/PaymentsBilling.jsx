@@ -106,8 +106,12 @@ export default function PaymentsBilling() {
   });
 
   // ── Stats ─────────────────────────────────────────────────────────────────
-  const activeEnrollments = enrollments.filter(e => ["active", "active_override"].includes(e.status));
-  const pendingEnrollments = enrollments.filter(e => ["pending_payment", "pending"].includes(e.status));
+  const activeEnrollments = enrollments.filter(e => ["active", "active_override"].includes(e.status) && e.invoiceStatus === "paid");
+  const pendingEnrollments = enrollments.filter(e =>
+    ["pending_payment", "pending"].includes(e.status) ||
+    (e.status === "active_override" && e.invoiceStatus !== "paid" && e.invoiceStatus !== "waived")
+  );
+  const failedEnrollments = enrollments.filter(e => e.status === "payment_failed");
   const activeCount = activeEnrollments.length;
   const pendingCount = pendingEnrollments.length;
 
@@ -198,6 +202,36 @@ export default function PaymentsBilling() {
                 </button>
               </Link>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Failed payment banner */}
+      {failedEnrollments.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-4">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertCircle className="w-4 h-4 text-red-600" />
+            <p className="text-sm font-semibold text-red-800">Payment Failed</p>
+          </div>
+          <p className="text-sm text-red-700 mb-3">
+            {failedEnrollments.length} enrollment{failedEnrollments.length > 1 ? "s have" : " has"} a failed payment. Please retry or update your billing method.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {failedEnrollments.map(e => (
+              <Link key={e.id} to={`/parent/checkout?enrollment_id=${e.id}`}>
+                <button className="text-xs bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 transition-colors flex items-center gap-1">
+                  <CreditCard className="w-3.5 h-3.5" /> Retry — {e.programName || `Program #${e.programId}`}
+                </button>
+              </Link>
+            ))}
+            {billingAccount?.stripeCustomerId && (
+              <button
+                onClick={openBillingPortal}
+                className="text-xs border border-red-300 text-red-700 px-3 py-1.5 rounded-lg hover:bg-red-100 transition-colors flex items-center gap-1"
+              >
+                <ExternalLink className="w-3.5 h-3.5" /> Manage Billing
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -315,10 +349,12 @@ export default function PaymentsBilling() {
                     </div>
                   </div>
                   <div className="flex flex-col gap-2 items-end shrink-0">
-                    {["pending_payment", "pending", "payment_failed"].includes(e.status) && (
+                    {(["pending_payment", "pending", "payment_failed"].includes(e.status) ||
+                      (e.status === "active_override" && e.invoiceStatus !== "paid" && e.invoiceStatus !== "waived")) && (
                       <Link to={`/parent/checkout?enrollment_id=${e.id}`}>
-                        <Button size="sm" className="bg-[#1a3c5e] hover:bg-[#0d2540]">
-                          <CreditCard className="w-3.5 h-3.5 mr-1" /> Complete Payment
+                        <Button size="sm" className={e.status === "payment_failed" ? "bg-red-600 hover:bg-red-700" : "bg-[#1a3c5e] hover:bg-[#0d2540]"}>
+                          <CreditCard className="w-3.5 h-3.5 mr-1" />
+                          {e.status === "payment_failed" ? "Retry Payment" : "Complete Payment"}
                         </Button>
                       </Link>
                     )}

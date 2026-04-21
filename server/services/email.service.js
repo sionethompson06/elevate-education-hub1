@@ -68,3 +68,12 @@ export async function sendPaymentFailedEmail(to, parentName, programName) {
     <p>— Elevate Education Hub</p>
   `);
 }
+
+export async function sendApplicationDeniedEmail(to, parentName, studentName) {
+  await send(to, 'Application Update — Elevate Education Hub', `
+    <p>Hi ${parentName},</p>
+    <p>Thank you for your interest in Elevate Education Hub. After careful review, we regret to inform you that ${studentName}'s application was not approved at this time.</p>
+    <p>If you have questions or would like more information, please don't hesitate to reach out to our admissions team.</p>
+    <p>— The Elevate Team</p>
+  `);
+}

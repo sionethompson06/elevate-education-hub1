@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { eq, desc, and } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
-import { sendInviteEmail } from '../services/email.service.js';
+import { sendInviteEmail, sendApplicationDeniedEmail } from '../services/email.service.js';
 
 import db from '../db-postgres.js';
 import { applications, users, students, guardianStudents, enrollments, programs, billingAccounts, invoices, schoolYears } from '../schema.js';
@@ -17,7 +17,7 @@ router.post('/', async (req, res) => {
       parent_first_name, parent_last_name, email, phone,
       student_first_name, student_last_name, student_age, student_birth_date,
       student_grade, program_interest, sports_played, competition_level,
-      essay, referral_source
+      essay, notes, referral_source
     } = req.body;
 
     const [app] = await db.insert(applications).values({
@@ -33,7 +33,7 @@ router.post('/', async (req, res) => {
       programInterest: program_interest || '',
       sportsPlayed: sports_played || '',
       competitionLevel: competition_level || '',
-      essay: essay || '',
+      essay: notes || essay || '',
       referralSource: referral_source || '',
     }).returning();
 
@@ -144,6 +144,7 @@ router.post('/:id/approve', requireAuth, requireRole('admin'), async (req, res) 
         role: 'parent',
         firstName: app.parentFirstName,
         lastName: app.parentLastName,
+        phone: app.phone || null,
         status: 'active',
       }).returning();
     }
@@ -341,7 +342,12 @@ router.post('/:id/deny', requireAuth, requireRole('admin'), async (req, res) => 
       ipAddress: req.ip,
     });
 
-    // Notify parent user if their account exists
+    // Always send a denial email to the applicant's address
+    const parentName = `${app.parentFirstName} ${app.parentLastName}`.trim() || 'there';
+    await sendApplicationDeniedEmail(app.email, parentName, app.studentFirstName)
+      .catch(err => console.warn('[deny] denial email failed (non-fatal):', err.message));
+
+    // Also send an in-app notification if a parent account exists
     const [parentUser] = await db.select().from(users).where(eq(users.email, app.email.toLowerCase().trim()));
     if (parentUser) {
       await createNotification({
@@ -380,6 +386,7 @@ function formatApp(app) {
     referral_source: app.referralSource,
     status: app.status,
     reviewer_notes: app.reviewerNotes,
+    submitted_at: app.createdAt?.toISOString(),
     created_date: app.createdAt?.toISOString(),
   };
 }

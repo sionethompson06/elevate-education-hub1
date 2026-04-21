@@ -251,6 +251,10 @@ async function syncPendingInvoicesToProgramTuitions() {
   }
 }
 
+if (!process.env.STRIPE_WEBHOOK_SECRET) {
+  console.warn('[startup] WARNING: STRIPE_WEBHOOK_SECRET is not set. Stripe webhook signature verification is disabled. Set this env var before going to production.');
+}
+
 normalizeEnrollmentStatuses();
 ensureOverridesTable();
 ensureSubmissionContentColumn();

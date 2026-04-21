@@ -19,8 +19,16 @@ router.post('/checkout', requireAuth, requireRole('parent', 'admin'), async (req
     const [enrollment] = await db.select().from(enrollments).where(eq(enrollments.id, Number(enrollment_id)));
     if (!enrollment) return res.status(404).json({ error: 'Enrollment not found' });
 
-    // Block duplicate payments for already-active enrollments
-    if (['active', 'active_override'].includes(enrollment.status)) {
+    // Fetch latest invoice first so the guard can check payment status
+    const [latestInvoice] = await db.select().from(invoices)
+      .where(eq(invoices.enrollmentId, Number(enrollment_id)))
+      .orderBy(desc(invoices.createdAt))
+      .limit(1);
+
+    // Block only when genuinely paid. active_override with a pending invoice means a partial
+    // scholarship was applied and the remaining balance still needs to be collected.
+    if (enrollment.status === 'active' ||
+        (enrollment.status === 'active_override' && latestInvoice?.status === 'paid')) {
       return res.status(400).json({ error: 'Enrollment is already active and paid.' });
     }
 
@@ -40,10 +48,6 @@ router.post('/checkout', requireAuth, requireRole('parent', 'admin'), async (req
       : [null];
 
     // Use admin-edited invoice amount if one exists; fall back to program tuition
-    const [latestInvoice] = await db.select().from(invoices)
-      .where(eq(invoices.enrollmentId, Number(enrollment_id)))
-      .orderBy(desc(invoices.createdAt))
-      .limit(1);
     const effectiveTuition = latestInvoice?.amount != null
       ? Number(latestInvoice.amount)
       : Number(program?.tuitionAmount);
@@ -385,6 +389,43 @@ export async function stripeWebhookHandler(req, res) {
           }
           console.log(`[stripe] Payment failed, enrollment ${enrollmentId} marked payment_failed`);
         }
+      }
+    }
+
+    // ── One-time payment failed (no subscription involved) ─────────────────
+    if (event.type === 'payment_intent.payment_failed') {
+      const intent = event.data.object;
+      const enrollmentId = intent.metadata?.enrollment_id;
+      const parentUserId = intent.metadata?.parent_user_id;
+
+      if (enrollmentId) {
+        await db.update(enrollments).set({ status: 'payment_failed' })
+          .where(eq(enrollments.id, Number(enrollmentId)));
+
+        const [linkedInvoice] = await db.select().from(invoices)
+          .where(eq(invoices.enrollmentId, Number(enrollmentId)))
+          .orderBy(desc(invoices.createdAt))
+          .limit(1);
+        if (linkedInvoice) {
+          await db.update(invoices).set({ status: 'past_due' })
+            .where(eq(invoices.id, linkedInvoice.id));
+        }
+
+        if (parentUserId) {
+          const [parentUser] = await db.select().from(users).where(eq(users.id, Number(parentUserId)));
+          const [enrollment] = await db.select().from(enrollments).where(eq(enrollments.id, Number(enrollmentId)));
+          if (parentUser && enrollment) {
+            const [prog] = enrollment.programId
+              ? await db.select().from(programs).where(eq(programs.id, enrollment.programId))
+              : [null];
+            await sendPaymentFailedEmail(
+              parentUser.email,
+              `${parentUser.firstName} ${parentUser.lastName}`,
+              prog?.name || 'your program'
+            ).catch(err => console.error('[webhook] one-time failure email error:', err));
+          }
+        }
+        console.log(`[stripe] One-time payment failed, enrollment ${enrollmentId} marked payment_failed`);
       }
     }
 
