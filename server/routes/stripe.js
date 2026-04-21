@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, desc } from 'drizzle-orm';
 import db from '../db-postgres.js';
 import { enrollments, users, programs, billingAccounts, payments, invoices, students } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
@@ -34,6 +34,18 @@ router.post('/checkout', requireAuth, requireRole('parent', 'admin'), async (req
       ? await db.select().from(programs).where(eq(programs.id, enrollment.programId))
       : [null];
 
+    // Use admin-edited invoice amount if one exists; fall back to program tuition
+    const [latestInvoice] = await db.select().from(invoices)
+      .where(eq(invoices.enrollmentId, Number(enrollment_id)))
+      .orderBy(desc(invoices.createdAt))
+      .limit(1);
+    const effectiveTuition = latestInvoice?.amount != null
+      ? Number(latestInvoice.amount)
+      : Number(program?.tuitionAmount);
+    const effectiveProgram = program
+      ? { ...program, tuitionAmount: effectiveTuition }
+      : { tuitionAmount: effectiveTuition };
+
     // Get or create billing account and Stripe customer
     let [billingAccount] = await db.select().from(billingAccounts).where(eq(billingAccounts.parentUserId, req.user.id));
     let stripeCustomerId = billingAccount?.stripeCustomerId;
@@ -58,7 +70,7 @@ router.post('/checkout', requireAuth, requireRole('parent', 'admin'), async (req
       studentId: enrollment.studentId,
       parentUserId: req.user.id,
       stripeCustomerId,
-      program,
+      program: effectiveProgram,
       billingCycle: billing_cycle || 'one_time',
       successUrl: success_url || `${origin}/parent/dashboard?payment=success&enrollment=${enrollment_id}`,
       cancelUrl: cancel_url || `${origin}/parent/programs`,
