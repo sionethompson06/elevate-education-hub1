@@ -13,7 +13,14 @@ const OVERRIDE_TYPES = [
 ];
 
 export default function OverrideModal({ enrollment, onClose, onSuccess }) {
-  const originalCents = Math.round(parseFloat(enrollment.invoiceAmount || 0) * 100);
+  // Use the program's effective tuition as the override base (not the current invoice amount,
+  // which may have been reduced by a prior override or manual edit)
+  const cycle = enrollment.billingCycle || enrollment.programBillingCycle || 'monthly';
+  const prices = enrollment.programMetadata?.prices;
+  const effectiveTuition = (prices?.[cycle] != null)
+    ? Number(prices[cycle])
+    : parseFloat(enrollment.programTuition || enrollment.invoiceAmount || 0);
+  const originalCents = Math.round(effectiveTuition * 100);
 
   const [form, setForm] = useState({
     overrideType:        "scholarship",
@@ -81,7 +88,7 @@ export default function OverrideModal({ enrollment, onClose, onSuccess }) {
             <p className="font-semibold text-slate-800">{programLabel}</p>
             {studentLabel && <p className="text-slate-500 text-xs mt-0.5">Student: {studentLabel}</p>}
             <p className="text-xs text-slate-500 mt-1">
-              Original invoice amount: <span className="font-semibold text-slate-700">{fmt(originalCents)}</span>
+              Program tuition: <span className="font-semibold text-slate-700">{fmt(originalCents)}</span>
             </p>
             <p className="text-xs text-yellow-700 mt-1 font-medium">
               Enrollment will be set to <span className="font-bold">Active (Override)</span> immediately.

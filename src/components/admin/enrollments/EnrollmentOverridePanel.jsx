@@ -45,7 +45,7 @@ export default function EnrollmentOverridePanel({ enrollment, onUpdated }) {
   };
 
   const activeOverride = overrides.find(o => o.isActive);
-  const canApplyOverride = !activeOverride && !["active", "active_override"].includes(enrollment.status);
+  const canApplyOverride = !activeOverride && enrollment.status !== "active_override";
 
   return (
     <div className="space-y-4">
