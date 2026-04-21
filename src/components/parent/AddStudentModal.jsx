@@ -6,7 +6,8 @@ import { X, Loader2, UserPlus } from "lucide-react";
 const PROGRAM_OPTIONS = [
   "Microschool (In-Person Hybrid)",
   "Athletic Performance Training",
-  "Virtual Homeschool Support",
+  "Virtual School 1-Day",
+  "Virtual School 2-Days",
 ];
 
 const GRADE_OPTIONS = ["K","1","2","3","4","5","6","7","8","9","10","11","12"];
