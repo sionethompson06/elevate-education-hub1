@@ -35,11 +35,24 @@ export default function PaymentsBilling() {
   const qc = useQueryClient();
   const [searchParams] = useSearchParams();
   const paymentSuccess = searchParams.get("payment") === "success";
+  const sessionId = searchParams.get("session_id");
+  const enrollmentParam = searchParams.get("enrollment");
 
   const [statusFilter, setStatusFilter] = useState("all");
   const [studentFilter, setStudentFilter] = useState("all");
   const [showSuccess, setShowSuccess] = useState(paymentSuccess);
   const [portalLoading, setPortalLoading] = useState(false);
+
+  // Verify payment with Stripe on success redirect and activate enrollment if needed
+  useEffect(() => {
+    if (paymentSuccess && enrollmentParam && sessionId && user?.id) {
+      apiPost("/stripe/verify-payment", { enrollment_id: Number(enrollmentParam), session_id: sessionId })
+        .then(() => {
+          qc.invalidateQueries({ queryKey: ["parent-my-students"] });
+        })
+        .catch(err => console.error("[verify-payment]", err));
+    }
+  }, [paymentSuccess, enrollmentParam, sessionId, user?.id]);
 
   const openBillingPortal = async () => {
     setPortalLoading(true);

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useAuth } from "@/lib/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams, Link } from "react-router-dom";
@@ -369,6 +369,19 @@ export default function ParentDashboard() {
   const [profileStudent, setProfileStudent] = useState(null);
   const paymentStatus = searchParams.get("payment");
   const enrollmentId = searchParams.get("enrollment");
+  const sessionId = searchParams.get("session_id");
+
+  // On success redirect: verify payment with Stripe and activate enrollment if needed
+  useEffect(() => {
+    if (paymentStatus === "success" && enrollmentId && sessionId && user?.id) {
+      apiPost("/stripe/verify-payment", { enrollment_id: Number(enrollmentId), session_id: sessionId })
+        .then(() => {
+          qc.invalidateQueries({ queryKey: ["parent-my-students"] });
+          qc.invalidateQueries({ queryKey: ["enrollment-detail", enrollmentId] });
+        })
+        .catch(err => console.error("[verify-payment]", err));
+    }
+  }, [paymentStatus, enrollmentId, sessionId, user?.id]);
 
   const { data: myData = { students: [], enrollments: [] }, isLoading: enrollLoading } = useQuery({
     queryKey: ["parent-my-students", user?.id],
