@@ -150,16 +150,47 @@ async function ensureInvoiceDiscountColumn() {
 
 async function seedProgramTuitions() {
   try {
+    // Hybrid Microschool — update tuition + store per-cycle prices in metadata
     await rawSql`UPDATE programs SET tuition_amount = 750, billing_cycle = 'monthly',
       metadata = jsonb_set(COALESCE(metadata, '{}'), '{prices}', '{"monthly":750,"one_time":7500}')
       WHERE name ILIKE '%hybrid%'`;
-    await rawSql`UPDATE programs SET tuition_amount = 199, billing_cycle = 'monthly'
-      WHERE name ILIKE '%1-day%' OR name ILIKE '%1 day%' OR name ILIKE '%virtual school 1%'`;
-    await rawSql`UPDATE programs SET tuition_amount = 299, billing_cycle = 'monthly'
-      WHERE name ILIKE '%2-day%' OR name ILIKE '%2 day%' OR name ILIKE '%virtual school 2%'`;
-    await rawSql`UPDATE programs SET tuition_amount = 500, billing_cycle = 'monthly'
+
+    // Virtual School 1-day — create if missing, then ensure correct tuition
+    await rawSql`
+      INSERT INTO programs (name, type, description, tuition_amount, billing_cycle, status)
+      SELECT 'Virtual School 1-day', 'academic', 'Virtual instruction program — 1 day per week.', 199, 'monthly', 'active'
+      WHERE NOT EXISTS (
+        SELECT 1 FROM programs WHERE name ILIKE '%virtual school 1%' OR name ILIKE '%1-day%' OR name ILIKE '%1 day%'
+      )`;
+    await rawSql`UPDATE programs SET tuition_amount = 199, billing_cycle = 'monthly', status = 'active'
+      WHERE name ILIKE '%virtual school 1%' OR name ILIKE '%1-day%' OR name ILIKE '%1 day%'`;
+
+    // Virtual School 2-days — create if missing, then ensure correct tuition
+    await rawSql`
+      INSERT INTO programs (name, type, description, tuition_amount, billing_cycle, status)
+      SELECT 'Virtual School 2-days', 'academic', 'Virtual instruction program — 2 days per week.', 299, 'monthly', 'active'
+      WHERE NOT EXISTS (
+        SELECT 1 FROM programs WHERE name ILIKE '%virtual school 2%' OR name ILIKE '%2-day%' OR name ILIKE '%2 day%'
+      )`;
+    await rawSql`UPDATE programs SET tuition_amount = 299, billing_cycle = 'monthly', status = 'active'
+      WHERE name ILIKE '%virtual school 2%' OR name ILIKE '%2-day%' OR name ILIKE '%2 day%'`;
+
+    // Performance Training — rename "Elite Athletic Training" if it exists and "Performance Training" doesn't
+    // (preserves all existing enrollment links since the program ID stays the same)
+    await rawSql`
+      UPDATE programs SET name = 'Performance Training', tuition_amount = 500, billing_cycle = 'monthly', status = 'active'
+      WHERE name ILIKE '%elite athletic%'
+        AND NOT EXISTS (SELECT 1 FROM programs WHERE name ILIKE '%performance training%')`;
+    // Create Performance Training if neither old nor new name exists
+    await rawSql`
+      INSERT INTO programs (name, type, description, tuition_amount, billing_cycle, status)
+      SELECT 'Performance Training', 'athletic', 'Athletic performance training and development program.', 500, 'monthly', 'active'
+      WHERE NOT EXISTS (SELECT 1 FROM programs WHERE name ILIKE '%performance training%')`;
+    // Ensure correct tuition in case it already existed
+    await rawSql`UPDATE programs SET tuition_amount = 500, billing_cycle = 'monthly', status = 'active'
       WHERE name ILIKE '%performance training%'`;
-    console.log('[seed] Program tuitions updated');
+
+    console.log('[seed] Program tuitions and names updated');
   } catch (err) {
     console.error('[seed] seedProgramTuitions error:', err.message);
   }
