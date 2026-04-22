@@ -150,20 +150,44 @@ async function ensureInvoiceDiscountColumn() {
 
 async function seedProgramTuitions() {
   try {
-    // Hybrid Microschool — update tuition + store per-cycle prices in metadata
-    await rawSql`UPDATE programs SET tuition_amount = 750, billing_cycle = 'monthly',
-      metadata = jsonb_set(COALESCE(metadata, '{}'), '{prices}', '{"monthly":750,"one_time":7500}')
-      WHERE name ILIKE '%hybrid%'`;
+    // ── Hybrid Microschool ────────────────────────────────────────────────────
+    // Step 1: rename any legacy variant (e.g. "Microschool (In-Person Hybrid)", "Microschool")
+    // to the canonical name, but only when the canonical name doesn't already exist.
+    await rawSql`
+      UPDATE programs
+        SET name = 'Hybrid Microschool', status = 'active'
+      WHERE (name ILIKE '%microschool%' OR name ILIKE '%hybrid%')
+        AND name NOT ILIKE '%virtual%'
+        AND name <> 'Hybrid Microschool'
+        AND NOT EXISTS (SELECT 1 FROM programs WHERE name = 'Hybrid Microschool')`;
+    // Step 2: create if still missing
+    await rawSql`
+      INSERT INTO programs (name, type, description, tuition_amount, billing_cycle, status)
+      SELECT 'Hybrid Microschool', 'academic',
+             'Personalized academic instruction in a small-group, in-person hybrid setting.',
+             750, 'monthly', 'active'
+      WHERE NOT EXISTS (
+        SELECT 1 FROM programs WHERE name ILIKE '%microschool%' OR name ILIKE '%hybrid%'
+      )`;
+    // Step 3: ensure correct tuition + metadata on whichever row now holds this program
+    await rawSql`
+      UPDATE programs
+        SET name           = 'Hybrid Microschool',
+            tuition_amount = 750,
+            billing_cycle  = 'monthly',
+            status         = 'active',
+            metadata       = jsonb_set(COALESCE(metadata, '{}'), '{prices}', '{"monthly":750,"one_time":7500}')
+      WHERE name ILIKE '%microschool%' OR name ILIKE '%hybrid%'`;
 
-    // Virtual School 1-day — merge "Virtual Homeschool Support" if it exists as a duplicate
-    // Step 1: rename VHS → VS1d when VS1d doesn't exist yet (preserves enrollment links)
+    // ── Virtual School 1-day ──────────────────────────────────────────────────
+    // Rename "Virtual Homeschool Support" → "Virtual School 1-day" when VS1d doesn't exist yet
     await rawSql`
       UPDATE programs SET name = 'Virtual School 1-day', tuition_amount = 199, billing_cycle = 'monthly', status = 'active'
       WHERE (name ILIKE '%homeschool support%' OR name ILIKE '%virtual home%')
         AND NOT EXISTS (
           SELECT 1 FROM programs WHERE name ILIKE '%virtual school 1%' OR name ILIKE '%1-day%'
         )`;
-    // Step 2: if both VS1d and VHS now exist, reassign VHS enrollments to VS1d then delete VHS
+    // Reassign enrollments pointing at any remaining VHS rows, then delete them
     await rawSql`
       UPDATE enrollments
         SET program_id = (SELECT id FROM programs WHERE name ILIKE '%virtual school 1%' OR name ILIKE '%1-day%' LIMIT 1)
@@ -171,7 +195,7 @@ async function seedProgramTuitions() {
         SELECT id FROM programs WHERE name ILIKE '%homeschool support%' OR name ILIKE '%virtual home%'
       )`;
     await rawSql`DELETE FROM programs WHERE name ILIKE '%homeschool support%' OR name ILIKE '%virtual home%'`;
-    // Create VS1d if neither old nor new name exists, then ensure correct tuition
+    // Create VS1d if it still doesn't exist; then lock in correct tuition
     await rawSql`
       INSERT INTO programs (name, type, description, tuition_amount, billing_cycle, status)
       SELECT 'Virtual School 1-day', 'academic', 'Virtual instruction program — 1 day per week.', 199, 'monthly', 'active'
@@ -181,7 +205,7 @@ async function seedProgramTuitions() {
     await rawSql`UPDATE programs SET tuition_amount = 199, billing_cycle = 'monthly', status = 'active'
       WHERE name ILIKE '%virtual school 1%' OR name ILIKE '%1-day%'`;
 
-    // Virtual School 2-days — create if missing, then ensure correct tuition
+    // ── Virtual School 2-days ─────────────────────────────────────────────────
     await rawSql`
       INSERT INTO programs (name, type, description, tuition_amount, billing_cycle, status)
       SELECT 'Virtual School 2-days', 'academic', 'Virtual instruction program — 2 days per week.', 299, 'monthly', 'active'
@@ -191,36 +215,28 @@ async function seedProgramTuitions() {
     await rawSql`UPDATE programs SET tuition_amount = 299, billing_cycle = 'monthly', status = 'active'
       WHERE name ILIKE '%virtual school 2%' OR name ILIKE '%2-day%' OR name ILIKE '%2 day%'`;
 
-    // Performance Training — rename "Elite Athletic Training" if it exists and "Performance Training" doesn't
-    // (preserves all existing enrollment links since the program ID stays the same)
+    // ── Performance Training ──────────────────────────────────────────────────
+    // Rename legacy "Elite Athletic Training" if it exists and "Performance Training" doesn't
     await rawSql`
       UPDATE programs SET name = 'Performance Training', tuition_amount = 500, billing_cycle = 'monthly', status = 'active'
       WHERE name ILIKE '%elite athletic%'
         AND NOT EXISTS (SELECT 1 FROM programs WHERE name ILIKE '%performance training%')`;
-    // Create Performance Training if neither old nor new name exists
+    // Rename "Athletic Performance Training" (old frontend label) if canonical name doesn't exist
+    await rawSql`
+      UPDATE programs SET name = 'Performance Training', tuition_amount = 500, billing_cycle = 'monthly', status = 'active'
+      WHERE name ILIKE '%athletic performance%'
+        AND NOT EXISTS (SELECT 1 FROM programs WHERE name ILIKE '%performance training%')`;
+    // Create if still missing
     await rawSql`
       INSERT INTO programs (name, type, description, tuition_amount, billing_cycle, status)
       SELECT 'Performance Training', 'athletic', 'Athletic performance training and development program.', 500, 'monthly', 'active'
       WHERE NOT EXISTS (SELECT 1 FROM programs WHERE name ILIKE '%performance training%')`;
-    // Ensure correct tuition in case it already existed
+    // Lock in correct tuition
     await rawSql`UPDATE programs SET tuition_amount = 500, billing_cycle = 'monthly', status = 'active'
       WHERE name ILIKE '%performance training%'`;
 
-    // Deactivate "Combination" programs — they are no longer offered as standalone options
-    // Enrollments that reference these programs are preserved; they just won't appear in new-enrollment dropdowns
+    // ── Deactivate legacy / combination programs ──────────────────────────────
     await rawSql`UPDATE programs SET status = 'inactive' WHERE name ILIKE '%combination%'`;
-
-    // Final safety net: delete any residual "Virtual Homeschool Support" programs that the earlier
-    // rename step may have missed (e.g. if they had an unusual capitalisation or extra spaces)
-    await rawSql`
-      UPDATE enrollments
-        SET program_id = (SELECT id FROM programs WHERE name ILIKE '%virtual school 1%' OR name ILIKE '%1-day%' LIMIT 1)
-      WHERE program_id IN (
-        SELECT id FROM programs WHERE name ILIKE '%homeschool support%' OR name ILIKE '%virtual home%' OR name ILIKE '%homeschool%'
-          AND name NOT ILIKE '%virtual school%'
-      )`;
-    await rawSql`DELETE FROM programs WHERE (name ILIKE '%homeschool support%' OR name ILIKE '%virtual home%')
-      AND name NOT ILIKE '%virtual school%'`;
 
     console.log('[seed] Program tuitions and names updated');
   } catch (err) {
