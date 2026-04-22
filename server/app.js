@@ -206,6 +206,22 @@ async function seedProgramTuitions() {
     await rawSql`UPDATE programs SET tuition_amount = 500, billing_cycle = 'monthly', status = 'active'
       WHERE name ILIKE '%performance training%'`;
 
+    // Deactivate "Combination" programs — they are no longer offered as standalone options
+    // Enrollments that reference these programs are preserved; they just won't appear in new-enrollment dropdowns
+    await rawSql`UPDATE programs SET status = 'inactive' WHERE name ILIKE '%combination%'`;
+
+    // Final safety net: delete any residual "Virtual Homeschool Support" programs that the earlier
+    // rename step may have missed (e.g. if they had an unusual capitalisation or extra spaces)
+    await rawSql`
+      UPDATE enrollments
+        SET program_id = (SELECT id FROM programs WHERE name ILIKE '%virtual school 1%' OR name ILIKE '%1-day%' LIMIT 1)
+      WHERE program_id IN (
+        SELECT id FROM programs WHERE name ILIKE '%homeschool support%' OR name ILIKE '%virtual home%' OR name ILIKE '%homeschool%'
+          AND name NOT ILIKE '%virtual school%'
+      )`;
+    await rawSql`DELETE FROM programs WHERE (name ILIKE '%homeschool support%' OR name ILIKE '%virtual home%')
+      AND name NOT ILIKE '%virtual school%'`;
+
     console.log('[seed] Program tuitions and names updated');
   } catch (err) {
     console.error('[seed] seedProgramTuitions error:', err.message);

@@ -3,7 +3,7 @@ import { BookOpen, Activity, Globe, Check } from "lucide-react";
 
 const PROGRAMS = [
   {
-    value: "Microschool (In-Person Hybrid)",
+    value: "Hybrid Microschool",
     icon: BookOpen,
     title: "Microschool",
     subtitle: "In-Person Hybrid",
@@ -13,7 +13,7 @@ const PROGRAMS = [
     iconColor: "text-blue-600",
   },
   {
-    value: "Athletic Performance Training",
+    value: "Performance Training",
     icon: Activity,
     title: "Athletic Performance",
     subtitle: "Training Program",
