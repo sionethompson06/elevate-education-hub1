@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, inArray } from 'drizzle-orm';
 import db from '../db-postgres.js';
 import { enrollments, users, programs, billingAccounts, payments, invoices, students, familyInvoices } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
@@ -208,7 +208,6 @@ router.post('/family-checkout', requireAuth, requireRole('parent', 'admin'), asy
     }
 
     // Load child invoices with enriched line item info
-    const { inArray: inArr } = await import('drizzle-orm');
     const childInvoices = await db.select().from(invoices)
       .where(eq(invoices.familyInvoiceId, fi.id));
 
@@ -220,16 +219,15 @@ router.post('/family-checkout', requireAuth, requireRole('parent', 'admin'), asy
     const enrollmentIds = [...new Set(childInvoices.filter(i => i.enrollmentId).map(i => i.enrollmentId))];
     let enrollmentMap = {};
     if (enrollmentIds.length > 0) {
-      const { enrollments: enr, programs: prog, students: stu } = await import('../schema.js');
       const rows = await db.select({
-        id: enr.id,
-        programName: prog.name,
-        studentFirstName: stu.firstName,
-        studentLastName: stu.lastName,
-      }).from(enr)
-        .leftJoin(prog, eq(enr.programId, prog.id))
-        .leftJoin(stu, eq(enr.studentId, stu.id))
-        .where(inArr(enr.id, enrollmentIds));
+        id: enrollments.id,
+        programName: programs.name,
+        studentFirstName: students.firstName,
+        studentLastName: students.lastName,
+      }).from(enrollments)
+        .leftJoin(programs, eq(enrollments.programId, programs.id))
+        .leftJoin(students, eq(enrollments.studentId, students.id))
+        .where(inArray(enrollments.id, enrollmentIds));
       enrollmentMap = Object.fromEntries(rows.map(r => [r.id, r]));
     }
 
