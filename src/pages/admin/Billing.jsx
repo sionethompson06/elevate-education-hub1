@@ -1,9 +1,30 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { apiGet } from "@/api/apiClient";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { apiGet, apiPost } from "@/api/apiClient";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { RefreshCw, Loader2, CreditCard, BookOpen, ChevronDown, ChevronRight, Search } from "lucide-react";
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function daysOverdue(dueDate) {
+  if (!dueDate) return 0;
+  const due = new Date(dueDate.includes("T") ? dueDate : dueDate + "T00:00:00");
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  return Math.max(0, Math.floor((today - due) / 86400000));
+}
+
+const URGENCY_ORDER = {
+  payment_failed: 0, past_due: 1,
+  pending_payment: 2, pending: 3,
+  active_override: 4, active: 5,
+  paused: 6, cancelled: 7,
+};
+
+function urgencyKey(r) {
+  if (r.enrollmentStatus === "payment_failed") return "payment_failed";
+  if (r.invoiceStatus === "past_due" && !["active", "active_override", "cancelled"].includes(r.enrollmentStatus)) return "past_due";
+  return r.enrollmentStatus;
+}
 
 // ── Status config ─────────────────────────────────────────────────────────────
 const ENROLLMENT_STATUS = {
@@ -12,6 +33,7 @@ const ENROLLMENT_STATUS = {
   pending_payment: { label: "Pending",   color: "bg-yellow-100 text-yellow-700 border-yellow-200" },
   pending:         { label: "Pending",   color: "bg-yellow-100 text-yellow-700 border-yellow-200" },
   payment_failed:  { label: "Past Due",  color: "bg-red-100 text-red-700 border-red-200" },
+  past_due:        { label: "Past Due",  color: "bg-red-100 text-red-700 border-red-200" },
   cancelled:       { label: "Cancelled", color: "bg-slate-100 text-slate-500 border-slate-200" },
   paused:          { label: "Paused",    color: "bg-orange-100 text-orange-600 border-orange-200" },
 };
@@ -35,7 +57,7 @@ const STATUS_FILTERS = [
   { key: "all",      label: "All",       match: () => true },
   { key: "active",   label: "Active",    match: r => ["active","active_override"].includes(r.enrollmentStatus) },
   { key: "pending",  label: "Pending",   match: r => ["pending_payment","pending"].includes(r.enrollmentStatus) },
-  { key: "past_due", label: "Past Due",  match: r => r.enrollmentStatus === "payment_failed" },
+  { key: "past_due", label: "Past Due",  match: r => r.enrollmentStatus === "payment_failed" || (r.invoiceStatus === "past_due" && !["active", "active_override", "cancelled"].includes(r.enrollmentStatus)) },
   { key: "cancelled",label: "Cancelled", match: r => r.enrollmentStatus === "cancelled" },
 ];
 
@@ -95,6 +117,11 @@ function RowDetail({ row }) {
               <p className={`font-semibold ${row.nextDueDate ? "text-slate-800" : "text-slate-400"}`}>
                 {row.nextDueDate ? fmtDate(row.nextDueDate) : "—"}
               </p>
+              {(row.enrollmentStatus === "payment_failed" || row.invoiceStatus === "past_due") && row.dueDate && daysOverdue(row.dueDate) > 0 && (
+                <span className="inline-block mt-1 text-xs bg-red-100 text-red-700 rounded px-1.5 py-0.5 font-medium">
+                  {daysOverdue(row.dueDate)}d overdue
+                </span>
+              )}
             </div>
             <div>
               <p className="text-xs text-slate-400 uppercase tracking-wide mb-0.5">Enrolled</p>
@@ -151,11 +178,13 @@ function RowDetail({ row }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function AdminBilling() {
+  const qc = useQueryClient();
   const [tab, setTab] = useState("accounting");
   const [statusFilter, setStatusFilter] = useState("all");
   const [cycleFilter, setCycleFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [expandedRow, setExpandedRow] = useState(null);
+  const [syncMsg, setSyncMsg] = useState("");
 
   const {
     data: accountingData, isLoading: accountingLoading, refetch: refetchAccounting,
@@ -184,16 +213,35 @@ export default function AdminBilling() {
       if (!search.trim()) return true;
       const q = search.toLowerCase();
       return r.studentName.toLowerCase().includes(q) || r.parentName.toLowerCase().includes(q);
-    });
+    })
+    .sort((a, b) =>
+      (URGENCY_ORDER[urgencyKey(a)] ?? 9) - (URGENCY_ORDER[urgencyKey(b)] ?? 9) ||
+      (a.dueDate || "").localeCompare(b.dueDate || "")
+    );
 
   // ── Stats ──────────────────────────────────────────────────────────────────
   const totalCollected = allRows.reduce((s, r) => s + parseFloat(r.totalPaid || 0), 0);
   const activeCount  = allRows.filter(r => ["active","active_override"].includes(r.enrollmentStatus)).length;
   const pendingCount = allRows.filter(r => ["pending_payment","pending"].includes(r.enrollmentStatus)).length;
-  const pastDueCount = allRows.filter(r => r.enrollmentStatus === "payment_failed").length;
+  const pastDueCount = allRows.filter(r =>
+    r.enrollmentStatus === "payment_failed" ||
+    (r.invoiceStatus === "past_due" && !["active", "active_override", "cancelled"].includes(r.enrollmentStatus))
+  ).length;
 
   const handleRefresh = () => { refetchAccounting(); refetchPayments(); };
   const toggleRow = (id) => setExpandedRow(prev => prev === id ? null : id);
+
+  const handleSyncPastDue = async () => {
+    try {
+      const res = await apiPost("/billing/sync-past-due", {});
+      setSyncMsg(`Updated ${res.updated} record${res.updated !== 1 ? "s" : ""} to past due.`);
+      qc.invalidateQueries({ queryKey: ["admin-accounting"] });
+      setTimeout(() => setSyncMsg(""), 5000);
+    } catch (err) {
+      setSyncMsg("Sync failed: " + err.message);
+      setTimeout(() => setSyncMsg(""), 5000);
+    }
+  };
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
@@ -204,10 +252,19 @@ export default function AdminBilling() {
           <h1 className="text-3xl font-bold text-[#1a3c5e]">Payments & Billing</h1>
           <p className="text-slate-500 text-sm mt-0.5">Accounting records across all enrollments</p>
         </div>
-        <Button variant="outline" size="sm" className="gap-2" onClick={handleRefresh} disabled={isLoading}>
-          {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {syncMsg && (
+            <span className="text-xs text-slate-600 bg-slate-100 border border-slate-200 rounded px-2 py-1">{syncMsg}</span>
+          )}
+          <Button variant="outline" size="sm" className="gap-2" onClick={handleSyncPastDue} disabled={isLoading}>
+            <RefreshCw className="w-4 h-4" />
+            Sync Past Due
+          </Button>
+          <Button variant="outline" size="sm" className="gap-2" onClick={handleRefresh} disabled={isLoading}>
+            {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {/* Stats bar */}
@@ -323,7 +380,8 @@ export default function AdminBilling() {
                   </thead>
                   <tbody>
                     {filtered.map(row => {
-                      const sc = ENROLLMENT_STATUS[row.enrollmentStatus] || ENROLLMENT_STATUS.pending;
+                      const displayStatus = urgencyKey(row);
+                      const sc = ENROLLMENT_STATUS[displayStatus] || ENROLLMENT_STATUS.pending_payment;
                       const cb = CYCLE_BADGE[row.billingCycle] || CYCLE_BADGE.one_time;
                       const isExpanded = expandedRow === row.enrollmentId;
                       const owed = parseFloat(row.totalOwed || 0);

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { eq, desc, inArray, and } from 'drizzle-orm';
+import { eq, desc, inArray, and, lt } from 'drizzle-orm';
 import db from '../db-postgres.js';
 import {
   familyInvoices, invoices, enrollments, programs, students,
@@ -103,8 +103,11 @@ router.post('/family-invoice', requireAuth, async (req, res) => {
         .where(eq(familyInvoices.id, familyInvoice.id))
         .returning();
     } else {
-      // Create a new consolidated family invoice
-      const dueDate = pendingInvoices[0].dueDate
+      // Create a new consolidated family invoice — use the earliest (most urgent) child dueDate
+      const sortedByDue = pendingInvoices
+        .filter(i => i.dueDate)
+        .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+      const dueDate = sortedByDue[0]?.dueDate
         || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
       [familyInvoice] = await db.insert(familyInvoices).values({
         billingAccountId: billingAccount.id,
@@ -153,6 +156,18 @@ router.get('/family-invoices', requireAuth, async (req, res) => {
       .orderBy(desc(familyInvoices.createdAt));
 
     if (fiList.length === 0) return res.json({ success: true, familyInvoices: [] });
+
+    // Compute-on-read: lazily mark overdue pending family invoices as past_due
+    const today = new Date().toISOString().split('T')[0];
+    const nowOverdue = fiList.filter(fi =>
+      fi.status === 'pending' && fi.dueDate && fi.dueDate < today
+    );
+    if (nowOverdue.length > 0) {
+      await db.update(familyInvoices)
+        .set({ status: 'past_due' })
+        .where(inArray(familyInvoices.id, nowOverdue.map(fi => fi.id)));
+      nowOverdue.forEach(fi => { fi.status = 'past_due'; });
+    }
 
     const familyInvoiceIds = fiList.map(fi => fi.id);
 
@@ -305,6 +320,26 @@ router.post('/family-invoice/manual-pay', requireAuth, requireRole('admin'), asy
     res.json({ success: true });
   } catch (err) {
     console.error('[family-billing] manual-pay error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ── POST /api/billing/sync-past-due ──────────────────────────────────────────
+// Admin: batch-mark all pending invoices and family invoices whose dueDate has passed.
+router.post('/sync-past-due', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const updatedInvoices = await db.update(invoices)
+      .set({ status: 'past_due' })
+      .where(and(eq(invoices.status, 'pending'), lt(invoices.dueDate, today)))
+      .returning({ id: invoices.id });
+    const updatedFamilyInvoices = await db.update(familyInvoices)
+      .set({ status: 'past_due' })
+      .where(and(eq(familyInvoices.status, 'pending'), lt(familyInvoices.dueDate, today)))
+      .returning({ id: familyInvoices.id });
+    res.json({ success: true, updated: updatedInvoices.length + updatedFamilyInvoices.length });
+  } catch (err) {
+    console.error('[family-billing] sync-past-due error:', err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });

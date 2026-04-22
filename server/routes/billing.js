@@ -56,7 +56,14 @@ router.get('/invoices', requireAuth, async (req, res) => {
         .leftJoin(programs, eq(enrollments.programId, programs.id))
         .leftJoin(students, eq(enrollments.studentId, students.id))
         .orderBy(desc(invoices.createdAt));
-      return res.json({ success: true, invoices: allInvoices });
+      const today = new Date().toISOString().split('T')[0];
+      return res.json({
+        success: true,
+        invoices: allInvoices.map(inv => ({
+          ...inv,
+          status: (inv.status === 'pending' && inv.dueDate && inv.dueDate < today) ? 'past_due' : inv.status,
+        })),
+      });
     }
 
     const [account] = await db.select().from(billingAccounts)
@@ -83,7 +90,14 @@ router.get('/invoices', requireAuth, async (req, res) => {
       .leftJoin(students, eq(enrollments.studentId, students.id))
       .where(eq(invoices.billingAccountId, account.id))
       .orderBy(desc(invoices.createdAt));
-    res.json({ success: true, invoices: myInvoices });
+    const today2 = new Date().toISOString().split('T')[0];
+    res.json({
+      success: true,
+      invoices: myInvoices.map(inv => ({
+        ...inv,
+        status: (inv.status === 'pending' && inv.dueDate && inv.dueDate < today2) ? 'past_due' : inv.status,
+      })),
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -334,17 +348,23 @@ router.get('/accounting', requireAuth, requireRole('admin'), async (req, res) =>
       paymentsByInvoice[p.invoiceId].push(p);
     }
 
+    const today = new Date().toISOString().split('T')[0];
     const result = enrollmentRows.map(row => {
       const parent = parentMap[row.studentId] || {};
       const invoice = invoiceMap[row.enrollmentId] || null;
       const pmts = invoice ? (paymentsByInvoice[invoice.id] || []) : [];
       const effectiveCycle = row.billingCycleOverride || row.programBillingCycle || 'one_time';
 
+      // Compute effective invoice status: pending + overdue dueDate → past_due
+      const effectiveInvoiceStatus = (invoice?.status === 'pending' && invoice?.dueDate && invoice.dueDate < today)
+        ? 'past_due'
+        : invoice?.status;
+
       const totalPaid = pmts
         .filter(p => p.status === 'paid' || p.status === 'completed')
         .reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
 
-      const totalOwed = invoice && ['pending', 'past_due'].includes(invoice.status)
+      const totalOwed = invoice && ['pending', 'past_due'].includes(effectiveInvoiceStatus)
         ? parseFloat(invoice.amount || 0)
         : 0;
 
@@ -375,7 +395,7 @@ router.get('/accounting', requireAuth, requireRole('admin'), async (req, res) =>
         programName: row.programName || '—',
         billingCycle: effectiveCycle,
         invoiceAmount: invoice?.amount ?? null,
-        invoiceStatus: invoice?.status ?? null,
+        invoiceStatus: effectiveInvoiceStatus ?? null,
         dueDate: invoice?.dueDate ?? null,
         paidDate: invoice?.paidDate ?? null,
         totalPaid: totalPaid.toFixed(2),

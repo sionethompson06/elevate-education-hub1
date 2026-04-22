@@ -13,6 +13,26 @@ import FamilyInvoiceCard from "@/components/parent/FamilyInvoiceCard";
 import UpcomingChargesPanel from "@/components/parent/UpcomingChargesPanel";
 import PaymentHistory from "@/components/parent/PaymentHistory";
 
+// ── Date helpers ─────────────────────────────────────────────────────────────
+function daysOverdue(dueDate) {
+  if (!dueDate) return 0;
+  const due = new Date(dueDate + "T00:00:00");
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  return Math.max(0, Math.floor((today - due) / 86400000));
+}
+
+function daysUntilDue(dueDate) {
+  if (!dueDate) return null;
+  const due = new Date(dueDate + "T00:00:00");
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  return Math.floor((due - today) / 86400000);
+}
+
+function isOverdue(fi) {
+  return fi.status === "past_due" ||
+    (fi.status === "pending" && fi.dueDate && daysOverdue(fi.dueDate) > 0);
+}
+
 const STATUS_CONFIG = {
   active:          { label: "Active",    color: "bg-green-100 text-green-700 border-green-200",    icon: CheckCircle },
   active_override: { label: "Active",    color: "bg-green-100 text-green-700 border-green-200",    icon: CheckCircle },
@@ -108,8 +128,10 @@ export default function PaymentsBilling() {
   const billingAccount = accountData?.account || null;
   const allFamilyInvoices = fiData?.familyInvoices || [];
 
-  // Pending family invoice (the most recent pending one)
-  const pendingFamilyInvoice = allFamilyInvoices.find(fi => fi.status === "pending") || null;
+  // Pending/overdue family invoice (needs payment — either pending or past_due)
+  const pendingFamilyInvoice = allFamilyInvoices.find(fi =>
+    fi.status === "pending" || fi.status === "past_due"
+  ) || null;
 
   // Paid family invoices for history
   const paidFamilyInvoices = allFamilyInvoices.filter(fi => fi.status === "paid");
@@ -147,6 +169,8 @@ export default function PaymentsBilling() {
   );
   const pendingCount = pendingFamilyInvoice ? (pendingFamilyInvoice.lineItems?.length || 0) : 0;
   const activeCount = activeEnrollments.length;
+  const invoiceOverdue = pendingFamilyInvoice ? isOverdue(pendingFamilyInvoice) : false;
+  const overdueDaysCount = invoiceOverdue ? daysOverdue(pendingFamilyInvoice.dueDate) : 0;
 
   const monthlySpend = activeEnrollments
     .filter(e => (e.billingCycleOverride || e.programBillingCycle) === "monthly")
@@ -166,7 +190,7 @@ export default function PaymentsBilling() {
       statusFilter === "all" ||
       (statusFilter === "active"    && ["active", "active_override"].includes(e.status)) ||
       (statusFilter === "pending"   && ["pending_payment", "pending"].includes(e.status)) ||
-      (statusFilter === "past_due"  && e.status === "payment_failed") ||
+      (statusFilter === "past_due"  && (e.status === "payment_failed" || e.invoiceStatus === "past_due")) ||
       (statusFilter === "cancelled" && e.status === "cancelled");
     const studentMatch = studentFilter === "all" || e.studentId === studentFilter;
     return statusMatch && studentMatch;
@@ -228,9 +252,13 @@ export default function PaymentsBilling() {
           <p className="text-2xl font-bold text-green-700">{activeCount}</p>
           <p className="text-xs text-slate-500 mt-0.5">Active</p>
         </div>
-        <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
-          <p className="text-2xl font-bold text-yellow-600">{pendingCount}</p>
-          <p className="text-xs text-slate-500 mt-0.5">Pending Payment</p>
+        <div className={`rounded-xl border p-4 text-center ${invoiceOverdue ? "bg-red-50 border-red-200" : "bg-white border-slate-200"}`}>
+          <p className={`text-2xl font-bold ${invoiceOverdue ? "text-red-700" : "text-yellow-600"}`}>
+            {invoiceOverdue ? `${overdueDaysCount}d` : pendingCount}
+          </p>
+          <p className={`text-xs mt-0.5 ${invoiceOverdue ? "text-red-600" : "text-slate-500"}`}>
+            {invoiceOverdue ? "Days Overdue" : "Pending Payment"}
+          </p>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
           <p className="text-2xl font-bold text-[#1a3c5e]">${monthlySpend.toLocaleString()}</p>
@@ -242,18 +270,35 @@ export default function PaymentsBilling() {
         </div>
       </div>
 
-      {/* ── Consolidated pending invoice ───────────────────────────────────── */}
+      {/* ── Consolidated invoice — Zone A: Past Due ───────────────────────── */}
       {(fiLoading || consolidating) && !pendingFamilyInvoice && (
         <div className="flex items-center gap-2 text-sm text-slate-500 py-2">
           <Loader2 className="w-4 h-4 animate-spin" /> Preparing invoice…
         </div>
       )}
 
-      {pendingFamilyInvoice && (
+      {pendingFamilyInvoice && invoiceOverdue && (
+        <div>
+          <p className="text-xs font-semibold text-red-500 uppercase tracking-wide mb-2">Overdue Balance</p>
+          <div className="flex items-center gap-2 px-4 py-2.5 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 font-medium mb-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            Payment is {overdueDaysCount} day{overdueDaysCount !== 1 ? "s" : ""} overdue. Please pay immediately to avoid enrollment suspension.
+          </div>
+          <FamilyInvoiceCard
+            familyInvoice={pendingFamilyInvoice}
+            variant="past_due"
+            onPaymentStarted={() => {}}
+          />
+        </div>
+      )}
+
+      {/* ── Consolidated invoice — Zone B: Current Due ────────────────────── */}
+      {pendingFamilyInvoice && !invoiceOverdue && (
         <div>
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Payment Due</p>
           <FamilyInvoiceCard
             familyInvoice={pendingFamilyInvoice}
+            variant="pending"
             onPaymentStarted={() => {}}
           />
         </div>
