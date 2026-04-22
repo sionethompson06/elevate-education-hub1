@@ -72,6 +72,50 @@ export async function createCheckoutSession({ enrollmentId, studentId, parentUse
   return stripe.checkout.sessions.create(sessionParams);
 }
 
+// Creates a single Stripe Checkout session for multiple programs (family invoice)
+export async function createFamilyCheckoutSession({
+  familyInvoiceId,
+  parentUserId,
+  billingAccountId,
+  stripeCustomerId,
+  lineItems,   // [{ programName, studentName, amountDollars }]
+  successUrl,
+  cancelUrl,
+}) {
+  const stripe = getStripe();
+
+  if (!lineItems || lineItems.length === 0) {
+    throw new Error('At least one line item is required for family checkout.');
+  }
+
+  const stripeLineItems = lineItems.map(item => ({
+    price_data: {
+      currency: 'usd',
+      unit_amount: Math.round(item.amountDollars * 100),
+      product_data: {
+        name: item.programName || 'Elevate Program',
+        ...(item.studentName ? { description: `Student: ${item.studentName}` } : {}),
+      },
+    },
+    quantity: 1,
+  }));
+
+  const metadata = {
+    family_invoice_id: String(familyInvoiceId),
+    parent_user_id: String(parentUserId),
+    billing_account_id: String(billingAccountId),
+  };
+
+  return stripe.checkout.sessions.create({
+    customer: stripeCustomerId,
+    mode: 'payment',
+    line_items: stripeLineItems,
+    metadata,
+    success_url: successUrl,
+    cancel_url: cancelUrl,
+  });
+}
+
 export async function createPortalSession(stripeCustomerId, returnUrl) {
   const stripe = getStripe();
   return stripe.billingPortal.sessions.create({ customer: stripeCustomerId, return_url: returnUrl });

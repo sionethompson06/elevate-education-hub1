@@ -148,6 +148,30 @@ async function ensureInvoiceDiscountColumn() {
   }
 }
 
+async function ensureFamilyInvoicesTable() {
+  try {
+    await rawSql`
+      CREATE TABLE IF NOT EXISTS family_invoices (
+        id                  SERIAL PRIMARY KEY,
+        billing_account_id  INTEGER NOT NULL REFERENCES billing_accounts(id),
+        total_amount        NUMERIC(10,2) NOT NULL DEFAULT 0,
+        status              VARCHAR(20) NOT NULL DEFAULT 'pending',
+        due_date            DATE,
+        paid_date           DATE,
+        stripe_session_id   VARCHAR(255),
+        stripe_payment_id   VARCHAR(255),
+        notes               TEXT,
+        created_at          TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `;
+    await rawSql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS family_invoice_id INTEGER REFERENCES family_invoices(id)`;
+    await rawSql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS stripe_session_id VARCHAR(255)`;
+    console.log('[migration] family_invoices table and invoice columns ready');
+  } catch (err) {
+    console.error('[migration] ensureFamilyInvoicesTable error:', err.message);
+  }
+}
+
 async function seedProgramTuitions() {
   try {
     // ── Hybrid Microschool ────────────────────────────────────────────────────
@@ -294,6 +318,7 @@ ensureMedicalInfoTable();
 ensureMessageColumns();
 ensureEnrollmentBillingCycleColumn();
 ensureInvoiceDiscountColumn();
+ensureFamilyInvoicesTable();
 seedProgramTuitions().then(() => syncPendingInvoicesToProgramTuitions());
 seedDemoUsers();
 import applicationsRouter from './routes/applications.js';
@@ -322,6 +347,7 @@ import cmsRouter from './routes/cms.js';
 import gradebookRouter from './routes/gradebook.js';
 import auditLogsRouter from './routes/audit-logs.js';
 import stripeRouter, { stripeWebhookHandler } from './routes/stripe.js';
+import familyBillingRouter from './routes/familyBilling.js';
 import coachAssignmentsRouter from './routes/coach-assignments.js';
 
 const isDev = process.env.NODE_ENV !== 'production';
@@ -431,6 +457,7 @@ app.use('/api/programs', programsRouter);
 app.use('/api/sections', sectionsRouter);
 app.use('/api/enrollments', enrollmentsRouter);
 app.use('/api/billing', billingRouter);
+app.use('/api/billing', familyBillingRouter);
 app.use('/api/staff-assignments', staffAssignmentsRouter);
 app.use('/api/assignments', assignmentsRouter);
 app.use('/api/attendance', attendanceRouter);

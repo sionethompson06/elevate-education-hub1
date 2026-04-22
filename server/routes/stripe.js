@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { eq, and, desc } from 'drizzle-orm';
 import db from '../db-postgres.js';
-import { enrollments, users, programs, billingAccounts, payments, invoices, students } from '../schema.js';
+import { enrollments, users, programs, billingAccounts, payments, invoices, students, familyInvoices } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import {
-  getStripe, getOrCreateCustomer, createCheckoutSession, createPortalSession, constructWebhookEvent
+  getStripe, getOrCreateCustomer, createCheckoutSession, createFamilyCheckoutSession,
+  createPortalSession, constructWebhookEvent
 } from '../services/stripe.service.js';
 import { sendPaymentConfirmationEmail, sendPaymentFailedEmail } from '../services/email.service.js';
 
@@ -187,6 +188,174 @@ router.post('/verify-payment', requireAuth, async (req, res) => {
   }
 });
 
+// POST /api/stripe/family-checkout — create a Stripe Checkout session for a family invoice
+router.post('/family-checkout', requireAuth, requireRole('parent', 'admin'), async (req, res) => {
+  try {
+    const { family_invoice_id, success_url, cancel_url } = req.body;
+    if (!family_invoice_id) return res.status(400).json({ error: 'family_invoice_id required' });
+
+    const [fi] = await db.select().from(familyInvoices)
+      .where(eq(familyInvoices.id, Number(family_invoice_id)));
+    if (!fi) return res.status(404).json({ error: 'Family invoice not found' });
+    if (fi.status === 'paid') return res.status(400).json({ error: 'Family invoice is already paid.' });
+
+    // Verify the billing account belongs to this parent
+    const [billingAccount] = await db.select().from(billingAccounts)
+      .where(eq(billingAccounts.id, fi.billingAccountId));
+    if (!billingAccount) return res.status(404).json({ error: 'Billing account not found' });
+    if (req.user.role === 'parent' && billingAccount.parentUserId !== req.user.id) {
+      return res.status(403).json({ error: 'Not authorized for this family invoice' });
+    }
+
+    // Load child invoices with enriched line item info
+    const { inArray: inArr } = await import('drizzle-orm');
+    const childInvoices = await db.select().from(invoices)
+      .where(eq(invoices.familyInvoiceId, fi.id));
+
+    if (childInvoices.length === 0) {
+      return res.status(400).json({ error: 'Family invoice has no line items.' });
+    }
+
+    // Fetch enrollment/program/student info for each child invoice
+    const enrollmentIds = [...new Set(childInvoices.filter(i => i.enrollmentId).map(i => i.enrollmentId))];
+    let enrollmentMap = {};
+    if (enrollmentIds.length > 0) {
+      const { enrollments: enr, programs: prog, students: stu } = await import('../schema.js');
+      const rows = await db.select({
+        id: enr.id,
+        programName: prog.name,
+        studentFirstName: stu.firstName,
+        studentLastName: stu.lastName,
+      }).from(enr)
+        .leftJoin(prog, eq(enr.programId, prog.id))
+        .leftJoin(stu, eq(enr.studentId, stu.id))
+        .where(inArr(enr.id, enrollmentIds));
+      enrollmentMap = Object.fromEntries(rows.map(r => [r.id, r]));
+    }
+
+    const lineItems = childInvoices.map(inv => {
+      const e = inv.enrollmentId ? enrollmentMap[inv.enrollmentId] : null;
+      const studentName = e?.studentFirstName
+        ? `${e.studentFirstName} ${e.studentLastName || ''}`.trim()
+        : null;
+      return {
+        programName: e?.programName || inv.description || 'Elevate Program',
+        studentName,
+        amountDollars: parseFloat(inv.amount || 0),
+      };
+    });
+
+    // Get or create Stripe customer
+    const [parentUser] = await db.select().from(users).where(eq(users.id, billingAccount.parentUserId));
+    let stripeCustomerId = billingAccount.stripeCustomerId;
+    if (!stripeCustomerId && parentUser) {
+      const customer = await getOrCreateCustomer(
+        parentUser.email,
+        `${parentUser.firstName} ${parentUser.lastName}`,
+        { user_id: String(parentUser.id) }
+      );
+      stripeCustomerId = customer.id;
+      await db.update(billingAccounts).set({ stripeCustomerId }).where(eq(billingAccounts.id, billingAccount.id));
+    }
+
+    const origin = req.headers.origin || process.env.APP_URL || 'http://localhost:5173';
+    const session = await createFamilyCheckoutSession({
+      familyInvoiceId: fi.id,
+      parentUserId: billingAccount.parentUserId,
+      billingAccountId: billingAccount.id,
+      stripeCustomerId,
+      lineItems,
+      successUrl: success_url || `${origin}/parent/payments?payment=success&family_invoice=${fi.id}&session_id={CHECKOUT_SESSION_ID}`,
+      cancelUrl: cancel_url || `${origin}/parent/payments`,
+    });
+
+    // Store the session ID on the family invoice for webhook lookup
+    await db.update(familyInvoices)
+      .set({ stripeSessionId: session.id })
+      .where(eq(familyInvoices.id, fi.id));
+
+    res.json({ url: session.url, sessionId: session.id, familyInvoiceId: fi.id });
+  } catch (err) {
+    console.error('[stripe] family-checkout error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/stripe/verify-family-payment — frontend fallback for family invoice payments
+router.post('/verify-family-payment', requireAuth, async (req, res) => {
+  try {
+    const { family_invoice_id, session_id } = req.body;
+    if (!family_invoice_id || !session_id) {
+      return res.status(400).json({ error: 'family_invoice_id and session_id required' });
+    }
+
+    const stripe = getStripe();
+    const session = await stripe.checkout.sessions.retrieve(session_id);
+    if (session.payment_status !== 'paid' && session.status !== 'complete') {
+      return res.json({ activated: false, reason: 'not_paid', status: session.payment_status });
+    }
+
+    const [fi] = await db.select().from(familyInvoices)
+      .where(eq(familyInvoices.id, Number(family_invoice_id)));
+    if (!fi) return res.status(404).json({ error: 'Family invoice not found' });
+
+    // Idempotent
+    if (fi.status === 'paid') return res.json({ activated: true, alreadyActive: true });
+
+    const today = new Date().toISOString().split('T')[0];
+    const stripePaymentId = String(session.payment_intent || session_id);
+
+    await db.update(familyInvoices)
+      .set({ status: 'paid', paidDate: today, stripePaymentId })
+      .where(eq(familyInvoices.id, fi.id));
+
+    // Mark all child invoices paid + activate enrollments
+    const childInvoices = await db.select().from(invoices)
+      .where(eq(invoices.familyInvoiceId, fi.id));
+
+    for (const inv of childInvoices) {
+      if (inv.status !== 'paid') {
+        await db.update(invoices)
+          .set({ status: 'paid', paidDate: today, stripePaymentId })
+          .where(eq(invoices.id, inv.id));
+      }
+      if (inv.enrollmentId) {
+        const [enr] = await db.select().from(enrollments).where(eq(enrollments.id, inv.enrollmentId));
+        if (enr && !['active', 'active_override'].includes(enr.status)) {
+          await db.update(enrollments).set({ status: 'active' }).where(eq(enrollments.id, enr.id));
+          if (enr.studentId) {
+            await db.update(students).set({ status: 'active' }).where(eq(students.id, enr.studentId));
+          }
+        }
+      }
+    }
+
+    // Create one payment record for the total if not already done
+    const firstInvoice = childInvoices[0];
+    if (firstInvoice && session.amount_total) {
+      const [existing] = await db.select().from(payments)
+        .where(eq(payments.invoiceId, firstInvoice.id));
+      if (!existing) {
+        await db.insert(payments).values({
+          billingAccountId: fi.billingAccountId,
+          invoiceId: firstInvoice.id,
+          amount: String(session.amount_total / 100),
+          method: 'stripe',
+          stripePaymentIntentId: stripePaymentId,
+          status: 'paid',
+          processedAt: new Date(),
+        }).catch(err => console.error('[verify-family-payment] payment record error:', err));
+      }
+    }
+
+    console.log(`[stripe] verify-family-payment: family invoice ${fi.id} activated`);
+    res.json({ activated: true });
+  } catch (err) {
+    console.error('[stripe/verify-family-payment] error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/stripe/webhook — handle Stripe events (raw body required — mounted separately)
 export async function stripeWebhookHandler(req, res) {
   let event;
@@ -214,10 +383,85 @@ export async function stripeWebhookHandler(req, res) {
     // ── Initial payment: one-time or first subscription charge ─────────────
     if (event.type === 'checkout.session.completed') {
       const session = event.data.object;
+      const familyInvoiceId = session.metadata?.family_invoice_id;
       const enrollmentId = session.metadata?.enrollment_id;
       const parentUserId = session.metadata?.parent_user_id;
+      const today = new Date().toISOString().split('T')[0];
+      const stripePaymentId = session.payment_intent || session.subscription || session.id;
 
-      if (enrollmentId) {
+      if (familyInvoiceId) {
+        // ── Family invoice payment ──────────────────────────────────────────
+        const [fi] = await db.select().from(familyInvoices)
+          .where(eq(familyInvoices.id, Number(familyInvoiceId)));
+
+        if (fi && fi.status !== 'paid') {
+          await db.update(familyInvoices)
+            .set({ status: 'paid', paidDate: today, stripePaymentId: String(stripePaymentId) })
+            .where(eq(familyInvoices.id, fi.id));
+
+          // Mark all child invoices paid + activate their enrollments/students
+          const childInvoices = await db.select().from(invoices)
+            .where(eq(invoices.familyInvoiceId, fi.id));
+
+          const programNames = [];
+          for (const inv of childInvoices) {
+            if (inv.status !== 'paid') {
+              await db.update(invoices)
+                .set({ status: 'paid', paidDate: today, stripePaymentId: String(stripePaymentId) })
+                .where(eq(invoices.id, inv.id));
+            }
+            if (inv.enrollmentId) {
+              const [enr] = await db.select().from(enrollments)
+                .where(eq(enrollments.id, inv.enrollmentId));
+              if (enr) {
+                if (!['active', 'active_override'].includes(enr.status)) {
+                  await db.update(enrollments).set({ status: 'active' })
+                    .where(eq(enrollments.id, enr.id));
+                }
+                if (enr.studentId) {
+                  await db.update(students).set({ status: 'active' })
+                    .where(eq(students.id, enr.studentId));
+                }
+                if (enr.programId) {
+                  const [prog] = await db.select().from(programs)
+                    .where(eq(programs.id, enr.programId));
+                  if (prog?.name) programNames.push(prog.name);
+                }
+              }
+            }
+          }
+
+          // One payment record for the total amount
+          const firstInvoice = childInvoices[0];
+          await db.insert(payments).values({
+            billingAccountId: fi.billingAccountId,
+            invoiceId: firstInvoice?.id || null,
+            amount: String(session.amount_total / 100),
+            method: 'stripe',
+            stripePaymentIntentId: String(stripePaymentId),
+            status: 'paid',
+            processedAt: new Date(),
+          }).catch(err => console.error('[webhook] family payment record error:', err));
+
+          if (parentUserId) {
+            const [parentUser] = await db.select().from(users)
+              .where(eq(users.id, Number(parentUserId)));
+            if (parentUser) {
+              const programSummary = programNames.length > 0
+                ? programNames.join(', ')
+                : 'your programs';
+              await sendPaymentConfirmationEmail(
+                parentUser.email,
+                `${parentUser.firstName} ${parentUser.lastName}`,
+                session.amount_total,
+                programSummary
+              ).catch(err => console.error('[webhook] family confirmation email error:', err));
+            }
+          }
+          console.log(`[stripe] Family invoice ${familyInvoiceId} paid — ${childInvoices.length} enrollment(s) activated`);
+        }
+      } else if (enrollmentId) {
+        // ── Single enrollment payment (existing flow) ───────────────────────
         await db.update(enrollments).set({ status: 'active' })
           .where(eq(enrollments.id, Number(enrollmentId)));
 
@@ -243,11 +487,7 @@ export async function stripeWebhookHandler(req, res) {
         if (linkedInvoice) {
           invoiceId = linkedInvoice.id;
           await db.update(invoices)
-            .set({
-              status: 'paid',
-              paidDate: new Date().toISOString().split('T')[0],
-              stripePaymentId: session.payment_intent || session.subscription || session.id,
-            })
+            .set({ status: 'paid', paidDate: today, stripePaymentId: String(stripePaymentId) })
             .where(eq(invoices.id, linkedInvoice.id));
         }
 
@@ -257,7 +497,7 @@ export async function stripeWebhookHandler(req, res) {
             invoiceId,
             amount: String(session.amount_total / 100),
             method: 'stripe',
-            stripePaymentIntentId: String(session.payment_intent || session.subscription || session.id),
+            stripePaymentIntentId: String(stripePaymentId),
             status: 'paid',
             processedAt: new Date(),
           }).catch(err => console.error('[webhook] payment record error:', err));

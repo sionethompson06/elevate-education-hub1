@@ -160,16 +160,32 @@ export const billingAccounts = pgTable('billing_accounts', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+// A consolidated billing event grouping multiple enrollment invoices into one payment
+export const familyInvoices = pgTable('family_invoices', {
+  id: serial('id').primaryKey(),
+  billingAccountId: integer('billing_account_id').notNull().references(() => billingAccounts.id),
+  totalAmount: numeric('total_amount', { precision: 10, scale: 2 }).notNull().default('0'),
+  status: varchar('status', { length: 20 }).notNull().default('pending'),
+  dueDate: date('due_date'),
+  paidDate: date('paid_date'),
+  stripeSessionId: varchar('stripe_session_id', { length: 255 }),
+  stripePaymentId: varchar('stripe_payment_id', { length: 255 }),
+  notes: text('notes'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
 export const invoices = pgTable('invoices', {
   id: serial('id').primaryKey(),
   billingAccountId: integer('billing_account_id').notNull().references(() => billingAccounts.id),
   enrollmentId: integer('enrollment_id').references(() => enrollments.id),
+  familyInvoiceId: integer('family_invoice_id').references(() => familyInvoices.id),
   description: varchar('description', { length: 500 }).notNull(),
   amount: numeric('amount', { precision: 10, scale: 2 }).notNull(),
   status: varchar('status', { length: 20 }).notNull().default('pending'),
   dueDate: date('due_date'),
   paidDate: date('paid_date'),
   stripePaymentId: varchar('stripe_payment_id', { length: 255 }),
+  stripeSessionId: varchar('stripe_session_id', { length: 255 }),
   discountPercent: numeric('discount_percent', { precision: 5, scale: 2 }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
