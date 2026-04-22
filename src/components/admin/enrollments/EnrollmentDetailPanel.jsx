@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
-import { X, CreditCard, ShieldCheck, Pencil, Save, X as XIcon, Loader2, Plus } from "lucide-react";
+import { X, CreditCard, ShieldCheck, Pencil, Save, X as XIcon, Loader2, Plus, Trash2 } from "lucide-react";
 import { format } from "date-fns";
-import { apiPatch, apiGet, apiPost } from "@/api/apiClient";
+import { apiPatch, apiGet, apiPost, apiDelete } from "@/api/apiClient";
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import EnrollmentOverridePanel from "./EnrollmentOverridePanel";
@@ -48,6 +48,8 @@ export default function EnrollmentDetailPanel({ enrollment, studentEnrollments =
 
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const { data: programsData } = useQuery({
     queryKey: ["admin-programs-list"],
@@ -151,6 +153,21 @@ export default function EnrollmentDetailPanel({ enrollment, studentEnrollments =
 
   const handleCancel = () => setEditing(false);
 
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await apiDelete(`/enrollments/${enrollment.id}`);
+      toast({ title: "Enrollment deleted" });
+      qc.invalidateQueries({ queryKey: ["admin-enrollments"] });
+      if (onUpdated) onUpdated();
+    } catch (err) {
+      toast({ title: "Delete failed", description: err.message, variant: "destructive" });
+      setConfirmDelete(false);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
@@ -196,9 +213,38 @@ export default function EnrollmentDetailPanel({ enrollment, studentEnrollments =
               {enrollment.status?.replace(/_/g, " ")}
             </span>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded hover:bg-slate-100">
-            <X className="w-5 h-5 text-slate-500" />
-          </button>
+          <div className="flex items-center gap-2">
+            {confirmDelete ? (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-red-600 font-medium">Delete this enrollment?</span>
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="text-xs px-2.5 py-1 rounded-lg bg-red-600 text-white hover:bg-red-700 disabled:opacity-60 flex items-center gap-1"
+                >
+                  {deleting ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                  Yes, delete
+                </button>
+                <button
+                  onClick={() => setConfirmDelete(false)}
+                  className="text-xs px-2.5 py-1 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setConfirmDelete(true)}
+                className="p-1.5 rounded hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors"
+                title="Delete enrollment"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+            <button onClick={onClose} className="p-1.5 rounded hover:bg-slate-100">
+              <X className="w-5 h-5 text-slate-500" />
+            </button>
+          </div>
         </div>
 
         <div className="overflow-y-auto flex-1 px-6 py-5 space-y-6">

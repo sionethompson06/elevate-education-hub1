@@ -720,4 +720,38 @@ router.patch('/overrides/:overrideId/revoke', requireAuth, requireRole('admin'),
   }
 });
 
+// DELETE /api/enrollments/:id — permanently delete an enrollment and its associated data
+router.delete('/:id', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ success: false, error: 'Invalid enrollment ID' });
+
+    const [enrollment] = await db.select().from(enrollments).where(eq(enrollments.id, id));
+    if (!enrollment) return res.status(404).json({ success: false, error: 'Enrollment not found' });
+
+    // Delete child records first (no transaction support with neon-http driver)
+    await db.delete(enrollmentOverrides).where(eq(enrollmentOverrides.enrollmentId, id));
+    await db.delete(invoices).where(eq(invoices.enrollmentId, id));
+    await db.delete(enrollments).where(eq(enrollments.id, id));
+
+    await logAudit({
+      userId: req.user.id,
+      action: 'delete',
+      entityType: 'enrollment',
+      entityId: id,
+      details: {
+        studentId: enrollment.studentId,
+        programId: enrollment.programId,
+        status: enrollment.status,
+      },
+      ipAddress: req.ip,
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Delete enrollment error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 export default router;
