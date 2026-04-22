@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/lib/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost } from "@/api/apiClient";
@@ -45,6 +45,7 @@ export default function PaymentsBilling() {
   const [showSuccess, setShowSuccess] = useState(paymentSuccess);
   const [portalLoading, setPortalLoading] = useState(false);
   const [consolidating, setConsolidating] = useState(false);
+  const didConsolidate = useRef(false);
 
   // Verify payment on success redirect
   useEffect(() => {
@@ -116,35 +117,29 @@ export default function PaymentsBilling() {
   // Enrollments with failed payments (shown separately — not in family invoice flow)
   const failedEnrollments = enrollments.filter(e => e.status === "payment_failed");
 
-  // Enrollments that ARE pending payment but not yet in a family invoice
-  const ungroupedPending = enrollments.filter(e => {
-    const isPending = ["pending_payment", "pending"].includes(e.status) ||
-      (e.status === "active_override" && e.invoiceStatus !== "paid" && e.invoiceStatus !== "waived");
-    // Check if their invoice is already in the pending family invoice
-    if (!isPending) return false;
-    if (!pendingFamilyInvoice) return true;
-    const fiLineItems = pendingFamilyInvoice.lineItems || [];
-    return !fiLineItems.some(li => li.enrollmentId === e.id);
-  });
-
-  // Auto-consolidate: if there are pending enrollments not yet in a family invoice, create/refresh one
+  // Auto-consolidate: if there are pending enrollments, ensure a family invoice exists
   useEffect(() => {
-    if (!user?.id || fiLoading || isLoading) return;
+    if (!user?.id || isLoading) return;
+    if (didConsolidate.current) return;
+
     const hasPendingInvoices = enrollments.some(e =>
       ["pending_payment", "pending"].includes(e.status) ||
       (e.status === "active_override" && e.invoiceStatus !== "paid" && e.invoiceStatus !== "waived")
     );
     if (!hasPendingInvoices) return;
-    if (consolidating) return;
 
+    didConsolidate.current = true;
     setConsolidating(true);
     apiPost("/billing/family-invoice", {})
       .then(() => {
         qc.invalidateQueries({ queryKey: ["parent-family-invoices"] });
       })
-      .catch(err => console.error("[auto-consolidate]", err))
+      .catch(err => {
+        didConsolidate.current = false;
+        console.error("[auto-consolidate]", err);
+      })
       .finally(() => setConsolidating(false));
-  }, [user?.id, fiLoading, isLoading, enrollments.length]);
+  }, [user?.id, isLoading, enrollments.length]);
 
   // Stats
   const activeEnrollments = enrollments.filter(e =>

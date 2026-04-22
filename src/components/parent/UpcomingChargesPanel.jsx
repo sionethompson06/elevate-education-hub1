@@ -50,7 +50,10 @@ function buildUpcomingCharges(enrollments) {
         ? new Date(e.startDate + "T00:00:00").getDate()
         : new Date().getDate();
       for (let m = 0; m < 3; m++) {
-        const d = new Date(start.getFullYear(), start.getMonth() + m, startDay);
+        const targetYear = start.getFullYear();
+        const targetMonth = start.getMonth() + m;
+        const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+        const d = new Date(targetYear, targetMonth, Math.min(startDay, lastDay));
         if (d > new Date() && d <= cutoff) {
           charges.push({ date: d, programName: e.programName, studentName, amount, cycle });
         }
