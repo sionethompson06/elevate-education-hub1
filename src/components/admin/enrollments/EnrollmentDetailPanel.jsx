@@ -108,7 +108,15 @@ export default function EnrollmentDetailPanel({ enrollment, studentEnrollments =
 
   // Additional program enrollment state
   const enrolledProgramIds = new Set(studentEnrollments.map(e => String(e.programId)));
-  const availablePrograms = programsList.filter(p => p.status !== "inactive" && !enrolledProgramIds.has(String(p.id)));
+  const availablePrograms = programsList.filter(p => {
+    if (p.status === "inactive") return false;
+    if (enrolledProgramIds.has(String(p.id))) return false;
+    const name = (p.name || "").toLowerCase();
+    if (name.includes("combination")) return false;
+    if (name.includes("homeschool support")) return false;
+    if (name.includes("virtual home")) return false;
+    return true;
+  });
   const [addProgramIds, setAddProgramIds] = useState([]);
   const [addingPrograms, setAddingPrograms] = useState(false);
   const [addProgramsResult, setAddProgramsResult] = useState(null);
@@ -411,7 +419,10 @@ export default function EnrollmentDetailPanel({ enrollment, studentEnrollments =
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-slate-800">{p.name}</p>
                       <p className="text-xs text-slate-400">
-                        ${parseFloat(p.tuitionAmount || 0).toLocaleString()}/{p.billingCycle?.replace(/_/g, " ") || "mo"}
+                        ${parseFloat(p.tuitionAmount || 0).toLocaleString()}/month
+                        {p.prices?.one_time != null && (
+                          <> or ${Number(p.prices.one_time).toLocaleString()}/year</>
+                        )}
                       </p>
                     </div>
                   </label>
