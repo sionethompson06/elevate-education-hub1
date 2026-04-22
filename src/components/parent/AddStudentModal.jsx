@@ -4,8 +4,8 @@ import { Button } from "@/components/ui/button";
 import { X, Loader2, UserPlus } from "lucide-react";
 
 const PROGRAM_OPTIONS = [
-  "Microschool (In-Person Hybrid)",
-  "Athletic Performance Training",
+  "Hybrid Microschool",
+  "Performance Training",
   "Virtual School 1-Day",
   "Virtual School 2-Days",
 ];

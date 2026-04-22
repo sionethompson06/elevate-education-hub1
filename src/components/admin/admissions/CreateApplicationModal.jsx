@@ -6,11 +6,10 @@ import { useToast } from "@/components/ui/use-toast";
 
 const GRADES = ["Pre-K", "Kindergarten", "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th", "10th", "11th", "12th"];
 const PROGRAMS = [
-  "Microschool (In-Person Hybrid)",
-  "Athletic Performance Training",
+  "Hybrid Microschool",
+  "Performance Training",
   "Virtual School 1-Day",
   "Virtual School 2-Days",
-  "Combination",
 ];
 const COMPETITION_LEVELS = ["Recreational", "Club", "Travel", "Elite / Select", "Varsity"];
 
