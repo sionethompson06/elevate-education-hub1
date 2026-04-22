@@ -117,6 +117,15 @@ export default function EnrollmentDetailPanel({ enrollment, studentEnrollments =
     if (name.includes("virtual home")) return false;
     return true;
   });
+  // Programs selectable in edit dropdown — same exclusions but current program always included
+  const selectablePrograms = programsList.filter(p => {
+    if (p.status === "inactive") return false;
+    const name = (p.name || "").toLowerCase();
+    if (name.includes("combination")) return false;
+    if (name.includes("homeschool support")) return false;
+    if (name.includes("virtual home")) return false;
+    return true;
+  });
   const [addProgramIds, setAddProgramIds] = useState([]);
   const [addingPrograms, setAddingPrograms] = useState(false);
   const [addProgramsResult, setAddProgramsResult] = useState(null);
@@ -304,7 +313,7 @@ export default function EnrollmentDetailPanel({ enrollment, studentEnrollments =
                     onChange={handleProgramChange}
                   >
                     <option value="">— select program —</option>
-                    {programsList.map(p => (
+                    {selectablePrograms.map(p => (
                       <option key={p.id} value={p.id}>{p.name}</option>
                     ))}
                   </select>
