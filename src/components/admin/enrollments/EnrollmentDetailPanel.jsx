@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
-import { X, CreditCard, ShieldCheck, Pencil, Save, X as XIcon, Loader2, Plus, Trash2 } from "lucide-react";
+import { X, CreditCard, ShieldCheck, Pencil, Save, X as XIcon, Loader2, Plus, Trash2, Lock } from "lucide-react";
 import { format } from "date-fns";
 import { apiPatch, apiGet, apiPost, apiDelete } from "@/api/apiClient";
 import { useToast } from "@/components/ui/use-toast";
@@ -56,6 +56,7 @@ export default function EnrollmentDetailPanel({ enrollment, studentEnrollments =
     queryFn: () => apiGet("/programs"),
   });
   const programsList = programsData?.programs || programsData || [];
+  const isProgramLocked = enrollment.status === 'active' || enrollment.status === 'active_override';
 
   // Local display state — updated after save so panel stays open
   const [data, setData] = useState({
@@ -198,7 +199,7 @@ export default function EnrollmentDetailPanel({ enrollment, studentEnrollments =
       await apiPatch(`/enrollments/${enrollment.id}`, {
         startDate: form.startDate || null,
         billingCycleOverride: form.billingCycle || null,
-        programId: form.programId || null,
+        ...(isProgramLocked ? {} : { programId: form.programId || null }),
       });
       const selectedProg = programsList.find(p => String(p.id) === String(form.programId));
       // After save: display the final discounted amount as the stored invoice amount
@@ -307,16 +308,25 @@ export default function EnrollmentDetailPanel({ enrollment, studentEnrollments =
               <ReadRow label="Parent Email" value={enrollment.parentEmail} />
               {editing ? (
                 <EditRow label="Program">
-                  <select
-                    className={inputCls}
-                    value={form.programId}
-                    onChange={handleProgramChange}
-                  >
-                    <option value="">— select program —</option>
-                    {selectablePrograms.map(p => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </select>
+                  {isProgramLocked ? (
+                    <div className="flex flex-col gap-1">
+                      <span className="text-sm text-slate-700 font-medium">{data.programName || enrollment.programName}</span>
+                      <span className="text-xs text-amber-600 flex items-center gap-1">
+                        <Lock className="w-3 h-3" /> Program locked. Cancel enrollment to change programs.
+                      </span>
+                    </div>
+                  ) : (
+                    <select
+                      className={inputCls}
+                      value={form.programId}
+                      onChange={handleProgramChange}
+                    >
+                      <option value="">— select program —</option>
+                      {selectablePrograms.map(p => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                  )}
                 </EditRow>
               ) : (
                 <ReadRow label="Program" value={data.programName || enrollment.programName} />

@@ -348,6 +348,18 @@ router.patch('/:id', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const { status, sectionId, startDate, billingCycleOverride, programId } = req.body;
+
+    // Prevent program changes on active enrollments — admin must cancel first
+    if (programId !== undefined) {
+      const [currentEnrollment] = await db.select().from(enrollments).where(eq(enrollments.id, id));
+      if (currentEnrollment && ['active', 'active_override'].includes(currentEnrollment.status)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Cannot change program on an active enrollment. Cancel the enrollment first.',
+        });
+      }
+    }
+
     const updateData = {};
     if (status !== undefined) updateData.status = status;
     if (sectionId !== undefined) updateData.sectionId = sectionId ? parseInt(sectionId) : null;
