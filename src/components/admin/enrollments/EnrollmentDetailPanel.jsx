@@ -57,6 +57,7 @@ export default function EnrollmentDetailPanel({ enrollment, studentEnrollments =
   });
   const programsList = programsData?.programs || programsData || [];
   const isProgramLocked = enrollment.status === 'active' || enrollment.status === 'active_override';
+  const isAmountLocked = enrollment.invoiceStatus === 'paid' || enrollment.invoiceStatus === 'waived';
 
   // Local display state — updated after save so panel stays open
   const [data, setData] = useState({
@@ -189,13 +190,21 @@ export default function EnrollmentDetailPanel({ enrollment, studentEnrollments =
   const handleSave = async () => {
     setSaving(true);
     try {
-      await apiPatch(`/enrollments/${enrollment.id}/invoice`, {
-        description: form.invoiceDescription || undefined,
-        amount: form.invoiceAmount !== "" ? parseFloat(form.invoiceAmount) : undefined,
-        dueDate: form.invoiceDueDate || null,
-        paidDate: form.invoicePaidDate || null,
-        discountPercent: form.discountPercent !== "" ? parseFloat(form.discountPercent) : null,
-      });
+      // Paid/waived invoices: only allow non-financial field edits
+      await apiPatch(`/enrollments/${enrollment.id}/invoice`, isAmountLocked
+        ? {
+            description: form.invoiceDescription || undefined,
+            dueDate: form.invoiceDueDate || null,
+            paidDate: form.invoicePaidDate || null,
+          }
+        : {
+            description: form.invoiceDescription || undefined,
+            amount: form.invoiceAmount !== "" ? parseFloat(form.invoiceAmount) : undefined,
+            dueDate: form.invoiceDueDate || null,
+            paidDate: form.invoicePaidDate || null,
+            discountPercent: form.discountPercent !== "" ? parseFloat(form.discountPercent) : null,
+          }
+      );
 
       // Only include programId when it actually changed — sending the same programId triggers
       // the backend's invoice-sync logic and overwrites any custom amount the admin just set.
@@ -214,8 +223,9 @@ export default function EnrollmentDetailPanel({ enrollment, studentEnrollments =
       setData({ ...form, programName: selectedProg?.name ?? form.programName, invoiceAmount: savedAmount });
       setEditing(false);
       toast({ title: "Enrollment details saved" });
-      // Refresh the list in the background; keep the panel open so the admin can see the result.
+      // Refresh both enrollment list and accounting view in the background.
       qc.invalidateQueries({ queryKey: ["admin-enrollments"] });
+      qc.invalidateQueries({ queryKey: ["admin-accounting"] });
     } catch (err) {
       toast({ title: "Save failed", description: err.message, variant: "destructive" });
     } finally {
@@ -353,15 +363,27 @@ export default function EnrollmentDetailPanel({ enrollment, studentEnrollments =
                     />
                   </EditRow>
                   <EditRow label="Amount Due ($)">
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      className={inputCls}
-                      value={form.invoiceAmount}
-                      onChange={e => setForm(f => ({ ...f, invoiceAmount: e.target.value, discountPercent: "" }))}
-                      placeholder="0.00"
-                    />
+                    {isAmountLocked ? (
+                      <div className="flex flex-col items-end gap-1">
+                        <span className="text-sm font-medium text-slate-700">
+                          {data.invoiceAmount !== "" ? `$${parseFloat(data.invoiceAmount).toFixed(2)}` : "—"}
+                        </span>
+                        <span className="text-xs text-green-700 flex items-center gap-1">
+                          <Lock className="w-3 h-3" />
+                          Invoice {enrollment.invoiceStatus} — amount locked
+                        </span>
+                      </div>
+                    ) : (
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        className={inputCls}
+                        value={form.invoiceAmount}
+                        onChange={e => setForm(f => ({ ...f, invoiceAmount: e.target.value, discountPercent: "" }))}
+                        placeholder="0.00"
+                      />
+                    )}
                   </EditRow>
                   <EditRow label="Discount (%)">
                     <div className="flex flex-col items-end gap-1 w-full max-w-[220px]">
@@ -374,6 +396,7 @@ export default function EnrollmentDetailPanel({ enrollment, studentEnrollments =
                         value={form.discountPercent}
                         onChange={setF("discountPercent")}
                         placeholder="0"
+                        disabled={isAmountLocked}
                       />
                       {discountPct > 0 && baseAmount > 0 && (
                         <p className="text-xs text-purple-700 text-right">

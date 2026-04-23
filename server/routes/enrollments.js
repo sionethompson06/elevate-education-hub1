@@ -475,6 +475,14 @@ router.patch('/:id/invoice', requireAuth, requireRole('admin'), async (req, res)
       }).returning();
     }
 
+    // Block financial edits on closed invoices — admin must void/refund instead of editing amount
+    if (amount !== undefined && ['paid', 'waived'].includes(invoice.status)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot change amount on a paid or waived invoice.',
+      });
+    }
+
     const updateData = {};
     if (description !== undefined) updateData.description = description;
     if (dueDate !== undefined) updateData.dueDate = dueDate || null;
@@ -499,6 +507,23 @@ router.patch('/:id/invoice', requireAuth, requireRole('admin'), async (req, res)
     }
 
     const [updated] = await db.update(invoices).set(updateData).where(eq(invoices.id, invoice.id)).returning();
+
+    // Cascade amount change to family invoice totalAmount
+    if (amount !== undefined && updated.familyInvoiceId) {
+      const siblings = await db.select({ amount: invoices.amount })
+        .from(invoices)
+        .where(and(
+          eq(invoices.familyInvoiceId, updated.familyInvoiceId),
+          inArray(invoices.status, ['pending', 'past_due'])
+        ));
+      const newTotal = siblings.reduce((sum, s) => sum + parseFloat(s.amount || 0), 0);
+      await db.update(familyInvoices)
+        .set({ totalAmount: String(newTotal) })
+        .where(and(
+          eq(familyInvoices.id, updated.familyInvoiceId),
+          inArray(familyInvoices.status, ['pending', 'past_due'])
+        ));
+    }
 
     // Cascade dueDate change to the linked family invoice so the parent portal stays in sync.
     // Recalculate the family invoice dueDate as the earliest dueDate among its unpaid children.
