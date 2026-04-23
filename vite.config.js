@@ -16,6 +16,13 @@ export default defineConfig({
     port: 5173,
     allowedHosts: true,
     proxy: {
+      // SSE needs its own rule with no proxy timeout so long-lived connections aren't killed
+      '/api/events': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+        proxyTimeout: 0,
+        timeout: 0,
+      },
       '/api': {
         target: 'http://localhost:3001',
         changeOrigin: true,

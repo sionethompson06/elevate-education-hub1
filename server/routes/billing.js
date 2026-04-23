@@ -5,6 +5,7 @@ import { billingAccounts, invoices, familyInvoices, payments, enrollments, stude
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { logAudit } from '../services/audit.service.js';
 import { createNotification } from '../services/notification.service.js';
+import { broadcastEvent } from '../services/sse.service.js';
 
 const router = Router();
 
@@ -548,6 +549,7 @@ router.post('/invoices/:invoiceId/admin-action', requireAuth, requireRole('admin
       ipAddress: req.ip,
     });
 
+    broadcastEvent('billing.invoice.action', { invoiceId, action });
     res.json({ success: true });
   } catch (err) {
     console.error('[billing] admin-action error:', err.message);

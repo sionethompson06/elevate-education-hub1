@@ -8,6 +8,7 @@ import { ROLE_LABELS } from "@/lib/rbac";
 import NotificationBell from "@/components/NotificationBell";
 import ImpersonationBanner from "@/components/ImpersonationBanner";
 import ImpersonateModal from "@/components/admin/ImpersonateModal";
+import { useServerEvents } from "@/lib/useServerEvents";
 
 const ROLE_COLORS = {
   student: "bg-blue-600",
@@ -81,6 +82,7 @@ export default function PortalLayout() {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [showImpersonateModal, setShowImpersonateModal] = useState(false);
+  useServerEvents();
 
   const { data: inboxData } = useQuery({
     queryKey: ["inbox-unread"],
