@@ -349,6 +349,7 @@ import auditLogsRouter from './routes/audit-logs.js';
 import stripeRouter, { stripeWebhookHandler } from './routes/stripe.js';
 import familyBillingRouter from './routes/familyBilling.js';
 import coachAssignmentsRouter from './routes/coach-assignments.js';
+import coachesRouter from './routes/coaches.js';
 
 const isDev = process.env.NODE_ENV !== 'production';
 
@@ -474,6 +475,7 @@ app.use('/api/cms', cmsRouter);
 app.use('/api/gradebook', gradebookRouter);
 app.use('/api/audit-logs', auditLogsRouter);
 app.use('/api/coach-assignments', coachAssignmentsRouter);
+app.use('/api/coaches', coachesRouter);
 app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), stripeWebhookHandler);
 app.use('/api/stripe', stripeRouter);
 

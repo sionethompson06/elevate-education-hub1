@@ -62,6 +62,7 @@ import AdminAnalytics from "./pages/admin/Analytics";
 import AdminPrograms from "./pages/admin/Programs";
 import AdminSections from "./pages/admin/Sections";
 import AdminBilling from "./pages/admin/Billing";
+import AdminCoaches from "./pages/admin/Coaches";
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -169,6 +170,7 @@ const AuthenticatedApp = () => {
           <Route path="/admin/programs" element={<AdminPrograms />} />
           <Route path="/admin/sections" element={<AdminSections />} />
           <Route path="/admin/billing" element={<AdminBilling />} />
+          <Route path="/admin/coaches" element={<AdminCoaches />} />
         </Route>
 
         <Route path="*" element={<PageNotFound />} />

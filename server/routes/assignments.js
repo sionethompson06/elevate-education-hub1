@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { eq, desc, and, inArray } from 'drizzle-orm';
 import db, { rawSql } from '../db-postgres.js';
 import { assignments, assignmentSubmissions, sectionStudents, sections, students } from '../schema.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 import { getCoachSectionIds, isStudentInSection } from '../middleware/scope.js';
 import { logAudit } from '../services/audit.service.js';
 import { createNotification } from '../services/notification.service.js';
@@ -282,6 +282,39 @@ router.get('/:id/submissions', requireAuth, async (req, res) => {
       .where(eq(assignmentSubmissions.assignmentId, assignmentId));
 
     res.json({ success: true, submissions: subs, assignment });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Admin grade override for a specific submission by ID
+router.patch('/submissions/:id/grade', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const submissionId = parseInt(req.params.id);
+    const { score, feedback } = req.body;
+    const updateData = {
+      gradedBy: req.user.id,
+      gradedAt: new Date(),
+    };
+    if (score != null) updateData.score = Number(score);
+    if (feedback !== undefined) updateData.feedback = feedback;
+
+    const [updated] = await db.update(assignmentSubmissions)
+      .set(updateData)
+      .where(eq(assignmentSubmissions.id, submissionId))
+      .returning();
+    if (!updated) return res.status(404).json({ success: false, error: 'Submission not found' });
+
+    await logAudit({
+      userId: req.user.id,
+      action: 'update',
+      entityType: 'assignment_submission',
+      entityId: submissionId,
+      details: { score, feedback, note: 'admin_override' },
+      ipAddress: req.ip,
+    });
+
+    res.json({ success: true, submission: updated });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
