@@ -182,6 +182,24 @@ router.get('/family-invoices', requireAuth, async (req, res) => {
       .where(inArray(invoices.familyInvoiceId, familyInvoiceIds))
       .orderBy(desc(invoices.createdAt));
 
+    // Second lazy promotion: if any child invoice is past_due, promote its family invoice too.
+    // This catches the case where dueDate is in the future but Stripe already fired a payment
+    // failure webhook (e.g. card declined on first attempt within the first 30 days).
+    const pendingFiIds = fiList.filter(fi => fi.status === 'pending').map(fi => fi.id);
+    if (pendingFiIds.length > 0) {
+      const upgradeFiIds = [...new Set(
+        childInvoices
+          .filter(inv => inv.status === 'past_due' && pendingFiIds.includes(inv.familyInvoiceId))
+          .map(inv => inv.familyInvoiceId)
+      )];
+      if (upgradeFiIds.length > 0) {
+        await db.update(familyInvoices)
+          .set({ status: 'past_due' })
+          .where(inArray(familyInvoices.id, upgradeFiIds));
+        fiList.forEach(fi => { if (upgradeFiIds.includes(fi.id)) fi.status = 'past_due'; });
+      }
+    }
+
     // Enrich with enrollment/program/student info
     const enrollmentIds = [...new Set(
       childInvoices.filter(i => i.enrollmentId).map(i => i.enrollmentId)
