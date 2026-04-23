@@ -369,9 +369,11 @@ router.patch('/:id', requireAuth, requireRole('admin'), async (req, res) => {
     const id = parseInt(req.params.id);
     const { status, sectionId, startDate, billingCycleOverride, programId } = req.body;
 
+    // Fetch current enrollment for guards and program-change detection
+    const [currentEnrollment] = await db.select().from(enrollments).where(eq(enrollments.id, id));
+
     // Prevent program changes on active enrollments — admin must cancel first
     if (programId !== undefined) {
-      const [currentEnrollment] = await db.select().from(enrollments).where(eq(enrollments.id, id));
       if (currentEnrollment && ['active', 'active_override'].includes(currentEnrollment.status)) {
         return res.status(400).json({
           success: false,
@@ -396,7 +398,7 @@ router.patch('/:id', requireAuth, requireRole('admin'), async (req, res) => {
 
     // When program CHANGES, sync invoice description + amount (skip if already paid/waived).
     // Guard: only run when the new programId differs from what was in the DB before this update.
-    if (programId && parseInt(String(programId)) !== row.programId) {
+    if (programId && currentEnrollment && parseInt(String(programId)) !== currentEnrollment.programId) {
       const [newProg] = await db.select().from(programs).where(eq(programs.id, parseInt(programId)));
       if (newProg) {
         const [inv] = await db.select().from(invoices)
