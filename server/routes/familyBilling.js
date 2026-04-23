@@ -96,10 +96,16 @@ router.post('/family-invoice', requireAuth, async (req, res) => {
       (sum, inv) => sum + parseFloat(inv.amount || 0), 0
     );
 
+    const anyPastDue = pendingInvoices.some(inv => inv.status === 'past_due');
+
     if (familyInvoice) {
-      // Refresh the total in case overrides changed amounts
+      // Refresh the total; also promote to past_due if any child is already overdue
+      const updateFields = { totalAmount: String(totalAmount) };
+      if (anyPastDue && familyInvoice.status !== 'past_due') {
+        updateFields.status = 'past_due';
+      }
       [familyInvoice] = await db.update(familyInvoices)
-        .set({ totalAmount: String(totalAmount) })
+        .set(updateFields)
         .where(eq(familyInvoices.id, familyInvoice.id))
         .returning();
     } else {
@@ -112,7 +118,7 @@ router.post('/family-invoice', requireAuth, async (req, res) => {
       [familyInvoice] = await db.insert(familyInvoices).values({
         billingAccountId: billingAccount.id,
         totalAmount: String(totalAmount),
-        status: 'pending',
+        status: anyPastDue ? 'past_due' : 'pending',
         dueDate,
       }).returning();
     }
