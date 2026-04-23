@@ -239,12 +239,28 @@ router.post('/', requireAuth, async (req, res) => {
       enrolledBy: req.user.id,
     }).returning();
 
-    let [billingAccount] = await db.select().from(billingAccounts)
-      .where(eq(billingAccounts.parentUserId, req.user.id));
+    // When admin creates enrollment, invoice must belong to the student's guardian,
+    // not the admin — otherwise the parent can never find or pay it.
+    let billingAccount = null;
+    if (req.user.role === 'admin') {
+      const [guardianLink] = await db.select().from(guardianStudents)
+        .where(eq(guardianStudents.studentId, parseInt(studentId)));
+      if (guardianLink) {
+        [billingAccount] = await db.select().from(billingAccounts)
+          .where(eq(billingAccounts.parentUserId, guardianLink.guardianUserId));
+        if (!billingAccount) {
+          [billingAccount] = await db.insert(billingAccounts)
+            .values({ parentUserId: guardianLink.guardianUserId }).returning();
+        }
+      }
+    }
     if (!billingAccount) {
-      [billingAccount] = await db.insert(billingAccounts).values({
-        parentUserId: req.user.id,
-      }).returning();
+      [billingAccount] = await db.select().from(billingAccounts)
+        .where(eq(billingAccounts.parentUserId, req.user.id));
+      if (!billingAccount) {
+        [billingAccount] = await db.insert(billingAccounts)
+          .values({ parentUserId: req.user.id }).returning();
+      }
     }
 
     const dueDate = new Date();

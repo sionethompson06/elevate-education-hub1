@@ -61,7 +61,7 @@ router.post('/family-invoice', requireAuth, async (req, res) => {
     let pendingInvoices = await db.select().from(invoices)
       .where(and(
         eq(invoices.billingAccountId, billingAccount.id),
-        eq(invoices.status, 'pending')
+        inArray(invoices.status, ['pending', 'past_due'])
       ))
       .orderBy(desc(invoices.createdAt));
 
