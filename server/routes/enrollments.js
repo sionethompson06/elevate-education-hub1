@@ -394,8 +394,9 @@ router.patch('/:id', requireAuth, requireRole('admin'), async (req, res) => {
     const [updated] = await db.update(enrollments).set(updateData).where(eq(enrollments.id, id)).returning();
     if (!updated) return res.status(404).json({ success: false, error: 'Enrollment not found' });
 
-    // When program changes, sync invoice description + amount (skip if already paid/waived)
-    if (programId) {
+    // When program CHANGES, sync invoice description + amount (skip if already paid/waived).
+    // Guard: only run when the new programId differs from what was in the DB before this update.
+    if (programId && parseInt(String(programId)) !== row.programId) {
       const [newProg] = await db.select().from(programs).where(eq(programs.id, parseInt(programId)));
       if (newProg) {
         const [inv] = await db.select().from(invoices)
