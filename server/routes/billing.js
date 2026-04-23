@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { eq, desc, inArray } from 'drizzle-orm';
+import { eq, desc, inArray, and } from 'drizzle-orm';
 import db from '../db-postgres.js';
 import { billingAccounts, invoices, familyInvoices, payments, enrollments, students, programs, guardianStudents, users } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
@@ -493,13 +493,32 @@ router.post('/invoices/:invoiceId/admin-action', requireAuth, requireRole('admin
       }
     }
 
-    // Cascade to family invoice: recalculate total + sync status
-    if (inv.familyInvoiceId) {
+    // Cascade to family invoice: recalculate total + sync status.
+    // Resolve the target family invoice: prefer the linked one on the invoice; fall back
+    // to any pending family invoice for this billing account so changes made before the
+    // parent's first auto-consolidation are still reflected.
+    let targetFiId = inv.familyInvoiceId;
+    if (!targetFiId && inv.billingAccountId) {
+      // Invoice not yet linked — find a pending family invoice for this billing account
+      // so admin actions made before first parent consolidation still cascade correctly.
+      const [fallbackFi] = await db.select({ id: familyInvoices.id })
+        .from(familyInvoices)
+        .where(and(
+          eq(familyInvoices.billingAccountId, inv.billingAccountId),
+          inArray(familyInvoices.status, ['pending', 'past_due'])
+        ))
+        .orderBy(desc(familyInvoices.id))
+        .limit(1);
+      if (fallbackFi) targetFiId = fallbackFi.id;
+    }
+
+    if (targetFiId) {
       const siblings = await db.select({ status: invoices.status, amount: invoices.amount })
         .from(invoices)
-        .where(eq(invoices.familyInvoiceId, inv.familyInvoiceId));
+        .where(eq(invoices.familyInvoiceId, targetFiId));
 
-      const allClosed = siblings.every(s => ['paid', 'waived'].includes(s.status));
+      const allClosed = siblings.length > 0 &&
+        siblings.every(s => ['paid', 'waived'].includes(s.status));
       const unpaidTotal = siblings
         .filter(s => ['pending', 'past_due'].includes(s.status))
         .reduce((sum, s) => sum + parseFloat(s.amount || 0), 0);
@@ -507,7 +526,7 @@ router.post('/invoices/:invoiceId/admin-action', requireAuth, requireRole('admin
       if (allClosed) {
         await db.update(familyInvoices)
           .set({ status: 'paid', paidDate: today })
-          .where(eq(familyInvoices.id, inv.familyInvoiceId));
+          .where(eq(familyInvoices.id, targetFiId));
       } else {
         const fiUpdate = { totalAmount: String(unpaidTotal) };
         if (action === 'reopen') {
@@ -516,7 +535,7 @@ router.post('/invoices/:invoiceId/admin-action', requireAuth, requireRole('admin
         }
         await db.update(familyInvoices)
           .set(fiUpdate)
-          .where(eq(familyInvoices.id, inv.familyInvoiceId));
+          .where(eq(familyInvoices.id, targetFiId));
       }
     }
 
