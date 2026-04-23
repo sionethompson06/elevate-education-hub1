@@ -187,6 +187,7 @@ export const invoices = pgTable('invoices', {
   stripePaymentId: varchar('stripe_payment_id', { length: 255 }),
   stripeSessionId: varchar('stripe_session_id', { length: 255 }),
   discountPercent: numeric('discount_percent', { precision: 5, scale: 2 }),
+  manualOverride: boolean('manual_override').default(false),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
