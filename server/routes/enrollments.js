@@ -5,6 +5,7 @@ import { enrollments, programs, students, users, billingAccounts, invoices, fami
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { logAudit } from '../services/audit.service.js';
 import { createNotification } from '../services/notification.service.js';
+import { broadcastEvent } from '../services/sse.service.js';
 
 const router = Router();
 
@@ -554,6 +555,7 @@ router.patch('/:id/invoice', requireAuth, requireRole('admin'), async (req, res)
       ipAddress: req.ip,
     });
 
+    broadcastEvent('billing.invoice.updated', { enrollmentId });
     res.json({ success: true, invoice: updated });
   } catch (err) {
     console.error('Update invoice error:', err);
