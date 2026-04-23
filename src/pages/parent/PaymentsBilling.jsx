@@ -146,8 +146,9 @@ export default function PaymentsBilling() {
     if (didConsolidate.current) return;
 
     const hasPendingInvoices = enrollments.some(e =>
-      ["pending_payment", "pending"].includes(e.status) ||
-      (e.status === "active_override" && e.invoiceStatus !== "paid" && e.invoiceStatus !== "waived")
+      ["pending_payment", "pending", "payment_failed"].includes(e.status) ||
+      (e.status === "active_override" && e.invoiceStatus !== "paid" && e.invoiceStatus !== "waived") ||
+      e.invoiceStatus === "past_due"
     );
     if (!hasPendingInvoices) return;
 

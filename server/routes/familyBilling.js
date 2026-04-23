@@ -87,7 +87,7 @@ router.post('/family-invoice', requireAuth, async (req, res) => {
       const [existing] = await db.select().from(familyInvoices)
         .where(and(
           eq(familyInvoices.id, existingFiIds[0]),
-          eq(familyInvoices.status, 'pending')
+          inArray(familyInvoices.status, ['pending', 'past_due'])
         ));
       familyInvoice = existing || null;
     }

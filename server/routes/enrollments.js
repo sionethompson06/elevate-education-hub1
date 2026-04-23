@@ -57,11 +57,15 @@ router.get('/my-students', requireAuth, async (req, res) => {
           invoiceMap[inv.enrollmentId] = inv;
         }
       }
+      const today = new Date().toISOString().split('T')[0];
       for (const enr of myEnrollments) {
         const inv = invoiceMap[enr.id];
         enr.invoiceId = inv?.id || null;
         enr.invoiceAmount = inv?.amount ?? null;
-        enr.invoiceStatus = inv?.status || null;
+        // Compute past_due on-read — consistent with admin accounting view
+        const rawStatus = inv?.status || null;
+        enr.invoiceStatus = (rawStatus === 'pending' && inv?.dueDate && inv.dueDate < today)
+          ? 'past_due' : rawStatus;
         enr.invoiceDueDate = inv?.dueDate || null;
         enr.invoicePaidDate = inv?.paidDate || null;
         enr.invoiceDescription = inv?.description || null;
