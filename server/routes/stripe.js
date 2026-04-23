@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { eq, and, desc, inArray } from 'drizzle-orm';
 import db from '../db-postgres.js';
-import { enrollments, users, programs, billingAccounts, payments, invoices, students, familyInvoices } from '../schema.js';
+import { enrollments, users, programs, billingAccounts, payments, invoices, students, familyInvoices, guardianStudents } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import {
   getStripe, getOrCreateCustomer, createCheckoutSession, createFamilyCheckoutSession,
@@ -35,7 +35,6 @@ router.post('/checkout', requireAuth, requireRole('parent', 'admin'), async (req
 
     // Verify parent owns this enrollment (skip for admin)
     if (req.user.role === 'parent') {
-      const { guardianStudents } = await import('../schema.js');
       const [guardianCheck] = await db.select().from(guardianStudents)
         .where(and(eq(guardianStudents.guardianUserId, req.user.id), eq(guardianStudents.studentId, enrollment.studentId)));
       if (!guardianCheck) {
@@ -43,7 +42,16 @@ router.post('/checkout', requireAuth, requireRole('parent', 'admin'), async (req
       }
     }
 
-    const [user] = await db.select().from(users).where(eq(users.id, req.user.id));
+    // Resolve billing user: admin initiating checkout should use the student's guardian
+    // so the Stripe customer and billing account are tied to the parent, not the admin.
+    let billingUserId = req.user.id;
+    if (req.user.role === 'admin') {
+      const [guardianLink] = await db.select().from(guardianStudents)
+        .where(eq(guardianStudents.studentId, enrollment.studentId));
+      if (guardianLink) billingUserId = guardianLink.guardianUserId;
+    }
+
+    const [user] = await db.select().from(users).where(eq(users.id, billingUserId));
     const [program] = enrollment.programId
       ? await db.select().from(programs).where(eq(programs.id, enrollment.programId))
       : [null];
@@ -56,8 +64,9 @@ router.post('/checkout', requireAuth, requireRole('parent', 'admin'), async (req
       ? { ...program, tuitionAmount: effectiveTuition }
       : { tuitionAmount: effectiveTuition };
 
-    // Get or create billing account and Stripe customer
-    let [billingAccount] = await db.select().from(billingAccounts).where(eq(billingAccounts.parentUserId, req.user.id));
+    // Get or create billing account and Stripe customer under the parent's account
+    let [billingAccount] = await db.select().from(billingAccounts)
+      .where(eq(billingAccounts.parentUserId, billingUserId));
     let stripeCustomerId = billingAccount?.stripeCustomerId;
 
     if (!stripeCustomerId) {
@@ -67,7 +76,7 @@ router.post('/checkout', requireAuth, requireRole('parent', 'admin'), async (req
         await db.update(billingAccounts).set({ stripeCustomerId }).where(eq(billingAccounts.id, billingAccount.id));
       } else {
         [billingAccount] = await db.insert(billingAccounts).values({
-          parentUserId: req.user.id,
+          parentUserId: billingUserId,
           stripeCustomerId,
           balance: '0',
         }).returning();
@@ -78,7 +87,7 @@ router.post('/checkout', requireAuth, requireRole('parent', 'admin'), async (req
     const session = await createCheckoutSession({
       enrollmentId: enrollment_id,
       studentId: enrollment.studentId,
-      parentUserId: req.user.id,
+      parentUserId: billingUserId,
       stripeCustomerId,
       program: effectiveProgram,
       billingCycle: billing_cycle || 'one_time',
