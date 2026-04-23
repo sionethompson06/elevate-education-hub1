@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/lib/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost } from "@/api/apiClient";
@@ -140,6 +140,22 @@ export default function PaymentsBilling() {
   // Enrollments with failed payments (shown separately — not in family invoice flow)
   const failedEnrollments = enrollments.filter(e => e.status === "payment_failed");
 
+  const runConsolidate = useCallback(() => {
+    didConsolidate.current = true;
+    setConsolidateError(null);
+    setConsolidating(true);
+    apiPost("/billing/family-invoice", {})
+      .then(() => {
+        qc.invalidateQueries({ queryKey: ["parent-family-invoices"] });
+      })
+      .catch(err => {
+        didConsolidate.current = false;
+        setConsolidateError(err.message || "Failed to prepare invoice.");
+        console.error("[auto-consolidate]", err);
+      })
+      .finally(() => setConsolidating(false));
+  }, [qc]);
+
   // Auto-consolidate: if there are pending enrollments, ensure a family invoice exists
   useEffect(() => {
     if (!user?.id || isLoading) return;
@@ -152,18 +168,7 @@ export default function PaymentsBilling() {
     );
     if (!hasPendingInvoices) return;
 
-    didConsolidate.current = true;
-    setConsolidating(true);
-    apiPost("/billing/family-invoice", {})
-      .then(() => {
-        qc.invalidateQueries({ queryKey: ["parent-family-invoices"] });
-      })
-      .catch(err => {
-        didConsolidate.current = false;
-        setConsolidateError(err.message || "Failed to prepare invoice.");
-        console.error("[auto-consolidate]", err);
-      })
-      .finally(() => setConsolidating(false));
+    runConsolidate();
   }, [user?.id, isLoading, enrollments.length]);
 
   // Stats
@@ -288,7 +293,7 @@ export default function PaymentsBilling() {
             <p className="text-xs text-amber-700 mt-0.5">{consolidateError}</p>
           </div>
           <button
-            onClick={() => setConsolidateError(null)}
+            onClick={runConsolidate}
             className="text-xs text-amber-700 hover:text-amber-900 font-semibold underline shrink-0"
           >
             Retry
@@ -323,8 +328,8 @@ export default function PaymentsBilling() {
         </div>
       )}
 
-      {/* Failed payment banner */}
-      {failedEnrollments.length > 0 && (
+      {/* Failed payment banner — hidden when a family invoice already shows the overdue UI */}
+      {failedEnrollments.length > 0 && !pendingFamilyInvoice && (
         <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-4">
           <div className="flex items-center gap-2 mb-2">
             <AlertCircle className="w-4 h-4 text-red-600" />
