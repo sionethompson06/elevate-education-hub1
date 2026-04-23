@@ -9,7 +9,7 @@ import db, { rawSql } from './db-postgres.js';
 import {
   users, enrollments, students, guardianStudents, coachAssignments,
   lessonAssignments, rewardCatalog, studentPoints, pointTransactions,
-  emergencyContacts, cmsContent, programs, invoices, enrollmentOverrides,
+  emergencyContacts, cmsContent, programs, invoices, enrollmentOverrides, billingAccounts,
 } from './schema.js';
 import { requireAdmin } from './middleware/auth.js';
 
@@ -57,7 +57,47 @@ async function revertPartialOverrideEnrollments() {
   }
 }
 
-// 3. Create enrollment_overrides table if it doesn't exist
+// 3. Reassign invoices created by admin enrollments to the correct parent billing account
+async function fixAdminCreatedInvoiceBillingAccounts() {
+  try {
+    const badInvoices = await db.select({
+      invoiceId: invoices.id,
+      enrollmentId: invoices.enrollmentId,
+    })
+    .from(invoices)
+    .innerJoin(billingAccounts, eq(billingAccounts.id, invoices.billingAccountId))
+    .innerJoin(users, eq(users.id, billingAccounts.parentUserId))
+    .where(inArray(users.role, ['admin', 'academic_coach', 'performance_coach']));
+
+    let fixed = 0;
+    for (const inv of badInvoices) {
+      if (!inv.enrollmentId) continue;
+      const [enrollment] = await db.select({ studentId: enrollments.studentId })
+        .from(enrollments).where(eq(enrollments.id, inv.enrollmentId));
+      if (!enrollment) continue;
+      const [guardianLink] = await db.select().from(guardianStudents)
+        .where(eq(guardianStudents.studentId, enrollment.studentId));
+      if (!guardianLink) continue;
+      let [parentAccount] = await db.select().from(billingAccounts)
+        .where(eq(billingAccounts.parentUserId, guardianLink.guardianUserId));
+      if (!parentAccount) {
+        [parentAccount] = await db.insert(billingAccounts)
+          .values({ parentUserId: guardianLink.guardianUserId }).returning();
+      }
+      await db.update(invoices)
+        .set({ billingAccountId: parentAccount.id })
+        .where(eq(invoices.id, inv.invoiceId));
+      fixed++;
+    }
+    if (fixed > 0) {
+      console.log(`[migration] Reassigned ${fixed} invoice(s) from admin billing accounts to parent billing accounts`);
+    }
+  } catch (err) {
+    console.error('[migration] fixAdminCreatedInvoiceBillingAccounts error:', err.message);
+  }
+}
+
+// 4. Create enrollment_overrides table if it doesn't exist
 async function ensureOverridesTable() {
   try {
     await rawSql`
@@ -340,6 +380,7 @@ if (!process.env.STRIPE_WEBHOOK_SECRET) {
 
 normalizeEnrollmentStatuses();
 revertPartialOverrideEnrollments();
+fixAdminCreatedInvoiceBillingAccounts();
 ensureOverridesTable();
 ensureSubmissionContentColumn();
 ensureMedicalInfoTable();

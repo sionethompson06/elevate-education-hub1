@@ -5,7 +5,7 @@ import { apiGet, apiPost } from "@/api/apiClient";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   CreditCard, DollarSign, CheckCircle, Clock, XCircle, AlertCircle,
-  Users, ExternalLink, RefreshCw, Loader2
+  Users, ExternalLink, RefreshCw, Loader2, AlertTriangle
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -65,6 +65,7 @@ export default function PaymentsBilling() {
   const [showSuccess, setShowSuccess] = useState(paymentSuccess);
   const [portalLoading, setPortalLoading] = useState(false);
   const [consolidating, setConsolidating] = useState(false);
+  const [consolidateError, setConsolidateError] = useState(null);
   const didConsolidate = useRef(false);
 
   // Verify payment on success redirect
@@ -158,6 +159,7 @@ export default function PaymentsBilling() {
       })
       .catch(err => {
         didConsolidate.current = false;
+        setConsolidateError(err.message || "Failed to prepare invoice.");
         console.error("[auto-consolidate]", err);
       })
       .finally(() => setConsolidating(false));
@@ -274,6 +276,22 @@ export default function PaymentsBilling() {
       {(fiLoading || consolidating) && !pendingFamilyInvoice && (
         <div className="flex items-center gap-2 text-sm text-slate-500 py-2">
           <Loader2 className="w-4 h-4 animate-spin" /> Preparing invoice…
+        </div>
+      )}
+
+      {consolidateError && !pendingFamilyInvoice && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-amber-500 mt-0.5 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-amber-800">Could not prepare invoice</p>
+            <p className="text-xs text-amber-700 mt-0.5">{consolidateError}</p>
+          </div>
+          <button
+            onClick={() => setConsolidateError(null)}
+            className="text-xs text-amber-700 hover:text-amber-900 font-semibold underline shrink-0"
+          >
+            Retry
+          </button>
         </div>
       )}
 
