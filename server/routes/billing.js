@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { eq, desc, inArray } from 'drizzle-orm';
 import db from '../db-postgres.js';
-import { billingAccounts, invoices, payments, enrollments, students, programs, guardianStudents, users } from '../schema.js';
+import { billingAccounts, invoices, familyInvoices, payments, enrollments, students, programs, guardianStudents, users } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { logAudit } from '../services/audit.service.js';
 import { createNotification } from '../services/notification.service.js';
@@ -394,8 +394,12 @@ router.get('/accounting', requireAuth, requireRole('admin'), async (req, res) =>
         parentEmail: parent.parentEmail || null,
         programName: row.programName || '—',
         billingCycle: effectiveCycle,
+        invoiceId: invoice?.id ?? null,
         invoiceAmount: invoice?.amount ?? null,
+        invoiceDiscountPercent: invoice?.discountPercent ?? null,
         invoiceStatus: effectiveInvoiceStatus ?? null,
+        familyInvoiceId: invoice?.familyInvoiceId ?? null,
+        familyInvoiceTotal: null,  // populated below
         dueDate: invoice?.dueDate ?? null,
         paidDate: invoice?.paidDate ?? null,
         totalPaid: totalPaid.toFixed(2),
@@ -406,9 +410,128 @@ router.get('/accounting', requireAuth, requireRole('admin'), async (req, res) =>
       };
     });
 
+    // Attach family invoice totals
+    const fiIds = [...new Set(result.filter(r => r.familyInvoiceId).map(r => r.familyInvoiceId))];
+    if (fiIds.length > 0) {
+      const fiRows = await db.select({ id: familyInvoices.id, totalAmount: familyInvoices.totalAmount })
+        .from(familyInvoices)
+        .where(inArray(familyInvoices.id, fiIds));
+      const fiMap = Object.fromEntries(fiRows.map(f => [f.id, f.totalAmount]));
+      for (const r of result) {
+        if (r.familyInvoiceId && fiMap[r.familyInvoiceId] != null) {
+          r.familyInvoiceTotal = fiMap[r.familyInvoiceId];
+        }
+      }
+    }
+
     res.json({ success: true, rows: result });
   } catch (err) {
     console.error('[billing/accounting] error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /billing/invoices/:invoiceId/admin-action
+// Admin-only: manually pay, waive, or reopen a single invoice with full cascade.
+router.post('/invoices/:invoiceId/admin-action', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const invoiceId = parseInt(req.params.invoiceId);
+    const { action, reason } = req.body;
+
+    if (!['manual_pay', 'waive', 'reopen'].includes(action)) {
+      return res.status(400).json({ success: false, error: 'Invalid action. Use manual_pay, waive, or reopen.' });
+    }
+
+    const [inv] = await db.select().from(invoices).where(eq(invoices.id, invoiceId));
+    if (!inv) return res.status(404).json({ success: false, error: 'Invoice not found' });
+
+    const today = new Date().toISOString().split('T')[0];
+
+    if (action === 'manual_pay') {
+      if (['paid', 'waived'].includes(inv.status)) {
+        return res.status(400).json({ success: false, error: 'Invoice is already closed' });
+      }
+      await db.update(invoices).set({ status: 'paid', paidDate: today }).where(eq(invoices.id, invoiceId));
+      await db.insert(payments).values({
+        billingAccountId: inv.billingAccountId,
+        invoiceId: inv.id,
+        amount: String(inv.amount),
+        method: 'manual',
+        status: 'paid',
+        processedAt: new Date(),
+      });
+      if (inv.enrollmentId) {
+        const [enr] = await db.select().from(enrollments).where(eq(enrollments.id, inv.enrollmentId));
+        if (enr) {
+          await db.update(enrollments).set({ status: 'active' }).where(eq(enrollments.id, enr.id));
+          if (enr.studentId) await db.update(students).set({ status: 'active' }).where(eq(students.id, enr.studentId));
+        }
+      }
+    }
+
+    if (action === 'waive') {
+      if (['paid', 'waived'].includes(inv.status)) {
+        return res.status(400).json({ success: false, error: 'Invoice is already closed' });
+      }
+      await db.update(invoices).set({ status: 'waived', paidDate: today }).where(eq(invoices.id, invoiceId));
+      if (inv.enrollmentId) {
+        const [enr] = await db.select().from(enrollments).where(eq(enrollments.id, inv.enrollmentId));
+        if (enr) {
+          await db.update(enrollments).set({ status: 'active_override' }).where(eq(enrollments.id, enr.id));
+          if (enr.studentId) await db.update(students).set({ status: 'active' }).where(eq(students.id, enr.studentId));
+        }
+      }
+    }
+
+    if (action === 'reopen') {
+      if (!['paid', 'waived'].includes(inv.status)) {
+        return res.status(400).json({ success: false, error: 'Invoice is not closed' });
+      }
+      await db.update(invoices).set({ status: 'pending', paidDate: null }).where(eq(invoices.id, invoiceId));
+      if (inv.enrollmentId) {
+        await db.update(enrollments).set({ status: 'pending_payment' }).where(eq(enrollments.id, inv.enrollmentId));
+      }
+    }
+
+    // Cascade to family invoice: recalculate total + sync status
+    if (inv.familyInvoiceId) {
+      const siblings = await db.select({ status: invoices.status, amount: invoices.amount })
+        .from(invoices)
+        .where(eq(invoices.familyInvoiceId, inv.familyInvoiceId));
+
+      const allClosed = siblings.every(s => ['paid', 'waived'].includes(s.status));
+      const unpaidTotal = siblings
+        .filter(s => ['pending', 'past_due'].includes(s.status))
+        .reduce((sum, s) => sum + parseFloat(s.amount || 0), 0);
+
+      if (allClosed) {
+        await db.update(familyInvoices)
+          .set({ status: 'paid', paidDate: today })
+          .where(eq(familyInvoices.id, inv.familyInvoiceId));
+      } else {
+        const fiUpdate = { totalAmount: String(unpaidTotal) };
+        if (action === 'reopen') {
+          fiUpdate.status = 'pending';
+          fiUpdate.paidDate = null;
+        }
+        await db.update(familyInvoices)
+          .set(fiUpdate)
+          .where(eq(familyInvoices.id, inv.familyInvoiceId));
+      }
+    }
+
+    await logAudit({
+      userId: req.user.id,
+      action: 'admin_action',
+      entityType: 'invoice',
+      entityId: String(invoiceId),
+      details: { action, reason: reason || null },
+      ipAddress: req.ip,
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[billing] admin-action error:', err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });

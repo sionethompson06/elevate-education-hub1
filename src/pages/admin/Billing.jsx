@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost, apiPatch } from "@/api/apiClient";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, Loader2, CreditCard, BookOpen, ChevronDown, ChevronRight, Search, Pencil, Check, X } from "lucide-react";
+import { RefreshCw, Loader2, CreditCard, BookOpen, ChevronDown, ChevronRight, Search, Pencil, Check, X, CheckCircle, XCircle, RotateCcw } from "lucide-react";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function daysOverdue(dueDate) {
@@ -90,78 +90,175 @@ function fmtMoney(val) {
 
 // ── Expanded row detail ───────────────────────────────────────────────────────
 function RowDetail({ row, onRefetch }) {
+  // Due date editing (existing)
   const [editingDue, setEditingDue] = useState(false);
   const [dueDateInput, setDueDateInput] = useState(row.dueDate || "");
   const [savingDue, setSavingDue] = useState(false);
   const [dueError, setDueError] = useState("");
 
+  // Amount editing
+  const [editingAmt, setEditingAmt] = useState(false);
+  const [amtBase, setAmtBase] = useState("");
+  const [amtDiscount, setAmtDiscount] = useState("");
+  const [savingAmt, setSavingAmt] = useState(false);
+  const [amtError, setAmtError] = useState("");
+
+  // Admin actions
+  const [confirmAction, setConfirmAction] = useState(null);
+  const [actionReason, setActionReason] = useState("");
+  const [takingAction, setTakingAction] = useState(false);
+  const [actionError, setActionError] = useState("");
+
+  const isAmountEditable = row.invoiceId && !["paid", "waived"].includes(row.invoiceStatus);
+
+  // Live discount preview
+  const baseNum = parseFloat(amtBase) || 0;
+  const discNum = parseFloat(amtDiscount) || 0;
+  const finalNum = Math.round(baseNum * (1 - discNum / 100) * 100) / 100;
+
   const handleSaveDueDate = async (e) => {
     e.stopPropagation();
-    setSavingDue(true);
-    setDueError("");
+    setSavingDue(true); setDueError("");
     try {
       await apiPatch(`/enrollments/${row.enrollmentId}/invoice`, { dueDate: dueDateInput || null });
       setEditingDue(false);
       onRefetch();
     } catch (err) {
       setDueError(err.message || "Failed to save.");
-    } finally {
-      setSavingDue(false);
-    }
+    } finally { setSavingDue(false); }
   };
 
-  const handleCancelEdit = (e) => {
+  const handleStartEditAmt = (e) => {
     e.stopPropagation();
-    setEditingDue(false);
-    setDueDateInput(row.dueDate || "");
-    setDueError("");
+    const stored = parseFloat(row.invoiceAmount) || 0;
+    const storedPct = parseFloat(row.invoiceDiscountPercent) || 0;
+    const base = storedPct > 0 ? Math.round(stored / (1 - storedPct / 100) * 100) / 100 : stored;
+    setAmtBase(base ? String(base) : "");
+    setAmtDiscount(storedPct ? String(storedPct) : "");
+    setAmtError("");
+    setEditingAmt(true);
+  };
+
+  const handleSaveAmt = async (e) => {
+    e.stopPropagation();
+    if (!amtBase || isNaN(parseFloat(amtBase))) { setAmtError("Enter a valid amount."); return; }
+    setSavingAmt(true); setAmtError("");
+    try {
+      await apiPatch(`/enrollments/${row.enrollmentId}/invoice`, {
+        amount: parseFloat(amtBase),
+        discountPercent: amtDiscount !== "" ? parseFloat(amtDiscount) : null,
+      });
+      setEditingAmt(false);
+      onRefetch();
+    } catch (err) {
+      setAmtError(err.message || "Failed to save.");
+    } finally { setSavingAmt(false); }
+  };
+
+  const handleAdminAction = async () => {
+    setTakingAction(true); setActionError("");
+    try {
+      await apiPost(`/billing/invoices/${row.invoiceId}/admin-action`, {
+        action: confirmAction,
+        reason: actionReason || undefined,
+      });
+      setConfirmAction(null); setActionReason("");
+      onRefetch();
+    } catch (err) {
+      setActionError(err.message || "Action failed.");
+    } finally { setTakingAction(false); }
   };
 
   return (
     <tr>
       <td colSpan={7} className="px-0 pb-0 bg-slate-50 border-b border-slate-200">
-        <div className="px-6 py-4 space-y-4">
+        <div className="px-6 py-4 space-y-5">
+
           {/* Summary grid */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+
+            {/* Invoice Amount — editable */}
             <div>
               <p className="text-xs text-slate-400 uppercase tracking-wide mb-0.5">Invoice Amount</p>
-              <p className="font-semibold text-slate-800">
-                {row.invoiceAmount != null ? fmtMoney(row.invoiceAmount) : "—"}
-                {row.billingCycle !== "one_time" && row.invoiceAmount != null && (
-                  <span className="text-xs text-slate-400 font-normal ml-1">
-                    /{row.billingCycle === "annual" ? "yr" : "mo"}
-                  </span>
-                )}
-              </p>
+              {editingAmt ? (
+                <div className="space-y-1.5" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-slate-400">$</span>
+                      <input type="number" step="0.01" min="0" autoFocus
+                        value={amtBase} onChange={e => setAmtBase(e.target.value)}
+                        className="border border-slate-300 rounded px-2 py-0.5 text-sm w-24 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        placeholder="0.00" />
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-slate-400">Disc%</span>
+                      <input type="number" step="1" min="0" max="100"
+                        value={amtDiscount} onChange={e => setAmtDiscount(e.target.value)}
+                        className="border border-slate-300 rounded px-2 py-0.5 text-sm w-14 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                        placeholder="0" />
+                    </div>
+                  </div>
+                  {discNum > 0 && baseNum > 0 && (
+                    <p className="text-xs text-purple-600">→ {fmtMoney(finalNum)} after {discNum}% off</p>
+                  )}
+                  <div className="flex items-center gap-1.5">
+                    <button onClick={handleSaveAmt} disabled={savingAmt}
+                      className="p-1 text-green-600 hover:text-green-700 disabled:opacity-40" title="Save">
+                      {savingAmt ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                    </button>
+                    <button onClick={e => { e.stopPropagation(); setEditingAmt(false); setAmtError(""); }}
+                      className="p-1 text-slate-400 hover:text-slate-600" title="Cancel">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  {amtError && <p className="text-xs text-red-500">{amtError}</p>}
+                </div>
+              ) : (
+                <div className="flex items-start gap-1.5 group">
+                  <div>
+                    <p className="font-semibold text-slate-800">
+                      {row.invoiceAmount != null ? fmtMoney(row.invoiceAmount) : "—"}
+                      {row.billingCycle !== "one_time" && row.invoiceAmount != null && (
+                        <span className="text-xs text-slate-400 font-normal ml-1">
+                          /{row.billingCycle === "annual" ? "yr" : "mo"}
+                        </span>
+                      )}
+                    </p>
+                    {row.invoiceDiscountPercent && parseFloat(row.invoiceDiscountPercent) > 0 && (
+                      <p className="text-xs text-purple-600 mt-0.5">{parseFloat(row.invoiceDiscountPercent)}% discount applied</p>
+                    )}
+                  </div>
+                  {isAmountEditable && (
+                    <button onClick={handleStartEditAmt}
+                      className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-blue-500 transition-opacity mt-0.5"
+                      title="Adjust amount">
+                      <Pencil className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
+
+            {/* Last Paid */}
             <div>
               <p className="text-xs text-slate-400 uppercase tracking-wide mb-0.5">Last Paid</p>
               <p className="font-semibold text-slate-800">{fmtDate(row.paidDate || row.lastPaymentDate)}</p>
             </div>
+
+            {/* Invoice Due Date — editable */}
             <div>
-              <p className="text-xs text-slate-400 uppercase tracking-wide mb-0.5">
-                Invoice Due Date
-              </p>
+              <p className="text-xs text-slate-400 uppercase tracking-wide mb-0.5">Invoice Due Date</p>
               {editingDue ? (
                 <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
-                  <input
-                    type="date"
-                    value={dueDateInput}
+                  <input type="date" value={dueDateInput} autoFocus
                     onChange={e => setDueDateInput(e.target.value)}
-                    className="border border-slate-300 rounded px-2 py-0.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-400"
-                    autoFocus
-                  />
-                  <button
-                    onClick={handleSaveDueDate}
-                    disabled={savingDue}
-                    className="p-1 text-green-600 hover:text-green-700 disabled:opacity-40"
-                    title="Save"
-                  >
-                    {savingDue
-                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      : <Check className="w-3.5 h-3.5" />}
+                    className="border border-slate-300 rounded px-2 py-0.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-400" />
+                  <button onClick={handleSaveDueDate} disabled={savingDue}
+                    className="p-1 text-green-600 hover:text-green-700 disabled:opacity-40" title="Save">
+                    {savingDue ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                   </button>
-                  <button onClick={handleCancelEdit} className="p-1 text-slate-400 hover:text-slate-600" title="Cancel">
+                  <button onClick={e => { e.stopPropagation(); setEditingDue(false); setDueDateInput(row.dueDate || ""); setDueError(""); }}
+                    className="p-1 text-slate-400 hover:text-slate-600" title="Cancel">
                     <X className="w-3.5 h-3.5" />
                   </button>
                 </div>
@@ -170,11 +267,9 @@ function RowDetail({ row, onRefetch }) {
                   <p className={`font-semibold ${row.dueDate ? "text-slate-800" : "text-slate-400"}`}>
                     {row.dueDate ? fmtDate(row.dueDate) : "—"}
                   </p>
-                  <button
-                    onClick={e => { e.stopPropagation(); setEditingDue(true); }}
+                  <button onClick={e => { e.stopPropagation(); setEditingDue(true); }}
                     className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-blue-500 transition-opacity"
-                    title="Adjust due date"
-                  >
+                    title="Adjust due date">
                     <Pencil className="w-3 h-3" />
                   </button>
                 </div>
@@ -189,11 +284,76 @@ function RowDetail({ row, onRefetch }) {
                 <p className="text-xs text-slate-400 mt-0.5">Next renewal: {fmtDate(row.nextDueDate)}</p>
               )}
             </div>
+
+            {/* Enrolled date */}
             <div>
               <p className="text-xs text-slate-400 uppercase tracking-wide mb-0.5">Enrolled</p>
               <p className="font-semibold text-slate-800">{fmtDate(row.startDate)}</p>
             </div>
           </div>
+
+          {/* Admin billing actions */}
+          {row.invoiceId && (
+            <div>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Billing Actions</p>
+              {confirmAction ? (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2 max-w-md" onClick={e => e.stopPropagation()}>
+                  <p className="text-xs font-semibold text-amber-800">
+                    {confirmAction === "manual_pay" && "Mark this invoice as manually paid? This will activate the enrollment."}
+                    {confirmAction === "waive" && "Waive this invoice? Enrollment will be activated without payment."}
+                    {confirmAction === "reopen" && "Reopen this invoice? Enrollment will return to pending payment."}
+                  </p>
+                  <input type="text" placeholder="Reason (optional)…"
+                    value={actionReason} onChange={e => setActionReason(e.target.value)}
+                    className="w-full border border-amber-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-amber-400 bg-white" />
+                  {actionError && <p className="text-xs text-red-600">{actionError}</p>}
+                  <div className="flex items-center gap-2">
+                    <button onClick={handleAdminAction} disabled={takingAction}
+                      className="text-xs bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded font-semibold disabled:opacity-40 flex items-center gap-1">
+                      {takingAction && <Loader2 className="w-3 h-3 animate-spin" />}
+                      Confirm
+                    </button>
+                    <button onClick={() => { setConfirmAction(null); setActionReason(""); setActionError(""); }}
+                      className="text-xs text-slate-500 hover:text-slate-700 px-2 py-1.5">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2" onClick={e => e.stopPropagation()}>
+                  {["pending", "past_due"].includes(row.invoiceStatus) && (
+                    <>
+                      <button onClick={() => setConfirmAction("manual_pay")}
+                        className="flex items-center gap-1.5 text-xs font-semibold bg-green-50 hover:bg-green-100 text-green-700 border border-green-200 px-3 py-1.5 rounded-lg transition-colors">
+                        <CheckCircle className="w-3.5 h-3.5" /> Mark as Paid
+                      </button>
+                      <button onClick={() => setConfirmAction("waive")}
+                        className="flex items-center gap-1.5 text-xs font-semibold bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 px-3 py-1.5 rounded-lg transition-colors">
+                        <XCircle className="w-3.5 h-3.5" /> Waive Invoice
+                      </button>
+                    </>
+                  )}
+                  {["paid", "waived"].includes(row.invoiceStatus) && (
+                    <button onClick={() => setConfirmAction("reopen")}
+                      className="flex items-center gap-1.5 text-xs font-semibold bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 px-3 py-1.5 rounded-lg transition-colors">
+                      <RotateCcw className="w-3.5 h-3.5" /> Reopen Invoice
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Family invoice context */}
+          {row.familyInvoiceId && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-700">
+              <CreditCard className="w-3.5 h-3.5 shrink-0" />
+              <span>
+                Part of consolidated family invoice #{row.familyInvoiceId}
+                {row.familyInvoiceTotal != null && ` · Family total: ${fmtMoney(row.familyInvoiceTotal)}`}
+              </span>
+            </div>
+          )}
 
           {/* Payment history */}
           <div>
@@ -236,6 +396,7 @@ function RowDetail({ row, onRefetch }) {
               </div>
             )}
           </div>
+
         </div>
       </td>
     </tr>
