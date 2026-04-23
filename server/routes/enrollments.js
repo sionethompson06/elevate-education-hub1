@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { eq, desc, and, ne, inArray } from 'drizzle-orm';
 import db from '../db-postgres.js';
-import { enrollments, programs, students, users, billingAccounts, invoices, schoolYears, sections, guardianStudents, enrollmentOverrides, coachAssignments, staffProfiles } from '../schema.js';
+import { enrollments, programs, students, users, billingAccounts, invoices, familyInvoices, schoolYears, sections, guardianStudents, enrollmentOverrides, coachAssignments, staffProfiles } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { logAudit } from '../services/audit.service.js';
 import { createNotification } from '../services/notification.service.js';
@@ -496,6 +496,26 @@ router.patch('/:id/invoice', requireAuth, requireRole('admin'), async (req, res)
     }
 
     const [updated] = await db.update(invoices).set(updateData).where(eq(invoices.id, invoice.id)).returning();
+
+    // Cascade dueDate change to the linked family invoice so the parent portal stays in sync.
+    // Recalculate the family invoice dueDate as the earliest dueDate among its unpaid children.
+    if (dueDate !== undefined && updated.familyInvoiceId) {
+      const siblings = await db.select({ dueDate: invoices.dueDate })
+        .from(invoices)
+        .where(and(
+          eq(invoices.familyInvoiceId, updated.familyInvoiceId),
+          inArray(invoices.status, ['pending', 'past_due'])
+        ));
+      const earliest = siblings.map(s => s.dueDate).filter(Boolean).sort()[0];
+      if (earliest) {
+        await db.update(familyInvoices)
+          .set({ dueDate: earliest })
+          .where(and(
+            eq(familyInvoices.id, updated.familyInvoiceId),
+            inArray(familyInvoices.status, ['pending', 'past_due'])
+          ));
+      }
+    }
 
     await logAudit({
       userId: req.user.id,

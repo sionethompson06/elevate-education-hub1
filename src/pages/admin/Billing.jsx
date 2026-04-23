@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiGet, apiPost } from "@/api/apiClient";
+import { apiGet, apiPost, apiPatch } from "@/api/apiClient";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, Loader2, CreditCard, BookOpen, ChevronDown, ChevronRight, Search } from "lucide-react";
+import { RefreshCw, Loader2, CreditCard, BookOpen, ChevronDown, ChevronRight, Search, Pencil, Check, X } from "lucide-react";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function daysOverdue(dueDate) {
@@ -89,8 +89,34 @@ function fmtMoney(val) {
 }
 
 // ── Expanded row detail ───────────────────────────────────────────────────────
-function RowDetail({ row }) {
-  const cycle = CYCLE_BADGE[row.billingCycle] || CYCLE_BADGE.one_time;
+function RowDetail({ row, onRefetch }) {
+  const [editingDue, setEditingDue] = useState(false);
+  const [dueDateInput, setDueDateInput] = useState(row.dueDate || "");
+  const [savingDue, setSavingDue] = useState(false);
+  const [dueError, setDueError] = useState("");
+
+  const handleSaveDueDate = async (e) => {
+    e.stopPropagation();
+    setSavingDue(true);
+    setDueError("");
+    try {
+      await apiPatch(`/enrollments/${row.enrollmentId}/invoice`, { dueDate: dueDateInput || null });
+      setEditingDue(false);
+      onRefetch();
+    } catch (err) {
+      setDueError(err.message || "Failed to save.");
+    } finally {
+      setSavingDue(false);
+    }
+  };
+
+  const handleCancelEdit = (e) => {
+    e.stopPropagation();
+    setEditingDue(false);
+    setDueDateInput(row.dueDate || "");
+    setDueError("");
+  };
+
   return (
     <tr>
       <td colSpan={7} className="px-0 pb-0 bg-slate-50 border-b border-slate-200">
@@ -113,14 +139,54 @@ function RowDetail({ row }) {
               <p className="font-semibold text-slate-800">{fmtDate(row.paidDate || row.lastPaymentDate)}</p>
             </div>
             <div>
-              <p className="text-xs text-slate-400 uppercase tracking-wide mb-0.5">Next Due</p>
-              <p className={`font-semibold ${row.nextDueDate ? "text-slate-800" : "text-slate-400"}`}>
-                {row.nextDueDate ? fmtDate(row.nextDueDate) : "—"}
+              <p className="text-xs text-slate-400 uppercase tracking-wide mb-0.5">
+                Invoice Due Date
               </p>
-              {(row.enrollmentStatus === "payment_failed" || row.invoiceStatus === "past_due") && row.dueDate && daysOverdue(row.dueDate) > 0 && (
+              {editingDue ? (
+                <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+                  <input
+                    type="date"
+                    value={dueDateInput}
+                    onChange={e => setDueDateInput(e.target.value)}
+                    className="border border-slate-300 rounded px-2 py-0.5 text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    autoFocus
+                  />
+                  <button
+                    onClick={handleSaveDueDate}
+                    disabled={savingDue}
+                    className="p-1 text-green-600 hover:text-green-700 disabled:opacity-40"
+                    title="Save"
+                  >
+                    {savingDue
+                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      : <Check className="w-3.5 h-3.5" />}
+                  </button>
+                  <button onClick={handleCancelEdit} className="p-1 text-slate-400 hover:text-slate-600" title="Cancel">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 group">
+                  <p className={`font-semibold ${row.dueDate ? "text-slate-800" : "text-slate-400"}`}>
+                    {row.dueDate ? fmtDate(row.dueDate) : "—"}
+                  </p>
+                  <button
+                    onClick={e => { e.stopPropagation(); setEditingDue(true); }}
+                    className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-blue-500 transition-opacity"
+                    title="Adjust due date"
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
+              {dueError && <p className="text-xs text-red-500 mt-1">{dueError}</p>}
+              {!editingDue && (row.enrollmentStatus === "payment_failed" || row.invoiceStatus === "past_due") && row.dueDate && daysOverdue(row.dueDate) > 0 && (
                 <span className="inline-block mt-1 text-xs bg-red-100 text-red-700 rounded px-1.5 py-0.5 font-medium">
                   {daysOverdue(row.dueDate)}d overdue
                 </span>
+              )}
+              {row.nextDueDate && row.nextDueDate !== row.dueDate && (
+                <p className="text-xs text-slate-400 mt-0.5">Next renewal: {fmtDate(row.nextDueDate)}</p>
               )}
             </div>
             <div>
@@ -417,7 +483,7 @@ export default function AdminBilling() {
                               {owed > 0 ? fmtMoney(owed) : "—"}
                             </td>
                           </tr>
-                          {isExpanded && <RowDetail key={`detail-${row.enrollmentId}`} row={row} />}
+                          {isExpanded && <RowDetail key={`detail-${row.enrollmentId}`} row={row} onRefetch={refetchAccounting} />}
                         </>
                       );
                     })}
