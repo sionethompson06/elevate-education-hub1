@@ -253,7 +253,11 @@ router.get('/family-invoices', requireAuth, async (req, res) => {
       parentByAccountId = Object.fromEntries(accountRows.map(a => [a.id, a]));
     }
 
-    // Assemble enriched result
+    // Assemble enriched result — compute live totalAmount for pending/past_due invoices
+    // so that admin billing changes (amount edits, waive, reopen) are always reflected
+    // without requiring a separate cascade update.
+    const lazyPaidFiIds = [];
+
     const result = fiList.map(fi => {
       const lineItems = childInvoices
         .filter(inv => inv.familyInvoiceId === fi.id)
@@ -271,15 +275,46 @@ router.get('/family-invoices', requireAuth, async (req, res) => {
           };
         });
 
+      let effectiveTotal = fi.totalAmount;
+      let effectiveStatus = fi.status;
+
+      if (['pending', 'past_due'].includes(fi.status)) {
+        // Recompute outstanding balance from child invoices so admin edits are instant
+        const unpaidChildren = lineItems.filter(item =>
+          ['pending', 'past_due'].includes(item.invoiceStatus)
+        );
+        const computedTotal = unpaidChildren.reduce(
+          (sum, item) => sum + parseFloat(item.amount || 0), 0
+        );
+        effectiveTotal = String(computedTotal);
+
+        // If all children are now paid/waived, lazily promote family invoice to paid
+        const allChildrenClosed = lineItems.length > 0 &&
+          lineItems.every(item => ['paid', 'waived'].includes(item.invoiceStatus));
+        if (allChildrenClosed) {
+          effectiveStatus = 'paid';
+          lazyPaidFiIds.push(fi.id);
+        }
+      }
+
       const parent = parentByAccountId[fi.billingAccountId] || null;
       return {
         ...fi,
+        totalAmount: effectiveTotal,
+        status: effectiveStatus,
         lineItems,
         payments: paymentsByFi[fi.id] || [],
         parentName: parent ? `${parent.firstName} ${parent.lastName}` : null,
         parentEmail: parent?.email || null,
       };
     });
+
+    // Lazy-sync: mark family invoices as paid where all children are closed
+    if (lazyPaidFiIds.length > 0) {
+      await db.update(familyInvoices)
+        .set({ status: 'paid', paidDate: today })
+        .where(inArray(familyInvoices.id, lazyPaidFiIds));
+    }
 
     res.json({ success: true, familyInvoices: result });
   } catch (err) {

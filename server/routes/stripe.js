@@ -216,12 +216,16 @@ router.post('/family-checkout', requireAuth, requireRole('parent', 'admin'), asy
       return res.status(403).json({ error: 'Not authorized for this family invoice' });
     }
 
-    // Load child invoices with enriched line item info
+    // Load only unpaid child invoices — exclude already-paid or waived items so
+    // Stripe is never charged twice on a partial admin waiver/payment.
     const childInvoices = await db.select().from(invoices)
-      .where(eq(invoices.familyInvoiceId, fi.id));
+      .where(and(
+        eq(invoices.familyInvoiceId, fi.id),
+        inArray(invoices.status, ['pending', 'past_due'])
+      ));
 
     if (childInvoices.length === 0) {
-      return res.status(400).json({ error: 'Family invoice has no line items.' });
+      return res.status(400).json({ error: 'No unpaid items on this family invoice.' });
     }
 
     // Fetch enrollment/program/student info for each child invoice
