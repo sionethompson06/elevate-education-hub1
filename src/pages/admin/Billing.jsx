@@ -90,6 +90,8 @@ function fmtMoney(val) {
 
 // ── Expanded row detail ───────────────────────────────────────────────────────
 function RowDetail({ row, onRefetch }) {
+  const qc = useQueryClient();
+
   // Due date editing (existing)
   const [editingDue, setEditingDue] = useState(false);
   const [dueDateInput, setDueDateInput] = useState(row.dueDate || "");
@@ -121,8 +123,9 @@ function RowDetail({ row, onRefetch }) {
     setSavingDue(true); setDueError("");
     try {
       await apiPatch(`/enrollments/${row.enrollmentId}/invoice`, { dueDate: dueDateInput || null });
+      await onRefetch();
       setEditingDue(false);
-      onRefetch();
+      qc.invalidateQueries({ queryKey: ["admin-enrollments"] });
     } catch (err) {
       setDueError(err.message || "Failed to save.");
     } finally { setSavingDue(false); }
@@ -148,8 +151,11 @@ function RowDetail({ row, onRefetch }) {
         amount: parseFloat(amtBase),
         discountPercent: amtDiscount !== "" ? parseFloat(amtDiscount) : null,
       });
+      // Await refetch so cache is updated before closing edit mode — prevents stale
+      // display when navigating away and back before the background fetch completes.
+      await onRefetch();
       setEditingAmt(false);
-      onRefetch();
+      qc.invalidateQueries({ queryKey: ["admin-enrollments"] });
     } catch (err) {
       setAmtError(err.message || "Failed to save.");
     } finally { setSavingAmt(false); }
@@ -163,7 +169,8 @@ function RowDetail({ row, onRefetch }) {
         reason: actionReason || undefined,
       });
       setConfirmAction(null); setActionReason("");
-      onRefetch();
+      await onRefetch();
+      qc.invalidateQueries({ queryKey: ["admin-enrollments"] });
     } catch (err) {
       setActionError(err.message || "Action failed.");
     } finally { setTakingAction(false); }
