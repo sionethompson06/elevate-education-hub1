@@ -90,9 +90,15 @@ export default function OverrideModal({ enrollment, onClose, onSuccess }) {
             <p className="text-xs text-slate-500 mt-1">
               Program tuition: <span className="font-semibold text-slate-700">{fmt(originalCents)}</span>
             </p>
-            <p className="text-xs text-yellow-700 mt-1 font-medium">
-              Enrollment will be set to <span className="font-bold">Active (Override)</span> immediately.
-            </p>
+            {dueNowCents === 0 ? (
+              <p className="text-xs text-green-700 mt-1 font-medium">
+                Enrollment will be set to <span className="font-bold">Active (Override)</span> immediately — no payment required.
+              </p>
+            ) : (
+              <p className="text-xs text-amber-700 mt-1 font-medium">
+                Enrollment will remain <span className="font-bold">Pending Payment</span>. Parent must pay the reduced balance of <span className="font-bold">{fmt(dueNowCents)}</span> to activate.
+              </p>
+            )}
           </div>
 
           <div>

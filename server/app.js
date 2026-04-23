@@ -4,7 +4,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcryptjs';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, gt, inArray } from 'drizzle-orm';
 import db, { rawSql } from './db-postgres.js';
 import {
   users, enrollments, students, guardianStudents, coachAssignments,
@@ -30,7 +30,34 @@ async function normalizeEnrollmentStatuses() {
   }
 }
 
-// 2. Create enrollment_overrides table if it doesn't exist
+// 2. Revert incorrectly activated partial-override enrollments
+async function revertPartialOverrideEnrollments() {
+  try {
+    const broken = await db.select({
+      enrollmentId: enrollmentOverrides.enrollmentId,
+    }).from(enrollmentOverrides)
+      .innerJoin(enrollments, eq(enrollmentOverrides.enrollmentId, enrollments.id))
+      .innerJoin(invoices, eq(invoices.enrollmentId, enrollments.id))
+      .where(and(
+        eq(enrollmentOverrides.isActive, true),
+        gt(enrollmentOverrides.amountDueNowCents, 0),
+        eq(enrollments.status, 'active_override'),
+        eq(invoices.status, 'pending')
+      ));
+
+    const ids = [...new Set(broken.map(r => r.enrollmentId))];
+    if (ids.length > 0) {
+      await db.update(enrollments)
+        .set({ status: 'pending_payment' })
+        .where(inArray(enrollments.id, ids));
+      console.log(`[migration] Reverted ${ids.length} enrollment(s): active_override → pending_payment (unpaid partial override)`);
+    }
+  } catch (err) {
+    console.error('[migration] revertPartialOverrideEnrollments error:', err.message);
+  }
+}
+
+// 3. Create enrollment_overrides table if it doesn't exist
 async function ensureOverridesTable() {
   try {
     await rawSql`
@@ -312,6 +339,7 @@ if (!process.env.STRIPE_WEBHOOK_SECRET) {
 }
 
 normalizeEnrollmentStatuses();
+revertPartialOverrideEnrollments();
 ensureOverridesTable();
 ensureSubmissionContentColumn();
 ensureMedicalInfoTable();

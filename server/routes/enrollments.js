@@ -601,17 +601,20 @@ router.post('/:id/override', requireAuth, requireRole('admin'), async (req, res)
       notes: notes || null,
     }).returning();
 
-    // Update enrollment status → active_override
-    await db.update(enrollments)
-      .set({ status: 'active_override' })
-      .where(eq(enrollments.id, enrollmentId));
-
-    // Mark student as active so they're eligible for downstream assignment
-    if (enrollment.studentId) {
-      await db.update(students)
-        .set({ status: 'active' })
-        .where(eq(students.id, enrollment.studentId));
+    // Update enrollment status — only activate immediately on full waiver
+    if (finalDueNowCents === 0) {
+      // Nothing to pay: activate enrollment and student right away
+      await db.update(enrollments)
+        .set({ status: 'active_override' })
+        .where(eq(enrollments.id, enrollmentId));
+      if (enrollment.studentId) {
+        await db.update(students)
+          .set({ status: 'active' })
+          .where(eq(students.id, enrollment.studentId));
+      }
     }
+    // Partial override: enrollment stays pending_payment, student status unchanged
+    // Student activates when parent pays the reduced invoice
 
     // Update invoice to reflect the post-override balance
     const [linkedInvoice] = await db.select().from(invoices)
@@ -728,6 +731,44 @@ router.patch('/overrides/:overrideId/revoke', requireAuth, requireRole('admin'),
     res.json({ success: true });
   } catch (err) {
     console.error('Revoke override error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// PATCH /api/enrollments/:id/force-status — admin manually sets enrollment status
+router.patch('/:id/force-status', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ success: false, error: 'Invalid enrollment ID' });
+
+    const { status, reason } = req.body;
+    const ALLOWED_STATUSES = ['active', 'active_override', 'pending_payment'];
+    if (!ALLOWED_STATUSES.includes(status)) {
+      return res.status(400).json({ success: false, error: `Status must be one of: ${ALLOWED_STATUSES.join(', ')}` });
+    }
+    if (!reason?.trim()) return res.status(400).json({ success: false, error: 'Reason is required' });
+
+    const [enrollment] = await db.select().from(enrollments).where(eq(enrollments.id, id));
+    if (!enrollment) return res.status(404).json({ success: false, error: 'Enrollment not found' });
+
+    await db.update(enrollments).set({ status }).where(eq(enrollments.id, id));
+
+    if (['active', 'active_override'].includes(status) && enrollment.studentId) {
+      await db.update(students).set({ status: 'active' }).where(eq(students.id, enrollment.studentId));
+    }
+
+    await logAudit({
+      userId: req.user.id,
+      action: 'force_status',
+      entityType: 'enrollment',
+      entityId: id,
+      details: { previousStatus: enrollment.status, newStatus: status, reason: reason.trim() },
+      ipAddress: req.ip,
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Force status error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

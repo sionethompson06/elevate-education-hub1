@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
-import { X, CreditCard, ShieldCheck, Pencil, Save, X as XIcon, Loader2, Plus, Trash2, Lock } from "lucide-react";
+import { X, CreditCard, ShieldCheck, Pencil, Save, X as XIcon, Loader2, Plus, Trash2, Lock, Zap } from "lucide-react";
 import { format } from "date-fns";
 import { apiPatch, apiGet, apiPost, apiDelete } from "@/api/apiClient";
 import { useToast } from "@/components/ui/use-toast";
@@ -471,8 +471,100 @@ export default function EnrollmentDetailPanel({ enrollment, studentEnrollments =
             </p>
             <EnrollmentOverridePanel enrollment={enrollment} onUpdated={onUpdated} />
           </div>
+
+          {/* Admin: Force Status Override */}
+          {enrollment.status !== "active" && (
+            <ForceStatusPanel enrollmentId={enrollment.id} onUpdated={onUpdated} />
+          )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function ForceStatusPanel({ enrollmentId, onUpdated }) {
+  const [open, setOpen] = useState(false);
+  const [forceStatus, setForceStatus] = useState("active");
+  const [forceReason, setForceReason] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleSave = useCallback(async () => {
+    if (!forceReason.trim()) return;
+    setSaving(true);
+    setError("");
+    try {
+      await apiPatch(`/enrollments/${enrollmentId}/force-status`, {
+        status: forceStatus,
+        reason: forceReason.trim(),
+      });
+      setOpen(false);
+      setForceReason("");
+      if (onUpdated) onUpdated();
+    } catch (err) {
+      setError(err.message || "Failed to update status.");
+    } finally {
+      setSaving(false);
+    }
+  }, [enrollmentId, forceStatus, forceReason, onUpdated]);
+
+  return (
+    <div className="border-t border-slate-100 pt-3 mt-1">
+      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+        <Zap className="w-3.5 h-3.5" /> Admin Status Override
+      </p>
+      {!open ? (
+        <button
+          onClick={() => setOpen(true)}
+          className="text-xs text-amber-700 hover:text-amber-800 font-semibold hover:underline"
+        >
+          Force Activate Enrollment
+        </button>
+      ) : (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 space-y-2.5">
+          <p className="text-xs font-semibold text-amber-800">Override enrollment status without payment</p>
+          <div>
+            <label className="text-[10px] font-semibold text-slate-500 block mb-1">New Status</label>
+            <select
+              className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none bg-white"
+              value={forceStatus}
+              onChange={e => setForceStatus(e.target.value)}
+            >
+              <option value="active">Active</option>
+              <option value="active_override">Active (Override)</option>
+              <option value="pending_payment">Pending Payment</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-[10px] font-semibold text-slate-500 block mb-1">Reason *</label>
+            <textarea
+              rows={2}
+              className="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none resize-none bg-white"
+              placeholder="e.g. Payment collected offline, special arrangement…"
+              value={forceReason}
+              onChange={e => setForceReason(e.target.value)}
+            />
+          </div>
+          {error && <p className="text-xs text-red-600">{error}</p>}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { setOpen(false); setForceReason(""); setError(""); }}
+              className="text-xs text-slate-400 hover:text-slate-600"
+            >
+              Cancel
+            </button>
+            <Button
+              size="sm"
+              className="text-xs h-7 px-3 bg-amber-600 hover:bg-amber-700 text-white"
+              disabled={!forceReason.trim() || saving}
+              onClick={handleSave}
+            >
+              {saving ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
+              Confirm
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
