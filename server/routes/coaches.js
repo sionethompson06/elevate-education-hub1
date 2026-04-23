@@ -128,13 +128,14 @@ router.get('/:id/students', requireAuth, requireRole('admin'), async (req, res) 
         .leftJoin(programs, eq(enrollments.programId, programs.id))
         .where(and(inArray(enrollments.studentId, studentIds), eq(enrollments.status, 'active')));
       for (const r of enrollRows) {
-        if (!programByStudent[r.studentId]) programByStudent[r.studentId] = r.programName;
+        if (!programByStudent[r.studentId]) programByStudent[r.studentId] = [];
+        if (r.programName) programByStudent[r.studentId].push(r.programName);
       }
     }
 
     const result = directRows.map(r => ({
       ...r,
-      programName: programByStudent[r.studentId] || null,
+      programs: programByStudent[r.studentId] || [],
     }));
 
     res.json({ success: true, students: result });

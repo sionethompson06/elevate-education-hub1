@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { UserPlus, UserMinus, Loader2, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,25 @@ export default function CoachAssignmentPanel({ coach }) {
     queryFn: () => apiGet("/students"),
     enabled: showPicker,
   });
+
+  const { data: enrollData } = useQuery({
+    queryKey: ["admin-enrollments-all"],
+    queryFn: () => apiGet("/enrollments"),
+    enabled: showPicker,
+  });
+
+  const enrolledPrograms = useMemo(() => {
+    const ACTIVE = new Set(["active", "active_override"]);
+    const map = {};
+    for (const e of enrollData?.enrollments || []) {
+      if (!ACTIVE.has(e.status)) continue;
+      if (!map[e.studentId]) map[e.studentId] = [];
+      if (e.programName && !map[e.studentId].includes(e.programName)) {
+        map[e.studentId].push(e.programName);
+      }
+    }
+    return map;
+  }, [enrollData]);
 
   const assignedStudents = assignedData?.students || [];
   const allStudents = allStudentsData?.students || [];
@@ -115,9 +134,20 @@ export default function CoachAssignmentPanel({ coach }) {
             )}
             {filtered.map(student => (
               <div key={student.id} className="flex items-center justify-between bg-white border border-slate-100 rounded-lg px-3 py-2">
-                <div>
+                <div className="min-w-0 flex-1 mr-2">
                   <p className="text-sm font-medium text-slate-800">{student.firstName} {student.lastName}</p>
                   <p className="text-xs text-slate-400">{student.grade || "—"}</p>
+                  {(enrolledPrograms[student.id] || []).length > 0 ? (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {enrolledPrograms[student.id].map(prog => (
+                        <span key={prog} className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100">
+                          {prog}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-[10px] text-slate-300 italic">Not enrolled</span>
+                  )}
                 </div>
                 <Button
                   size="sm"
@@ -139,13 +169,22 @@ export default function CoachAssignmentPanel({ coach }) {
         <div className="space-y-2">
           {assignedStudents.map(s => (
             <div key={s.assignmentId} className="flex items-center justify-between border border-slate-100 rounded-xl px-4 py-3 bg-white">
-              <div>
+              <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-slate-800">{s.firstName} {s.lastName}</p>
                 <p className="text-xs text-slate-400">
-                  {s.grade ? `Grade: ${s.grade}` : ""}
-                  {s.programName ? ` · ${s.programName}` : ""}
-                  {s.startDate ? ` · Since ${formatDate(s.startDate)}` : ""}
+                  {[s.grade ? `Grade: ${s.grade}` : null, s.startDate ? `Since ${formatDate(s.startDate)}` : null].filter(Boolean).join(" · ")}
                 </p>
+                {(s.programs || []).length > 0 ? (
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {s.programs.map(prog => (
+                      <span key={prog} className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                        {prog}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="text-[10px] text-slate-300 italic">No active enrollments</span>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
