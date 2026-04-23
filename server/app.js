@@ -239,6 +239,15 @@ async function ensureFamilyInvoicesTable() {
   }
 }
 
+async function ensureInvoiceManualOverrideColumn() {
+  try {
+    await rawSql`ALTER TABLE invoices ADD COLUMN IF NOT EXISTS manual_override BOOLEAN NOT NULL DEFAULT FALSE`;
+    console.log('[migration] invoices.manual_override column ready');
+  } catch (err) {
+    console.error('[migration] ensureInvoiceManualOverrideColumn error:', err.message);
+  }
+}
+
 async function seedProgramTuitions() {
   try {
     // ── Hybrid Microschool ────────────────────────────────────────────────────
@@ -341,6 +350,7 @@ async function syncPendingInvoicesToProgramTuitions() {
     const rows = await db.select({
       invoiceId: invoices.id,
       invoiceAmount: invoices.amount,
+      manualOverride: invoices.manualOverride,
       billingCycleOverride: enrollments.billingCycleOverride,
       programTuition: programs.tuitionAmount,
       programBillingCycle: programs.billingCycle,
@@ -358,6 +368,7 @@ async function syncPendingInvoicesToProgramTuitions() {
     let updated = 0;
     for (const row of rows) {
       if (row.activeOverrideId) continue; // skip — active scholarship/override in effect
+      if (row.manualOverride) continue;   // skip — admin manually set this amount
       if (!row.programTuition) continue;
       const cycle = row.billingCycleOverride || row.programBillingCycle || 'monthly';
       const prices = row.programMetadata?.prices;
@@ -388,6 +399,7 @@ ensureMessageColumns();
 ensureEnrollmentBillingCycleColumn();
 ensureInvoiceDiscountColumn();
 ensureFamilyInvoicesTable();
+ensureInvoiceManualOverrideColumn();
 seedProgramTuitions().then(() => syncPendingInvoicesToProgramTuitions());
 seedDemoUsers();
 import applicationsRouter from './routes/applications.js';

@@ -501,7 +501,10 @@ router.patch('/:id/invoice', requireAuth, requireRole('admin'), async (req, res)
     } else if (discountPercent === null) {
       updateData.discountPercent = null;
     }
-    if (finalAmount !== undefined) updateData.amount = String(finalAmount);
+    if (finalAmount !== undefined) {
+      updateData.amount = String(finalAmount);
+      updateData.manualOverride = true; // prevent startup sync from reverting admin edits
+    }
 
     if (Object.keys(updateData).length === 0) {
       return res.status(200).json({ success: true, invoice });
