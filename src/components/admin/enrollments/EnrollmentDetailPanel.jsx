@@ -196,10 +196,17 @@ export default function EnrollmentDetailPanel({ enrollment, studentEnrollments =
         paidDate: form.invoicePaidDate || null,
         discountPercent: form.discountPercent !== "" ? parseFloat(form.discountPercent) : null,
       });
+
+      // Only include programId when it actually changed — sending the same programId triggers
+      // the backend's invoice-sync logic and overwrites any custom amount the admin just set.
+      const programChanged = !isProgramLocked
+        && form.programId
+        && parseInt(String(form.programId)) !== enrollment.programId;
+
       await apiPatch(`/enrollments/${enrollment.id}`, {
         startDate: form.startDate || null,
         billingCycleOverride: form.billingCycle || null,
-        ...(isProgramLocked ? {} : { programId: form.programId || null }),
+        ...(programChanged ? { programId: form.programId } : {}),
       });
       const selectedProg = programsList.find(p => String(p.id) === String(form.programId));
       // After save: display the final discounted amount as the stored invoice amount
@@ -207,8 +214,8 @@ export default function EnrollmentDetailPanel({ enrollment, studentEnrollments =
       setData({ ...form, programName: selectedProg?.name ?? form.programName, invoiceAmount: savedAmount });
       setEditing(false);
       toast({ title: "Enrollment details saved" });
+      // Refresh the list in the background; keep the panel open so the admin can see the result.
       qc.invalidateQueries({ queryKey: ["admin-enrollments"] });
-      if (onUpdated) onUpdated();
     } catch (err) {
       toast({ title: "Save failed", description: err.message, variant: "destructive" });
     } finally {
