@@ -10,7 +10,7 @@ import {
   Eye,
   EyeOff,
 } from "lucide-react";
-import type { LessonPlan, LessonQuestion, QuestionType } from "@/types/lesson-plan";
+import type { LessonPlan, LessonQuestion, QuestionType, StudentSupports } from "@/types/lesson-plan";
 import { lessonPlanToMarkdown, questionsToMarkdown } from "@/lib/lesson-builder";
 
 interface Props {
@@ -239,6 +239,103 @@ function QuestionList({
       >
         <Plus className="w-3.5 h-3.5" /> Add question
       </button>
+    </div>
+  );
+}
+
+type SupportField =
+  | { key: string; label: string; type: "text" }
+  | { key: string; label: string; type: "list"; addLabel: string };
+
+function SupportBlock({
+  label,
+  badge,
+  fields,
+  data,
+  onChange,
+  copyKey,
+  copied,
+  onCopy,
+}: {
+  label: string;
+  badge: string;
+  fields: SupportField[];
+  data: Record<string, string | string[]>;
+  onChange: (next: Record<string, string | string[]>) => void;
+  copyKey: string;
+  copied: string | null;
+  onCopy: (text: string, key: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const buildText = (): string => {
+    const lines: string[] = [`## ${label}`, ""];
+    for (const f of fields) {
+      const v = data[f.key];
+      lines.push(`### ${f.label}`);
+      if (typeof v === "string") {
+        if (v) lines.push(v);
+      } else if (Array.isArray(v)) {
+        for (const it of v as string[]) lines.push(`- ${it}`);
+      }
+      lines.push("");
+    }
+    return lines.join("\n").trimEnd();
+  };
+
+  return (
+    <div className="border border-slate-200 rounded-xl overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2 bg-slate-50">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex items-center gap-2 flex-1 min-w-0 text-left"
+        >
+          <span className={`shrink-0 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${badge}`}>
+            {label}
+          </span>
+          {open
+            ? <ChevronUp className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            : <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />}
+        </button>
+        <button
+          type="button"
+          onClick={() => onCopy(buildText(), copyKey)}
+          className="ml-2 shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-[#1a3c5e]"
+          title={`Copy ${label} supports`}
+        >
+          {copied === copyKey
+            ? <><Check className="w-3 h-3 text-green-600" /> Copied</>
+            : <Copy className="w-3 h-3" />}
+        </button>
+      </div>
+      {open && (
+        <div className="p-3 space-y-3">
+          {fields.map((f) => {
+            const value = data[f.key] ?? (f.type === "list" ? [] : "");
+            return (
+              <div key={f.key}>
+                <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">
+                  {f.label}
+                </p>
+                {f.type === "text" ? (
+                  <textarea
+                    className={textareaCls}
+                    value={typeof value === "string" ? value : ""}
+                    onChange={(e) => onChange({ ...data, [f.key]: e.target.value })}
+                  />
+                ) : (
+                  <EditableList
+                    items={Array.isArray(value) ? (value as string[]) : []}
+                    onChange={(next) => onChange({ ...data, [f.key]: next })}
+                    placeholder={f.addLabel}
+                  />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -565,6 +662,115 @@ export default function LessonPlanPreview({ plan, onChange, onReset }: Props) {
           showAnswers={showAnswers}
           onChange={(next) => update("exitTicketQuestions", next)}
         />
+      </Section>
+
+      <Section title="Student Supports" defaultOpen={false}>
+        {!plan.studentSupports ? (
+          <p className="text-sm text-slate-400 italic">
+            Student supports are included in lesson plans generated with the current version.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            <SupportBlock
+              label="EL / ELL"
+              badge="bg-purple-100 text-purple-800"
+              fields={[
+                { key: "languageObjective", label: "Language Objective", type: "text" },
+                { key: "vocabularySupports", label: "Vocabulary Supports", type: "list", addLabel: "Add vocabulary support" },
+                { key: "sentenceFrames", label: "Sentence Frames", type: "list", addLabel: "Add sentence frame" },
+                { key: "oralLanguageSupports", label: "Oral Language Supports", type: "list", addLabel: "Add oral support" },
+                { key: "accessStrategies", label: "Access Strategies", type: "list", addLabel: "Add access strategy" },
+              ]}
+              data={plan.studentSupports.el as unknown as Record<string, string | string[]>}
+              onChange={(next) =>
+                update("studentSupports", {
+                  ...plan.studentSupports!,
+                  el: next as unknown as StudentSupports["el"],
+                })
+              }
+              copyKey="supports-el"
+              copied={copied}
+              onCopy={copyText}
+            />
+            <SupportBlock
+              label="SPED / 504"
+              badge="bg-blue-100 text-blue-800"
+              fields={[
+                { key: "accommodations", label: "Accommodations", type: "list", addLabel: "Add accommodation" },
+                { key: "modifications", label: "Modifications", type: "list", addLabel: "Add modification" },
+                { key: "scaffolds", label: "Scaffolds", type: "list", addLabel: "Add scaffold" },
+                { key: "processingSupports", label: "Processing Supports", type: "list", addLabel: "Add processing support" },
+              ]}
+              data={plan.studentSupports.sped as unknown as Record<string, string | string[]>}
+              onChange={(next) =>
+                update("studentSupports", {
+                  ...plan.studentSupports!,
+                  sped: next as unknown as StudentSupports["sped"],
+                })
+              }
+              copyKey="supports-sped"
+              copied={copied}
+              onCopy={copyText}
+            />
+            <SupportBlock
+              label="IDEA Access"
+              badge="bg-teal-100 text-teal-800"
+              fields={[
+                { key: "accessConsiderations", label: "Access Considerations", type: "list", addLabel: "Add consideration" },
+                { key: "universalDesignSupports", label: "UDL Supports", type: "list", addLabel: "Add UDL support" },
+                { key: "progressMonitoringIdeas", label: "Progress Monitoring", type: "list", addLabel: "Add monitoring idea" },
+              ]}
+              data={plan.studentSupports.idea as unknown as Record<string, string | string[]>}
+              onChange={(next) =>
+                update("studentSupports", {
+                  ...plan.studentSupports!,
+                  idea: next as unknown as StudentSupports["idea"],
+                })
+              }
+              copyKey="supports-idea"
+              copied={copied}
+              onCopy={copyText}
+            />
+            <SupportBlock
+              label="Intervention"
+              badge="bg-amber-100 text-amber-800"
+              fields={[
+                { key: "reteachStrategies", label: "Reteach Strategies", type: "list", addLabel: "Add reteach strategy" },
+                { key: "simplifiedTasks", label: "Simplified Tasks", type: "list", addLabel: "Add simplified task" },
+                { key: "guidedPracticeSupports", label: "Guided Practice Supports", type: "list", addLabel: "Add guided practice support" },
+              ]}
+              data={plan.studentSupports.intervention as unknown as Record<string, string | string[]>}
+              onChange={(next) =>
+                update("studentSupports", {
+                  ...plan.studentSupports!,
+                  intervention: next as unknown as StudentSupports["intervention"],
+                })
+              }
+              copyKey="supports-intervention"
+              copied={copied}
+              onCopy={copyText}
+            />
+            <SupportBlock
+              label="Advanced Learners"
+              badge="bg-emerald-100 text-emerald-800"
+              fields={[
+                { key: "extensions", label: "Extensions", type: "list", addLabel: "Add extension" },
+                { key: "higherOrderQuestions", label: "Higher-Order Questions", type: "list", addLabel: "Add question" },
+                { key: "independentChallenges", label: "Independent Challenges", type: "list", addLabel: "Add challenge" },
+              ]}
+              data={plan.studentSupports.advanced as unknown as Record<string, string | string[]>}
+              onChange={(next) =>
+                update("studentSupports", {
+                  ...plan.studentSupports!,
+                  advanced: next as unknown as StudentSupports["advanced"],
+                })
+              }
+              copyKey="supports-advanced"
+              copied={copied}
+              onCopy={copyText}
+            />
+          </div>
+        )}
       </Section>
 
       <Section title="Teacher Notes" defaultOpen={false}>
