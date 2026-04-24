@@ -1,5 +1,4 @@
 import 'dotenv/config';
-console.log('[startup] ENV CHECK — OPENAI_API_KEY:', !!process.env.OPENAI_API_KEY, '| DATABASE_URL:', !!process.env.DATABASE_URL, '| VERCEL:', process.env.VERCEL ?? 'unset', '| NODE_ENV:', process.env.NODE_ENV);
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -833,20 +832,6 @@ if (!process.env.VERCEL) cron.schedule('0 2 1 * *', async () => {
   } catch (err) {
     console.error('[cron] Revenue recognition error:', err.message);
   }
-});
-
-// Temporary env diagnostics — no auth, shows presence (true/false) not values
-app.get('/api/debug-env', (req, res) => {
-  const vars = [
-    'DATABASE_URL', 'ADMIN_TOKEN', 'ADMIN_PASSWORD',
-    'JWT_SECRET', 'SESSION_SECRET', 'OPENAI_API_KEY',
-    'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'STRIPE_PUBLISHABLE_KEY',
-    'SENDGRID_API_KEY', 'FROM_EMAIL', 'APP_URL',
-    'NODE_ENV', 'VERCEL', 'VERCEL_ENV',
-  ];
-  const result = {};
-  for (const v of vars) result[v] = !!process.env[v];
-  res.json(result);
 });
 
 export default app;
