@@ -2,8 +2,14 @@
  * AI-ready architecture for lesson plan enhancement.
  *
  * All functions are pure data transformers — no network calls, no side effects.
- * When AI integration is added, pass the outputs of these helpers directly to
- * the model call and feed the response into mergeAIEnhancedSupports().
+ *
+ * Currently used:
+ *   mergeAIEnhancedSupports() — called in LessonPlanPreview.tsx after support AI calls
+ *
+ * Future extension points (not yet called — backend owns prompt building for now):
+ *   buildLessonAIContext()         — structured context object for model calls
+ *   buildSupportEnhancementPrompt() — prompt string for support enhancement
+ *     (backend mirrors this in server/routes/lessonAI.js#buildPrompt)
  */
 
 import type { LessonPlan, LessonQuestion, StandardInput, StudentSupports } from "@/types/lesson-plan";
