@@ -20,6 +20,37 @@ export interface StandardInput {
 
 export type QuestionType = "multiple_choice" | "short_answer" | "word_problem";
 
+export interface StudentSupports {
+  el: {
+    languageObjective: string;
+    vocabularySupports: string[];
+    sentenceFrames: string[];
+    oralLanguageSupports: string[];
+    accessStrategies: string[];
+  };
+  sped: {
+    accommodations: string[];
+    modifications: string[];
+    scaffolds: string[];
+    processingSupports: string[];
+  };
+  idea: {
+    accessConsiderations: string[];
+    universalDesignSupports: string[];
+    progressMonitoringIdeas: string[];
+  };
+  intervention: {
+    reteachStrategies: string[];
+    simplifiedTasks: string[];
+    guidedPracticeSupports: string[];
+  };
+  advanced: {
+    extensions: string[];
+    higherOrderQuestions: string[];
+    independentChallenges: string[];
+  };
+}
+
 export interface LessonQuestion {
   question: string;
   type: QuestionType;
@@ -50,4 +81,5 @@ export interface LessonPlan {
   exitTicket: string;
   exitTicketQuestions: LessonQuestion[];
   teacherNotes: string;
+  studentSupports?: StudentSupports;
 }

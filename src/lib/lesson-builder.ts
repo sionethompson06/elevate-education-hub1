@@ -9,7 +9,7 @@
  * ELA-Literacy standards → reading, writing, and discussion activities.
  */
 
-import type { LessonPlan, LessonQuestion, StandardInput } from "@/types/lesson-plan";
+import type { LessonPlan, LessonQuestion, StandardInput, StudentSupports } from "@/types/lesson-plan";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
