@@ -48,13 +48,23 @@ export default function LessonDetailPanel({ lesson, onClose, onUpdated, readOnly
     if (!codes.length) return;
     getAllStandards().then(all => {
       const map = {};
-      for (const s of all) map[s.code] = s;
+      for (const s of all) {
+        const c = s.standard_code ?? s.code;
+        if (c) map[c] = s;
+      }
       setStandardsMap(map);
     }).catch(() => {});
   }, [lesson.standards_codes]);
 
   const linkedStandards = useMemo(
-    () => (lesson.standards_codes ?? []).map(code => ({ code, ...(standardsMap[code] ?? {}) })),
+    () => (lesson.standards_codes ?? []).map(code => {
+      const s = standardsMap[code] ?? {};
+      return {
+        code,
+        short: s.short_code ?? shortCode(code),
+        text: s.standard_text ?? s.text ?? "",
+      };
+    }),
     [lesson.standards_codes, standardsMap],
   );
 
@@ -114,7 +124,7 @@ export default function LessonDetailPanel({ lesson, onClose, onUpdated, readOnly
                 {linkedStandards.map(s => (
                   <div key={s.code} className="flex items-start gap-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
                     <span className="text-[10px] font-mono font-bold text-[#1a3c5e] shrink-0 mt-0.5">
-                      {shortCode(s.code)}
+                      {s.short}
                     </span>
                     <span className="text-xs text-slate-700 leading-snug">
                       {s.text || s.code}
