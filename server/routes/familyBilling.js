@@ -3,7 +3,7 @@ import { eq, desc, inArray, and, lt } from 'drizzle-orm';
 import db from '../db-postgres.js';
 import {
   familyInvoices, invoices, enrollments, programs, students,
-  billingAccounts, users, payments,
+  billingAccounts, users, payments, enrollmentOverrides,
 } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { logAudit } from '../services/audit.service.js';
@@ -221,6 +221,25 @@ router.get('/family-invoices', requireAuth, async (req, res) => {
       enrollmentMap = Object.fromEntries(enrollmentRows.map(e => [e.id, e]));
     }
 
+    // Fetch active overrides for override/scholarship transparency in line items
+    let overrideByEnrollment = {};
+    if (enrollmentIds.length > 0) {
+      const overrideRows = await db.select({
+        enrollmentId: enrollmentOverrides.enrollmentId,
+        overrideType: enrollmentOverrides.overrideType,
+        reason: enrollmentOverrides.reason,
+        amountWaivedCents: enrollmentOverrides.amountWaivedCents,
+        amountDeferredCents: enrollmentOverrides.amountDeferredCents,
+        amountDueNowCents: enrollmentOverrides.amountDueNowCents,
+        approvedByName: enrollmentOverrides.approvedByName,
+      }).from(enrollmentOverrides)
+        .where(and(
+          inArray(enrollmentOverrides.enrollmentId, enrollmentIds),
+          eq(enrollmentOverrides.isActive, true)
+        ));
+      overrideByEnrollment = Object.fromEntries(overrideRows.map(o => [o.enrollmentId, o]));
+    }
+
     // Fetch payments for child invoices (deduplicated by payment intent)
     const childInvoiceIds = childInvoices.map(i => i.id);
     const paymentsByFi = {};
@@ -273,6 +292,7 @@ router.get('/family-invoices', requireAuth, async (req, res) => {
             programName: e?.programName || null,
             studentFirstName: e?.studentFirstName || null,
             studentLastName: e?.studentLastName || null,
+            activeOverride: inv.enrollmentId ? (overrideByEnrollment[inv.enrollmentId] || null) : null,
           };
         });
 

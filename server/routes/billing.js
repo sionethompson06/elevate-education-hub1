@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { eq, desc, inArray, and, sql } from 'drizzle-orm';
 import db from '../db-postgres.js';
-import { billingAccounts, invoices, familyInvoices, payments, enrollments, students, programs, guardianStudents, users, paymentAllocations } from '../schema.js';
+import { billingAccounts, invoices, familyInvoices, payments, enrollments, students, programs, guardianStudents, users, paymentAllocations, enrollmentOverrides } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { logAudit } from '../services/audit.service.js';
 import { createNotification } from '../services/notification.service.js';
@@ -427,6 +427,28 @@ router.get('/accounting', requireAuth, requireRole('admin'), async (req, res) =>
         if (r.familyInvoiceId && fiMap[r.familyInvoiceId] != null) {
           r.familyInvoiceTotal = fiMap[r.familyInvoiceId];
         }
+      }
+    }
+
+    // Attach active overrides for scholarship/waiver transparency
+    if (enrollmentIds.length > 0) {
+      const overrideRows = await db.select({
+        enrollmentId: enrollmentOverrides.enrollmentId,
+        overrideType: enrollmentOverrides.overrideType,
+        reason: enrollmentOverrides.reason,
+        amountWaivedCents: enrollmentOverrides.amountWaivedCents,
+        amountDeferredCents: enrollmentOverrides.amountDeferredCents,
+        amountDueNowCents: enrollmentOverrides.amountDueNowCents,
+        approvedByName: enrollmentOverrides.approvedByName,
+        notes: enrollmentOverrides.notes,
+      }).from(enrollmentOverrides)
+        .where(and(
+          inArray(enrollmentOverrides.enrollmentId, enrollmentIds),
+          eq(enrollmentOverrides.isActive, true)
+        ));
+      const overrideMap = Object.fromEntries(overrideRows.map(o => [o.enrollmentId, o]));
+      for (const r of result) {
+        r.activeOverride = overrideMap[r.enrollmentId] || null;
       }
     }
 

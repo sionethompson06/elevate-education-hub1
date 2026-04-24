@@ -73,6 +73,26 @@ router.get('/my-students', requireAuth, async (req, res) => {
         enr.invoiceDescription = inv?.description || null;
         enr.invoiceDiscountPercent = inv?.discountPercent ?? null;
       }
+
+      // Attach active overrides for scholarship/waiver transparency
+      const enrollmentIdList = myEnrollments.map(e => e.id).filter(Boolean);
+      const overrideRows = await db.select({
+        enrollmentId: enrollmentOverrides.enrollmentId,
+        overrideType: enrollmentOverrides.overrideType,
+        reason: enrollmentOverrides.reason,
+        amountWaivedCents: enrollmentOverrides.amountWaivedCents,
+        amountDeferredCents: enrollmentOverrides.amountDeferredCents,
+        amountDueNowCents: enrollmentOverrides.amountDueNowCents,
+        approvedByName: enrollmentOverrides.approvedByName,
+      }).from(enrollmentOverrides)
+        .where(and(
+          inArray(enrollmentOverrides.enrollmentId, enrollmentIdList),
+          eq(enrollmentOverrides.isActive, true)
+        ));
+      const overrideMap = Object.fromEntries(overrideRows.map(o => [o.enrollmentId, o]));
+      for (const enr of myEnrollments) {
+        enr.activeOverride = overrideMap[enr.id] || null;
+      }
     }
 
     // Attach coach assignments (with coach user details) to each student
