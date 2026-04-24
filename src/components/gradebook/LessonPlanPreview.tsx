@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronUp,
   Plus,
+  Sparkles,
   X,
   Eye,
   EyeOff,
@@ -267,6 +268,12 @@ function SupportBlock({
   onCopy: (text: string, key: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [aiToast, setAiToast] = useState(false);
+
+  const handleAIClick = () => {
+    setAiToast(true);
+    setTimeout(() => setAiToast(false), 3500);
+  };
 
   const buildText = (): string => {
     const lines: string[] = [`## ${label}`, ""];
@@ -334,6 +341,23 @@ function SupportBlock({
               </div>
             );
           })}
+
+          <div className="pt-2 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={handleAIClick}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border border-dashed border-slate-300 text-slate-500 hover:border-[#1a3c5e] hover:text-[#1a3c5e] hover:bg-slate-50 transition-colors"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Improve {label} with AI
+            </button>
+            {aiToast && (
+              <p className="mt-2 text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 leading-snug">
+                <span className="font-semibold text-[#1a3c5e]">AI enhancement coming soon.</span>{" "}
+                This section is already structured for AI improvement.
+              </p>
+            )}
+          </div>
         </div>
       )}
     </div>
