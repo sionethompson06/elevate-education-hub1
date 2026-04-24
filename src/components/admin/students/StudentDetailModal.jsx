@@ -50,9 +50,9 @@ export default function StudentDetailModal({ student: initialStudent, onClose, o
 
   const { data: enrollmentsData = { enrollments: [] } } = useQuery({
     queryKey: ["student-enrollments", initialStudent.id],
-    queryFn: () => apiGet(`/enrollments?student_id=${initialStudent.id}`),
+    queryFn: () => apiGet(`/enrollments`),
   });
-  const enrollments = enrollmentsData.enrollments || [];
+  const enrollments = (enrollmentsData.enrollments || []).filter(e => e.studentId === initialStudent.id);
 
   const { data: usersData } = useQuery({
     queryKey: ["all-users-coaches"],
@@ -270,18 +270,38 @@ export default function StudentDetailModal({ student: initialStudent, onClose, o
           {/* Enrollments */}
           <div>
             <h3 className="text-sm font-semibold text-slate-700 mb-2 flex items-center gap-2">
-              <Users className="w-4 h-4" /> Enrollments ({enrollments.length})
+              <BookOpen className="w-4 h-4" /> Enrollments ({enrollments.length})
             </h3>
             {enrollments.length === 0 ? (
               <p className="text-xs text-slate-400">No enrollments.</p>
             ) : (
-              <div className="space-y-1">
-                {enrollments.map(e => (
-                  <div key={e.id} className="flex items-center justify-between px-3 py-2 bg-slate-50 rounded-lg text-sm">
-                    <span className="font-medium text-slate-800">Program #{e.programId}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${e.status === "active" || e.status === "active_override" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>{e.status}</span>
-                  </div>
-                ))}
+              <div className="space-y-1.5">
+                {enrollments.map(e => {
+                  const isActive = e.status === "active" || e.status === "active_override";
+                  const isPending = e.status === "pending_payment" || e.status === "pending";
+                  return (
+                    <div key={e.id} className="flex items-center justify-between px-3 py-2.5 bg-slate-50 rounded-lg">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-slate-800">
+                          {e.programName || `Program #${e.programId}`}
+                        </p>
+                        {e.billingCycle && (
+                          <p className="text-xs text-slate-400 capitalize mt-0.5">
+                            {e.billingCycle.replace(/_/g, " ")}
+                            {e.invoiceAmount && ` · $${parseFloat(e.invoiceAmount).toLocaleString()}`}
+                          </p>
+                        )}
+                      </div>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ml-2 shrink-0 ${
+                        isActive ? "bg-green-100 text-green-700" :
+                        isPending ? "bg-yellow-100 text-yellow-700" :
+                        "bg-slate-100 text-slate-500"
+                      }`}>
+                        {e.status === "active_override" ? "Active" : e.status?.replace(/_/g, " ")}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
