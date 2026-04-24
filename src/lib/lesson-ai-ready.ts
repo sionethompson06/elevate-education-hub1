@@ -6,7 +6,7 @@
  * the model call and feed the response into mergeAIEnhancedSupports().
  */
 
-import type { LessonPlan, StandardInput, StudentSupports } from "@/types/lesson-plan";
+import type { LessonPlan, LessonQuestion, StandardInput, StudentSupports } from "@/types/lesson-plan";
 
 // ── private helpers ────────────────────────────────────────────────────────────
 
@@ -34,6 +34,10 @@ export interface LessonAIContext {
     title: string;
     objective: string;
     vocabulary: string[];
+    assessment: string;
+    assessmentQuestions: LessonQuestion[];
+    exitTicket: string;
+    exitTicketQuestions: LessonQuestion[];
   };
   existingSupports: StudentSupports | undefined;
 }
@@ -66,6 +70,10 @@ export function buildLessonAIContext(
       title: lessonPlan.title,
       objective: lessonPlan.objective,
       vocabulary: lessonPlan.vocabulary,
+      assessment: lessonPlan.assessment,
+      assessmentQuestions: lessonPlan.assessmentQuestions,
+      exitTicket: lessonPlan.exitTicket,
+      exitTicketQuestions: lessonPlan.exitTicketQuestions,
     },
     existingSupports: lessonPlan.studentSupports,
   };
@@ -110,6 +118,12 @@ export function buildSupportEnhancementPrompt(
     ``,
     `Learning objective: ${lessonPlan.objective}`,
     `Key vocabulary    : ${lessonPlan.vocabulary.join(", ") || "—"}`,
+    lessonPlan.assessmentQuestions?.length
+      ? `Assessment        : ${lessonPlan.assessmentQuestions.length} question(s) — ${lessonPlan.assessment}`
+      : "",
+    lessonPlan.exitTicketQuestions?.length
+      ? `Exit ticket       : ${lessonPlan.exitTicketQuestions.length} question(s) — ${lessonPlan.exitTicket}`
+      : "",
     ``,
     `Please enhance the student support plan for: ${label}`,
     ``,
