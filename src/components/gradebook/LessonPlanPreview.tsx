@@ -10,9 +10,12 @@ import {
   X,
   Eye,
   EyeOff,
+  Loader2,
 } from "lucide-react";
 import type { LessonPlan, LessonQuestion, QuestionType, StudentSupports } from "@/types/lesson-plan";
 import { lessonPlanToMarkdown, questionsToMarkdown } from "@/lib/lesson-builder";
+import { apiPost } from "@/api/apiClient";
+import { mergeAIEnhancedSupports } from "@/lib/lesson-ai-ready";
 
 interface Props {
   plan: LessonPlan;
@@ -257,6 +260,10 @@ function SupportBlock({
   copyKey,
   copied,
   onCopy,
+  supportType,
+  onAIEnhance,
+  aiLoading,
+  aiError,
 }: {
   label: string;
   badge: string;
@@ -266,14 +273,12 @@ function SupportBlock({
   copyKey: string;
   copied: string | null;
   onCopy: (text: string, key: string) => void;
+  supportType: keyof StudentSupports;
+  onAIEnhance: (type: keyof StudentSupports) => Promise<void>;
+  aiLoading: boolean;
+  aiError: string | null;
 }) {
   const [open, setOpen] = useState(false);
-  const [aiToast, setAiToast] = useState(false);
-
-  const handleAIClick = () => {
-    setAiToast(true);
-    setTimeout(() => setAiToast(false), 3500);
-  };
 
   const buildText = (): string => {
     const lines: string[] = [`## ${label}`, ""];
@@ -342,19 +347,28 @@ function SupportBlock({
             );
           })}
 
-          <div className="pt-2 border-t border-slate-100">
+          <div className="pt-2 border-t border-slate-100 space-y-2">
             <button
               type="button"
-              onClick={handleAIClick}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border border-dashed border-slate-300 text-slate-500 hover:border-[#1a3c5e] hover:text-[#1a3c5e] hover:bg-slate-50 transition-colors"
+              onClick={() => onAIEnhance(supportType)}
+              disabled={aiLoading}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border border-dashed border-slate-300 text-slate-500 hover:border-[#1a3c5e] hover:text-[#1a3c5e] hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-wait"
             >
-              <Sparkles className="w-3.5 h-3.5" />
-              Improve {label} with AI
+              {aiLoading ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Improving with AI…
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Improve {label} with AI
+                </>
+              )}
             </button>
-            {aiToast && (
-              <p className="mt-2 text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 leading-snug">
-                <span className="font-semibold text-[#1a3c5e]">AI enhancement coming soon.</span>{" "}
-                This section is already structured for AI improvement.
+            {aiError && (
+              <p className="text-[11px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 leading-snug">
+                {aiError}
               </p>
             )}
           </div>
@@ -396,9 +410,42 @@ function Section({
 export default function LessonPlanPreview({ plan, onChange, onReset }: Props) {
   const [copied, setCopied] = useState<string | null>(null);
   const [showAnswers, setShowAnswers] = useState(false);
+  const [aiLoadingType, setAiLoadingType] = useState<keyof StudentSupports | null>(null);
+  const [aiError, setAiError] = useState<{ type: keyof StudentSupports; message: string } | null>(null);
 
   const update = <K extends keyof LessonPlan>(key: K, value: LessonPlan[K]) => {
     onChange({ ...plan, [key]: value });
+  };
+
+  const handleAIEnhance = async (supportType: keyof StudentSupports) => {
+    setAiLoadingType(supportType);
+    setAiError(null);
+    try {
+      const selectedStandard = {
+        standard_code: plan.standardCode,
+        standard_text: plan.standardText,
+        subject: plan.subject,
+        grade: plan.grade,
+        domain: plan.domain,
+        cluster: plan.cluster,
+      };
+      const res = await apiPost("/lesson-ai/enhance-supports", {
+        lessonPlan: plan,
+        selectedStandard,
+        supportType,
+      });
+      const merged = mergeAIEnhancedSupports(plan, {
+        [supportType]: res.enhancedSupports,
+      });
+      onChange(merged);
+    } catch (err: unknown) {
+      setAiError({
+        type: supportType,
+        message: err instanceof Error ? err.message : "Enhancement failed. Please try again.",
+      });
+    } finally {
+      setAiLoadingType(null);
+    }
   };
 
   const copyText = async (text: string, key: string) => {
@@ -715,6 +762,10 @@ export default function LessonPlanPreview({ plan, onChange, onReset }: Props) {
               copyKey="supports-el"
               copied={copied}
               onCopy={copyText}
+              supportType="el"
+              onAIEnhance={handleAIEnhance}
+              aiLoading={aiLoadingType === "el"}
+              aiError={aiError?.type === "el" ? aiError.message : null}
             />
             <SupportBlock
               label="SPED / 504"
@@ -735,6 +786,10 @@ export default function LessonPlanPreview({ plan, onChange, onReset }: Props) {
               copyKey="supports-sped"
               copied={copied}
               onCopy={copyText}
+              supportType="sped"
+              onAIEnhance={handleAIEnhance}
+              aiLoading={aiLoadingType === "sped"}
+              aiError={aiError?.type === "sped" ? aiError.message : null}
             />
             <SupportBlock
               label="IDEA Access"
@@ -754,6 +809,10 @@ export default function LessonPlanPreview({ plan, onChange, onReset }: Props) {
               copyKey="supports-idea"
               copied={copied}
               onCopy={copyText}
+              supportType="idea"
+              onAIEnhance={handleAIEnhance}
+              aiLoading={aiLoadingType === "idea"}
+              aiError={aiError?.type === "idea" ? aiError.message : null}
             />
             <SupportBlock
               label="Intervention"
@@ -773,6 +832,10 @@ export default function LessonPlanPreview({ plan, onChange, onReset }: Props) {
               copyKey="supports-intervention"
               copied={copied}
               onCopy={copyText}
+              supportType="intervention"
+              onAIEnhance={handleAIEnhance}
+              aiLoading={aiLoadingType === "intervention"}
+              aiError={aiError?.type === "intervention" ? aiError.message : null}
             />
             <SupportBlock
               label="Advanced Learners"
@@ -792,6 +855,10 @@ export default function LessonPlanPreview({ plan, onChange, onReset }: Props) {
               copyKey="supports-advanced"
               copied={copied}
               onCopy={copyText}
+              supportType="advanced"
+              onAIEnhance={handleAIEnhance}
+              aiLoading={aiLoadingType === "advanced"}
+              aiError={aiError?.type === "advanced" ? aiError.message : null}
             />
           </div>
         )}
