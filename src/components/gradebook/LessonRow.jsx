@@ -16,6 +16,11 @@ export default function LessonRow({ lesson, onClick }) {
           </p>
           <LessonStatusBadge status={lesson.status} />
           {isOverdue && <span className="px-1.5 py-0.5 rounded text-xs bg-red-100 text-red-600 font-semibold">Overdue</span>}
+          {lesson.standards_codes?.length > 0 && (
+            <span className="px-1.5 py-0.5 rounded text-[10px] bg-blue-50 text-blue-700 border border-blue-100 font-semibold">
+              {lesson.standards_codes.length} std
+            </span>
+          )}
         </div>
         <p className="text-xs text-slate-400 mt-0.5">
           {lesson.subject}

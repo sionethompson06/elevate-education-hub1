@@ -2,6 +2,7 @@ import { useState } from "react";
 import { apiPost } from "@/api/apiClient";
 import { Button } from "@/components/ui/button";
 import { X, Loader2, BookOpen } from "lucide-react";
+import StandardsPicker from "./StandardsPicker";
 
 const SUBJECTS = ["Math", "English", "Science", "History", "Reading", "Writing", "PE", "General"];
 
@@ -13,6 +14,7 @@ export default function CreateLessonModal({ assignedStudents, onClose, onSuccess
     due_at: "",
     points_possible: 10,
     student_ids: [],
+    standards_codes: [],
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -36,6 +38,7 @@ export default function CreateLessonModal({ assignedStudents, onClose, onSuccess
         due_at: form.due_at ? new Date(form.due_at).toISOString() : null,
         points_possible: Number(form.points_possible),
         student_ids: form.student_ids,
+        standards_codes: form.standards_codes,
       });
       onSuccess();
     } catch (err) {
@@ -104,6 +107,15 @@ export default function CreateLessonModal({ assignedStudents, onClose, onSuccess
               value={form.instructions}
               onChange={e => setForm(f => ({ ...f, instructions: e.target.value }))}
               placeholder="Describe the assignment…"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Standards <span className="text-slate-400 font-normal">(optional)</span></label>
+            <StandardsPicker
+              lessonSubject={form.subject}
+              value={form.standards_codes}
+              onChange={codes => setForm(f => ({ ...f, standards_codes: codes }))}
             />
           </div>
 
