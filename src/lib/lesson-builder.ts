@@ -9,7 +9,7 @@
  * ELA-Literacy standards → reading, writing, and discussion activities.
  */
 
-import type { LessonPlan, StandardInput } from "@/types/lesson-plan";
+import type { LessonPlan, LessonQuestion, StandardInput } from "@/types/lesson-plan";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -294,6 +294,348 @@ function buildExitTicket(s: StandardInput): string {
   ].join("\n");
 }
 
+// ── question builders ────────────────────────────────────────────────────────
+
+/**
+ * Small deterministic RNG keyed off the standard code so each standard gets
+ * stable, repeatable numbers in its word problems.
+ */
+function hashSeed(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+function rng(seed: number): () => number {
+  let x = seed || 1;
+  return () => {
+    x = (x * 1664525 + 1013904223) >>> 0;
+    return x / 0x100000000;
+  };
+}
+const pickInt = (r: () => number, lo: number, hi: number) =>
+  Math.floor(r() * (hi - lo + 1)) + lo;
+const pick = <T,>(r: () => number, arr: T[]): T => arr[Math.floor(r() * arr.length)];
+
+function mathFocus(s: StandardInput): "add" | "subtract" | "multiply" | "divide" | "fractions" | "geometry" | "ratios" | "functions" | "general" {
+  const t = `${s.standard_text} ${s.domain} ${s.cluster}`.toLowerCase();
+  // Use word boundaries so e.g. "operations" doesn't match /ratio/.
+  if (/\b(fraction|numerator|denominator)/.test(t)) return "fractions";
+  if (/\b(area|perimeter|volume|angle|triangle|shape|geometr)/.test(t)) return "geometry";
+  if (/\b(multipl|product|times)/.test(t)) return "multiply";
+  if (/\b(divid|quotient|share equally)/.test(t)) return "divide";
+  if (/\b(ratio|proportion|rate|percent)/.test(t)) return "ratios";
+  if (/\b(function|linear|quadratic|exponential|graph)/.test(t)) return "functions";
+  if (/\b(subtract|difference|take away|less than)/.test(t)) return "subtract";
+  if (/\b(add|sum|total|combined)/.test(t)) return "add";
+  return "general";
+}
+
+function elaFocus(s: StandardInput): "comprehension" | "writing" | "vocabulary" | "speaking" | "general" {
+  const t = `${s.standard_text} ${s.domain} ${s.cluster}`.toLowerCase();
+  if (/\b(writ|compose|draft|essay|argument|narrative)/.test(t)) return "writing";
+  if (/\b(vocab|meaning of|word|phrase)/.test(t)) return "vocabulary";
+  if (/\b(discuss|speak|listen|present|collaborat)/.test(t)) return "speaking";
+  if (/\b(read|comprehen|infer|main idea|theme|summariz|analyze)/.test(t)) return "comprehension";
+  return "general";
+}
+
+function buildMathWordProblem(s: StandardInput, r: () => number, variant: number): LessonQuestion {
+  const focus = mathFocus(s);
+  const band = gradeBand(s.grade);
+  const namePool = ["Maya", "Andre", "Priya", "Leo", "Jada", "Marco", "Sofia", "Omar"];
+  const name = pick(r, namePool);
+
+  if (focus === "add" || (focus === "general" && band === "K-2")) {
+    const a = pickInt(r, 3, 12 + (band === "K-2" ? 0 : 40));
+    const b = pickInt(r, 2, 8 + (band === "K-2" ? 0 : 30));
+    return {
+      question: `${name} read ${a} pages yesterday and ${b} pages today. How many pages did ${name} read in total?`,
+      type: "word_problem",
+      answer: `${a + b} pages`,
+    };
+  }
+  if (focus === "subtract") {
+    const a = pickInt(r, 12, 60);
+    const b = pickInt(r, 3, Math.max(4, a - 3));
+    return {
+      question: `${name} had ${a} stickers and gave ${b} to a friend. How many stickers does ${name} have now?`,
+      type: "word_problem",
+      answer: `${a - b} stickers`,
+    };
+  }
+  if (focus === "multiply" || (focus === "general" && band === "3-5")) {
+    const rows = pickInt(r, 3, 8);
+    const per = pickInt(r, 4, 9);
+    return {
+      question: `${name} is arranging chairs into ${rows} equal rows with ${per} chairs in each row. How many chairs are there in all?`,
+      type: "word_problem",
+      answer: `${rows * per} chairs`,
+    };
+  }
+  if (focus === "divide") {
+    const per = pickInt(r, 3, 7);
+    const groups = pickInt(r, 3, 8);
+    const total = per * groups;
+    return {
+      question: `${name} has ${total} marbles to share equally into ${groups} bags. How many marbles go in each bag?`,
+      type: "word_problem",
+      answer: `${per} marbles per bag`,
+    };
+  }
+  if (focus === "fractions") {
+    const d = pick(r, [4, 6, 8]);
+    const a = pickInt(r, 1, d - 2);
+    const b = pickInt(r, 1, d - a);
+    return {
+      question: `${name} ate ${a}/${d} of a pizza and a friend ate ${b}/${d}. How much of the pizza did they eat together?`,
+      type: "word_problem",
+      answer: `${a + b}/${d}`,
+    };
+  }
+  if (focus === "geometry") {
+    if (variant === 0) {
+      const l = pickInt(r, 4, 14);
+      const w = pickInt(r, 3, 10);
+      return {
+        question: `A rectangular garden is ${l} feet long and ${w} feet wide. What is its area?`,
+        type: "word_problem",
+        answer: `${l * w} square feet`,
+      };
+    }
+    const l = pickInt(r, 5, 18);
+    const w = pickInt(r, 3, 12);
+    return {
+      question: `A rectangular poster is ${l} inches long and ${w} inches wide. What is its perimeter?`,
+      type: "word_problem",
+      answer: `${2 * (l + w)} inches`,
+    };
+  }
+  if (focus === "ratios" || (focus === "general" && band === "6-8")) {
+    const a = pick(r, [2, 3, 4, 5]);
+    const b = pick(r, [3, 4, 5, 6]);
+    const mult = pickInt(r, 3, 8);
+    return {
+      question: `A recipe uses ${a} cups of flour for every ${b} cups of sugar. If ${name} uses ${b * mult} cups of sugar, how many cups of flour are needed?`,
+      type: "word_problem",
+      answer: `${a * mult} cups of flour`,
+    };
+  }
+  if (focus === "functions" || (focus === "general" && band === "HS")) {
+    const m = pickInt(r, 2, 9);
+    const b = pickInt(r, 5, 50);
+    const x = pickInt(r, 3, 12);
+    return {
+      question: `A gym charges a $${b} sign-up fee plus $${m} per month. Write an equation for the total cost C after m months, then find C when m = ${x}.`,
+      type: "word_problem",
+      answer: `C = ${m}m + ${b}; at m = ${x}, C = $${m * x + b}`,
+    };
+  }
+  const a = pickInt(r, 20, 80);
+  const b = pickInt(r, 10, a - 5);
+  return {
+    question: `${name} collected ${a} cans for recycling and donated ${b} to a drive. How many cans does ${name} have left?`,
+    type: "word_problem",
+    answer: `${a - b} cans`,
+  };
+}
+
+function buildMathMC(s: StandardInput, r: () => number): LessonQuestion {
+  const focus = mathFocus(s);
+  if (focus === "fractions") {
+    const correct = "3/4";
+    return {
+      question: "Which fraction is equivalent to 6/8?",
+      type: "multiple_choice",
+      choices: ["1/2", "2/3", correct, "4/6"],
+      answer: correct,
+    };
+  }
+  if (focus === "geometry") {
+    return {
+      question: "A rectangle has a length of 8 cm and a width of 5 cm. What is its area?",
+      type: "multiple_choice",
+      choices: ["13 cm²", "26 cm²", "40 cm²", "80 cm²"],
+      answer: "40 cm²",
+    };
+  }
+  if (focus === "ratios") {
+    return {
+      question: "If 3 apples cost $1.50, what is the unit cost of one apple?",
+      type: "multiple_choice",
+      choices: ["$0.40", "$0.45", "$0.50", "$0.75"],
+      answer: "$0.50",
+    };
+  }
+  if (focus === "functions") {
+    return {
+      question: "Which expression is equivalent to 2(x + 5)?",
+      type: "multiple_choice",
+      choices: ["2x + 5", "2x + 10", "x + 10", "2x + 7"],
+      answer: "2x + 10",
+    };
+  }
+  if (focus === "multiply") {
+    const a = pickInt(r, 4, 9);
+    const b = pickInt(r, 4, 9);
+    const correct = `${a * b}`;
+    const distractors = [String(a + b), String(a * b - a), String(a * b + a)];
+    return {
+      question: `What is ${a} × ${b}?`,
+      type: "multiple_choice",
+      choices: [...distractors, correct].sort(() => r() - 0.5),
+      answer: correct,
+    };
+  }
+  const a = pickInt(r, 10, 40);
+  const b = pickInt(r, 5, 25);
+  const correct = `${a + b}`;
+  return {
+    question: `What is ${a} + ${b}?`,
+    type: "multiple_choice",
+    choices: [String(a + b - 2), correct, String(a + b + 5), String(a * 2)].sort(() => r() - 0.5),
+    answer: correct,
+  };
+}
+
+function buildMathSA(s: StandardInput): LessonQuestion {
+  const topic = s.cluster || s.domain || "today's skill";
+  return {
+    question: `Explain the strategy you used to solve problem 1. Why does it work? Use words, numbers, or a drawing.`,
+    type: "short_answer",
+    answer: `Look for: clear description of the strategy, connection to ${topic.toLowerCase()}, and accurate reasoning.`,
+  };
+}
+
+function buildElaComprehension(s: StandardInput): LessonQuestion {
+  const focus = elaFocus(s);
+  if (focus === "writing") {
+    return {
+      question: "Reread the mentor paragraph. What is the author's main claim, and what is one piece of evidence they use to support it?",
+      type: "short_answer",
+      answer: "Look for: accurate claim restated in the student's own words and one specific, text-based detail.",
+    };
+  }
+  if (focus === "vocabulary") {
+    return {
+      question: "Choose one unfamiliar word from the passage. Use context clues to predict its meaning and explain how the surrounding sentence supports your prediction.",
+      type: "short_answer",
+      answer: "Look for: a reasonable prediction tied to specific context clues (definition, example, synonym, contrast).",
+    };
+  }
+  return {
+    question: "What is the main idea of the passage? Support your answer with one specific piece of evidence from the text.",
+    type: "short_answer",
+    answer: "Look for: a concise main idea (not a retelling) and one directly cited detail.",
+  };
+}
+
+function buildElaVocabulary(s: StandardInput, vocab: string[]): LessonQuestion {
+  const term = vocab[0] || "inference";
+  const correctMap: Record<string, string> = {
+    infer: "a conclusion drawn from evidence and reasoning",
+    inference: "a conclusion drawn from evidence and reasoning",
+    analyze: "to examine carefully to understand how parts work together",
+    cite: "to quote or refer to as a source",
+    claim: "a statement an author argues is true",
+    theme: "a central message or lesson in a text",
+    evidence: "details from a text that support a claim",
+    metaphor: "a comparison that says one thing is another",
+    simile: "a comparison using the word \"like\" or \"as\"",
+    tone: "the author's attitude toward the subject",
+  };
+  const correct = correctMap[term.toLowerCase()] || "a central idea supported by evidence in the text";
+  const distractors = [
+    "a sentence that starts a paragraph",
+    "a summary of the whole story",
+    "the author's name or title",
+  ];
+  return {
+    question: `In the context of the passage, which of these best defines "${term}"?`,
+    type: "multiple_choice",
+    choices: [distractors[0], correct, distractors[1], distractors[2]],
+    answer: correct,
+  };
+}
+
+function buildElaWriting(s: StandardInput): LessonQuestion {
+  const focus = elaFocus(s);
+  if (focus === "speaking") {
+    return {
+      question: "In 3–4 sentences, outline what you would say to a partner about the strategy from today's lesson. Include one text-based example.",
+      type: "short_answer",
+      answer: "Look for: clear statement of the strategy, one specific example from the text, and connected reasoning.",
+    };
+  }
+  if (focus === "writing") {
+    return {
+      question: "Using today's strategy, write one well-developed paragraph that applies the skill to the passage. Include a clear topic sentence and at least one piece of text-based evidence.",
+      type: "short_answer",
+      answer: "Look for: topic sentence that states the focus, specific cited evidence, and explanation tying evidence to claim.",
+    };
+  }
+  return {
+    question: "Write a short response (3–5 sentences) that applies today's strategy to the passage. Cite at least one piece of evidence from the text.",
+    type: "short_answer",
+    answer: "Look for: direct application of the strategy, text-based evidence, and clear, organized writing.",
+  };
+}
+
+function buildAssessmentQuestions(s: StandardInput): LessonQuestion[] {
+  const r = rng(hashSeed(s.standard_code || s.short_code || "lesson"));
+  if (isMath(s)) {
+    return [
+      buildMathWordProblem(s, r, 0),
+      buildMathWordProblem(s, r, 1),
+      buildMathMC(s, r),
+      buildMathSA(s),
+    ];
+  }
+  if (isELA(s)) {
+    const vocab = extractVocabulary(s);
+    return [
+      buildElaComprehension(s),
+      buildElaVocabulary(s, vocab),
+      buildElaWriting(s),
+    ];
+  }
+  return [buildMathSA(s)];
+}
+
+function buildExitTicketQuestions(s: StandardInput): LessonQuestion[] {
+  const r = rng(hashSeed((s.standard_code || "") + ":exit"));
+  if (isMath(s)) {
+    return [
+      buildMathWordProblem(s, r, 0),
+      {
+        question: "In one sentence, explain the strategy you used to solve the problem above.",
+        type: "short_answer",
+        answer: "Look for: a concise description of the strategy with correct mathematical reasoning.",
+      },
+    ];
+  }
+  if (isELA(s)) {
+    return [
+      {
+        question: "Apply today's strategy to the exit-ticket passage in 2–3 sentences.",
+        type: "short_answer",
+        answer: "Look for: correct application of the strategy and clear writing.",
+      },
+      {
+        question: "Cite one specific piece of evidence from the passage that supports your thinking.",
+        type: "short_answer",
+        answer: "Look for: a direct quote or paraphrase that supports the student's response.",
+      },
+    ];
+  }
+  return [
+    {
+      question: "In one sentence, describe what you learned today and how you would use it.",
+      type: "short_answer",
+      answer: "Look for: a clear, personal connection to today's learning target.",
+    },
+  ];
+}
+
 function buildTeacherNotes(s: StandardInput): string {
   const band = gradeBand(s.grade);
   const pacing =
@@ -345,7 +687,9 @@ export function generateLessonPlan(standard: StandardInput): LessonPlan {
     differentiation: buildDifferentiation(standard),
     checksForUnderstanding: buildChecksForUnderstanding(standard),
     assessment: buildAssessment(standard),
+    assessmentQuestions: buildAssessmentQuestions(standard),
     exitTicket: buildExitTicket(standard),
+    exitTicketQuestions: buildExitTicketQuestions(standard),
     teacherNotes: buildTeacherNotes(standard),
   };
 }
@@ -388,6 +732,25 @@ export function parseLessonPlanInstructions(
   const asStringArray = (v: unknown): string[] =>
     Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
 
+  const asQuestions = (v: unknown): LessonQuestion[] => {
+    if (!Array.isArray(v)) return [];
+    const out: LessonQuestion[] = [];
+    for (const raw of v) {
+      if (!raw || typeof raw !== "object") continue;
+      const q = raw as Record<string, unknown>;
+      const type = q.type;
+      if (type !== "multiple_choice" && type !== "short_answer" && type !== "word_problem") continue;
+      const question = asString(q.question);
+      const answer = asString(q.answer);
+      if (!question) continue;
+      const choices = Array.isArray(q.choices)
+        ? q.choices.filter((c): c is string => typeof c === "string")
+        : undefined;
+      out.push({ question, type, answer, ...(choices ? { choices } : {}) });
+    }
+    return out;
+  };
+
   return {
     title: asString(p.title),
     standardCode: asString(p.standardCode),
@@ -407,9 +770,39 @@ export function parseLessonPlanInstructions(
     differentiation: asString(p.differentiation),
     checksForUnderstanding: asStringArray(p.checksForUnderstanding),
     assessment: asString(p.assessment),
+    assessmentQuestions: asQuestions(p.assessmentQuestions),
     exitTicket: asString(p.exitTicket),
+    exitTicketQuestions: asQuestions(p.exitTicketQuestions),
     teacherNotes: asString(p.teacherNotes),
   };
+}
+
+/**
+ * Serialize a list of questions to a readable Markdown block. Answers are
+ * included only when `includeAnswers` is true (teacher copy vs student copy).
+ */
+export function questionsToMarkdown(
+  questions: LessonQuestion[],
+  { includeAnswers = false, heading = "" }: { includeAnswers?: boolean; heading?: string } = {},
+): string {
+  if (!questions.length) return heading ? `## ${heading}\n\n_No questions generated._` : "";
+  const out: string[] = [];
+  if (heading) {
+    out.push(`## ${heading}`);
+    out.push("");
+  }
+  questions.forEach((q, i) => {
+    out.push(`**${i + 1}.** (${q.type.replace("_", " ")}) ${q.question}`);
+    if (q.choices?.length) {
+      q.choices.forEach((c, j) => {
+        const letter = String.fromCharCode(65 + j);
+        out.push(`   ${letter}. ${c}`);
+      });
+    }
+    if (includeAnswers) out.push(`   **Answer:** ${q.answer}`);
+    out.push("");
+  });
+  return out.join("\n").trimEnd();
 }
 
 /**
@@ -458,9 +851,11 @@ export function lessonPlanToMarkdown(plan: LessonPlan): string {
     ``,
     `## Assessment`,
     plan.assessment,
+    questionsToMarkdown(plan.assessmentQuestions, { includeAnswers: true, heading: "Assessment Questions" }),
     ``,
     `## Exit Ticket`,
     plan.exitTicket,
+    questionsToMarkdown(plan.exitTicketQuestions, { includeAnswers: true, heading: "Exit Ticket Questions" }),
     ``,
     `## Teacher Notes`,
     plan.teacherNotes,
