@@ -1,6 +1,8 @@
 # Elevate Education Hub
 
-A full-stack education management platform (React + Vite frontend, Express backend) with lesson plan AI, billing, enrollments, coaching, and gradebook features.
+A full-stack education management platform with lesson plan AI, billing, enrollments, coaching, and gradebook features.
+
+**Stack:** React + Vite (frontend) · Express.js (backend) · Neon PostgreSQL · OpenAI
 
 ---
 
@@ -9,7 +11,7 @@ A full-stack education management platform (React + Vite frontend, Express backe
 ### Prerequisites
 
 - Node.js 18+
-- A PostgreSQL database (e.g. [Neon](https://neon.tech))
+- A PostgreSQL database ([Neon](https://neon.tech) recommended)
 - An OpenAI API key (for AI lesson plan features)
 
 ### Setup
@@ -24,7 +26,7 @@ npm install
 
 # 3. Set environment variables
 cp .env.local.example .env.local
-# Edit .env.local — at minimum set DATABASE_URL, ADMIN_TOKEN, ADMIN_PASSWORD
+# Edit .env.local — fill in DATABASE_URL, ADMIN_TOKEN, ADMIN_PASSWORD, JWT_SECRET, SESSION_SECRET, OPENAI_API_KEY
 
 # 4. Start the backend (port 3001)
 npm run dev
@@ -39,64 +41,83 @@ Open http://localhost:5173.
 
 ## Deployment on Vercel
 
-### One-time setup
+### 1. Push to GitHub
 
-1. Push this repository to GitHub.
-2. Go to [vercel.com](https://vercel.com) → **Add New Project** → import the GitHub repo.
-3. Vercel auto-detects the `vercel.json` configuration:
-   - **Build command**: `npm run build` (Vite)
-   - **Output directory**: `dist`
-   - **API routes**: `/api/*` → `api/index.js` (Express as a serverless function)
-4. Add environment variables in the Vercel dashboard (**Settings → Environment Variables**):
-
-| Variable | Required | Notes |
-|---|---|---|
-| `DATABASE_URL` | Yes | Neon or other PostgreSQL connection string |
-| `ADMIN_TOKEN` | Yes | Secret token for admin bootstrap |
-| `ADMIN_PASSWORD` | Yes | Initial admin account password |
-| `OPENAI_API_KEY` | Yes (AI features) | Never expose with `VITE_` prefix |
-| `STRIPE_SECRET_KEY` | Yes (billing) | |
-| `STRIPE_WEBHOOK_SECRET` | Yes (billing) | From Stripe webhook dashboard |
-| `STRIPE_PUBLISHABLE_KEY` | Yes (billing) | Frontend-safe — prefix with `VITE_` if used in Vite |
-| `APP_URL` | Yes | Your Vercel deployment URL, e.g. `https://your-app.vercel.app` |
-| `SENDGRID_API_KEY` | Yes (email) | |
-| `FROM_EMAIL` | Yes (email) | |
-| `SESSION_SECRET` | Yes | Random 32+ char string |
-| `JWT_SECRET` | Yes | Random 32+ char string |
-
-5. Click **Deploy**.
-
-### Notes
-
-- **Revenue recognition cron**: The monthly revenue recognition job (`cron.schedule`) is automatically disabled on Vercel (detected via `process.env.VERCEL`). Trigger it manually via `POST /api/accounting/recognize-revenue` with `{ period: "YYYY-MM" }` from the Admin → Financial Reports tab, or set up a Vercel Cron Job in `vercel.json` pointing to that endpoint.
-- **Startup migrations**: Database table creation, seeding, and data migrations run on every cold start — they are all idempotent and safe to re-run.
-- **OpenAI key**: The key is read from `process.env.OPENAI_API_KEY` server-side only. It is never sent to the browser. The frontend only calls `/api/lesson-ai/enhance-supports`.
-
-### Vercel Cron (optional — replaces node-cron)
-
-To run revenue recognition automatically on Vercel, add a cron entry to `vercel.json`:
-
-```json
-"crons": [
-  {
-    "path": "/api/accounting/recognize-revenue",
-    "schedule": "0 2 1 * *"
-  }
-]
+```bash
+git checkout main
+git merge your-feature-branch
+git push origin main
 ```
 
-The endpoint already exists and accepts a `period` param; without a body it defaults to the previous calendar month.
+### 2. Import into Vercel
+
+- Go to [vercel.com](https://vercel.com) → **Add New Project** → import the GitHub repo
+- Vercel detects `vercel.json` automatically — no manual framework config needed
+- Leave framework as **Other**
+
+### 3. Add required environment variables
+
+In Vercel dashboard → **Settings → Environment Variables**:
+
+| Variable | Description |
+|---|---|
+| `DATABASE_URL` | Neon PostgreSQL connection string |
+| `ADMIN_TOKEN` | Secret token for admin bootstrap |
+| `ADMIN_PASSWORD` | Initial admin account password |
+| `JWT_SECRET` | Random 32+ character string |
+| `SESSION_SECRET` | Random 32+ character string |
+| `OPENAI_API_KEY` | From platform.openai.com — used server-side only |
+
+### 4. Add optional environment variables
+
+| Variable | Description |
+|---|---|
+| `STRIPE_SECRET_KEY` | Stripe secret key (billing features) |
+| `STRIPE_WEBHOOK_SECRET` | From Stripe webhook dashboard |
+| `STRIPE_PUBLISHABLE_KEY` | Stripe publishable key |
+| `SENDGRID_API_KEY` | SendGrid API key (email features) |
+| `FROM_EMAIL` | Sender address for system emails |
+| `APP_URL` | Your deployment URL, e.g. `https://your-app.vercel.app` |
+
+### 5. Deploy
+
+Click **Deploy**. The first deploy takes ~2 minutes. Database tables are created and seeded automatically on cold start.
 
 ---
 
-## Project Structure
+## Security notes
+
+- `OPENAI_API_KEY` is read only in `server/routes/lessonAI.js`. It is never sent to the browser and has no `VITE_` prefix.
+- The frontend calls `/api/lesson-ai/enhance-supports` — the server makes the OpenAI request and returns only the result.
+- No Supabase dependency. The only database connection is `DATABASE_URL` (Neon PostgreSQL via Drizzle ORM).
+
+---
+
+## Revenue recognition cron
+
+The monthly revenue recognition job is disabled on Vercel (no persistent process). Trigger it manually:
+
+```
+POST /api/accounting/recognize-revenue
+{ "period": "2025-01" }
+```
+
+Or add a Vercel Cron entry in `vercel.json`:
+
+```json
+"crons": [{ "path": "/api/accounting/recognize-revenue", "schedule": "0 2 1 * *" }]
+```
+
+---
+
+## Project structure
 
 ```
 ├── api/
-│   └── index.js          # Vercel serverless entry point (exports Express app)
+│   └── index.js          # Vercel serverless entry point
 ├── server/
 │   ├── app.js            # Express app (routes, middleware, startup migrations)
-│   ├── index.js          # Local dev server (calls app.listen())
+│   ├── index.js          # Local dev server (app.listen)
 │   ├── routes/           # API route handlers
 │   ├── services/         # Business logic (stripe, email, accounting, AI)
 │   └── schema.js         # Drizzle ORM schema
@@ -104,6 +125,6 @@ The endpoint already exists and accepts a `period` param; without a body it defa
 │   ├── pages/            # React pages (admin, parent, coach portals)
 │   ├── components/       # Shared UI components
 │   └── types/            # TypeScript interfaces
-├── .env.local.example    # Template for environment variables
+├── .env.local.example    # Environment variable template
 └── vercel.json           # Vercel deployment config
 ```
