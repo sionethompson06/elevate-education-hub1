@@ -6,6 +6,8 @@
  *
  * Data schema (per standard):
  *   subject         "Math" | "ELA-Literacy"
+ *   level           "Elementary" | "Middle School" | "High School" | "K-12"
+ *   course          e.g. "Algebra" | "Reading: Literature" | null (K-8 Math)
  *   grade           "K" | "1" ... "8" | "HS" | "K-12"
  *   domain          e.g. "Operations and Algebraic Thinking"
  *   cluster         e.g. "Represent and solve problems involving multiplication and division."
@@ -35,7 +37,7 @@ async function _load() {
   return _pending;
 }
 
-const _uniqueSorted = (arr) => [...new Set(arr.filter(Boolean))];
+const _uniqueSorted = (arr) => [...new Set(arr.filter(Boolean))].sort();
 
 const _gradeOrder = (g) => {
   if (g === "K") return 0;
@@ -47,6 +49,11 @@ const _gradeOrder = (g) => {
 
 const _sortGrades = (grades) =>
   [...grades].sort((a, b) => _gradeOrder(a) - _gradeOrder(b));
+
+const _levelOrder = (l) => {
+  const order = { Elementary: 0, "Middle School": 1, "High School": 2, "K-12": 3 };
+  return order[l] ?? 99;
+};
 
 /**
  * Return every standard.
@@ -62,78 +69,128 @@ export async function getAllStandards() {
  */
 export async function getSubjects() {
   const all = await _load();
-  return _uniqueSorted(all.map((s) => s.subject)).sort();
+  return _uniqueSorted(all.map((s) => s.subject));
 }
 
 /**
- * Return the grades present for a subject, sorted K → HS → K-12.
- * If no subject is passed, returns all grades across subjects.
+ * Return the levels present in the dataset, sorted by school progression.
+ * Optionally filtered by subject.
  * @param {string} [subject]
  * @returns {Promise<string[]>}
  */
-export async function getGrades(subject) {
+export async function getLevels(subject) {
   const all = await _load();
   const src = subject ? all.filter((s) => s.subject === subject) : all;
+  const levels = [...new Set(src.map((s) => s.level).filter(Boolean))];
+  return levels.sort((a, b) => _levelOrder(a) - _levelOrder(b));
+}
+
+/**
+ * Return the unique courses for a subject + level combination, alphabetically sorted.
+ * Returns null entries for standards without a course (K-8 Math).
+ * @param {string} [subject]
+ * @param {string} [level]
+ * @returns {Promise<Array<string|null>>}
+ */
+export async function getCourses(subject, level) {
+  const all = await _load();
+  const src = all.filter(
+    (s) =>
+      (!subject || s.subject === subject) &&
+      (!level || s.level === level),
+  );
+  const courses = [...new Set(src.map((s) => s.course))];
+  const withCourses = courses.filter(Boolean).sort();
+  const hasNull = courses.some((c) => c === null);
+  return hasNull ? [...withCourses, null] : withCourses;
+}
+
+/**
+ * Return the grades present for the given filters, sorted K → HS → K-12.
+ * @param {string} [subject]
+ * @param {string} [level]
+ * @param {string} [course]
+ * @returns {Promise<string[]>}
+ */
+export async function getGrades(subject, level, course) {
+  const all = await _load();
+  const src = all.filter(
+    (s) =>
+      (!subject || s.subject === subject) &&
+      (!level || s.level === level) &&
+      (!course || s.course === course),
+  );
   return _sortGrades(_uniqueSorted(src.map((s) => s.grade)));
 }
 
 /** Alias matching the requested API surface. */
-export const getGradesBySubject = getGrades;
+export const getGradesBySubject = (subject) => getGrades(subject);
 
 /**
- * Return the unique domains for a subject + grade combination, sorted.
- * Either filter may be omitted to widen the results.
+ * Return the unique domains for the given filters, sorted.
  * @param {string} [subject]
+ * @param {string} [level]
+ * @param {string} [course]
  * @param {string} [grade]
  * @returns {Promise<string[]>}
  */
-export async function getDomains(subject, grade) {
+export async function getDomains(subject, level, course, grade) {
   const all = await _load();
   const src = all.filter(
     (s) =>
       (!subject || s.subject === subject) &&
+      (!level || s.level === level) &&
+      (!course || s.course === course) &&
       (!grade || s.grade === grade),
   );
-  return _uniqueSorted(src.map((s) => s.domain)).sort();
+  return _uniqueSorted(src.map((s) => s.domain));
 }
 
 /** Alias matching the requested API surface. */
-export const getDomainsBySubjectAndGrade = getDomains;
+export const getDomainsBySubjectAndGrade = (subject, grade) =>
+  getDomains(subject, undefined, undefined, grade);
 
 /**
- * Return the unique clusters for a subject + grade + domain combination, sorted.
+ * Return the unique clusters for the given filters, sorted.
  * @param {string} [subject]
+ * @param {string} [level]
+ * @param {string} [course]
  * @param {string} [grade]
  * @param {string} [domain]
  * @returns {Promise<string[]>}
  */
-export async function getClusters(subject, grade, domain) {
+export async function getClusters(subject, level, course, grade, domain) {
   const all = await _load();
   const src = all.filter(
     (s) =>
       (!subject || s.subject === subject) &&
+      (!level || s.level === level) &&
+      (!course || s.course === course) &&
       (!grade || s.grade === grade) &&
       (!domain || s.domain === domain),
   );
-  return _uniqueSorted(src.map((s) => s.cluster)).sort();
+  return _uniqueSorted(src.map((s) => s.cluster));
 }
 
 /** Alias matching the requested API surface. */
-export const getClustersBySubjectGradeDomain = getClusters;
+export const getClustersBySubjectGradeDomain = (subject, grade, domain) =>
+  getClusters(subject, undefined, undefined, grade, domain);
 
 /**
- * Filter standards by any combination of {subject, grade, domain, cluster, query}.
+ * Filter standards by any combination of {subject, level, course, grade, domain, cluster, query}.
  * `query` matches against code, short code, text, domain, and cluster (case-insensitive).
- * @param {{subject?: string, grade?: string, domain?: string, cluster?: string, query?: string}} filters
+ * @param {{subject?: string, level?: string, course?: string, grade?: string, domain?: string, cluster?: string, query?: string}} filters
  * @returns {Promise<Array>}
  */
 export async function getStandards(filters = {}) {
-  const { subject, grade, domain, cluster, query } = filters;
+  const { subject, level, course, grade, domain, cluster, query } = filters;
   const all = await _load();
   const q = (query ?? "").trim().toLowerCase();
 
   return all.filter((s) => {
     if (subject && s.subject !== subject) return false;
+    if (level && s.level !== level) return false;
+    if (course && s.course !== course) return false;
     if (grade && s.grade !== grade) return false;
     if (domain && s.domain !== domain) return false;
     if (cluster && s.cluster !== cluster) return false;
