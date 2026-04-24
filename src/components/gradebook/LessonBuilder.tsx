@@ -1,17 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Sparkles, Info, Loader2, Save, CheckCircle, Users } from "lucide-react";
+import { Sparkles, Info, Loader2, Save, CheckCircle, Users, BookMarked } from "lucide-react";
 import StandardsPicker from "./StandardsPicker";
 import LessonPlanPreview from "./LessonPlanPreview";
 import { getAllStandards } from "@/lib/standards";
 import { generateLessonPlan } from "@/lib/lesson-builder";
-import { apiGet, apiPost } from "@/api/apiClient";
+import { apiGet, apiPost, apiPatch } from "@/api/apiClient";
 import { useAuth } from "@/lib/AuthContext";
 import type { LessonPlan, StandardInput } from "@/types/lesson-plan";
 
 interface Props {
   /** Optional hint used to pre-filter the standards picker (e.g. "Math"). */
   lessonSubject?: string;
+  /** Pre-load a saved lesson plan (from the Lesson Library). */
+  initialPlan?: LessonPlan;
+  /** ID of the saved lesson being edited — passed when loading from library. */
+  savedLessonId?: number;
 }
 
 type AnyStandard = Record<string, unknown> & { standard_code?: string; code?: string };
@@ -48,24 +52,30 @@ function subjectForLesson(standardSubject: string): string {
   return standardSubject || "General";
 }
 
-export default function LessonBuilder({ lessonSubject = "" }: Props) {
+export default function LessonBuilder({ lessonSubject = "", initialPlan, savedLessonId }: Props) {
   const { user } = useAuth();
   const canSave = user?.role === "admin" || user?.role === "academic_coach";
 
   const [selectedCodes, setSelectedCodes] = useState<string[]>([]);
-  const [plan, setPlan] = useState<LessonPlan | null>(null);
+  const [plan, setPlan] = useState<LessonPlan | null>(initialPlan ?? null);
   const [allStandards, setAllStandards] = useState<AnyStandard[]>([]);
   const [loadingStandards, setLoadingStandards] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Save state
+  // Assign-to-students save state
   const [selectedStudentIds, setSelectedStudentIds] = useState<number[]>([]);
   const [dueAt, setDueAt] = useState<string>("");
   const [pointsPossible, setPointsPossible] = useState<string>("10");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+
+  // Save-to-library state
+  const [libraryCurrentId, setLibraryCurrentId] = useState<number | undefined>(savedLessonId);
+  const [savingLibrary, setSavingLibrary] = useState(false);
+  const [libraryError, setLibraryError] = useState<string | null>(null);
+  const [librarySaved, setLibrarySaved] = useState(false);
 
   useEffect(() => {
     setLoadingStandards(true);
@@ -118,6 +128,45 @@ export default function LessonBuilder({ lessonSubject = "" }: Props) {
     setSelectedStudentIds([]);
     setSaveError(null);
     setSaveSuccess(null);
+    setLibraryCurrentId(undefined);
+    setLibraryError(null);
+    setLibrarySaved(false);
+  };
+
+  // Pre-select the standard from an initialPlan so the picker reflects it
+  useEffect(() => {
+    if (initialPlan?.standardCode) {
+      setSelectedCodes([initialPlan.standardCode]);
+    }
+  }, [initialPlan]);
+
+  const handleSaveToLibrary = async () => {
+    if (!plan) return;
+    setSavingLibrary(true);
+    setLibraryError(null);
+    setLibrarySaved(false);
+    try {
+      const payload = {
+        title: plan.title,
+        subject: subjectForLesson(plan.subject),
+        grade: plan.grade || "",
+        standardCode: plan.standardCode || null,
+        standardText: plan.standardText || null,
+        planData: JSON.stringify(plan),
+      };
+      if (libraryCurrentId) {
+        await apiPatch(`/saved-lessons/${libraryCurrentId}`, payload);
+      } else {
+        const res = await apiPost("/saved-lessons", payload);
+        if (res?.lesson?.id) setLibraryCurrentId(res.lesson.id);
+      }
+      setLibrarySaved(true);
+      setTimeout(() => setLibrarySaved(false), 3000);
+    } catch (err) {
+      setLibraryError((err as Error).message || "Failed to save to library.");
+    } finally {
+      setSavingLibrary(false);
+    }
   };
 
   const toggleStudent = (id: number) =>
@@ -215,9 +264,45 @@ export default function LessonBuilder({ lessonSubject = "" }: Props) {
 
           {canSave && (
             <div className="border border-slate-200 rounded-xl bg-white p-4 space-y-3">
+              {/* ── Save to Library ─────────────────────────────────────────── */}
+              <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2 text-[#1a3c5e]">
+                  <BookMarked className="w-4 h-4" />
+                  <div>
+                    <h3 className="font-semibold text-sm">Lesson Library</h3>
+                    <p className="text-xs text-slate-500">Save as a reusable template for future use</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {librarySaved && (
+                    <span className="inline-flex items-center gap-1 text-xs text-green-700 font-medium">
+                      <CheckCircle className="w-3.5 h-3.5" /> Saved!
+                    </span>
+                  )}
+                  {libraryError && (
+                    <span className="text-xs text-red-600">{libraryError}</span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleSaveToLibrary}
+                    disabled={savingLibrary}
+                    className="inline-flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-lg border border-[#1a3c5e] text-[#1a3c5e] hover:bg-[#1a3c5e]/5 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {savingLibrary ? (
+                      <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>
+                    ) : libraryCurrentId ? (
+                      <><BookMarked className="w-4 h-4" /> Update in Library</>
+                    ) : (
+                      <><BookMarked className="w-4 h-4" /> Save to Library</>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* ── Assign to Students ──────────────────────────────────────── */}
               <div className="flex items-center gap-2 text-[#1a3c5e]">
                 <Users className="w-4 h-4" />
-                <h3 className="font-semibold text-sm">Save to Students</h3>
+                <h3 className="font-semibold text-sm">Assign to Students</h3>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

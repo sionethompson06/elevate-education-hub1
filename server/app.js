@@ -482,6 +482,29 @@ async function ensureLessonStandardsColumn() {
   }
 }
 
+async function ensureSavedLessonPlansTable() {
+  try {
+    await rawSql`
+      CREATE TABLE IF NOT EXISTS saved_lesson_plans (
+        id            SERIAL PRIMARY KEY,
+        coach_user_id INTEGER NOT NULL REFERENCES users(id),
+        title         VARCHAR(255) NOT NULL,
+        subject       VARCHAR(100) NOT NULL DEFAULT 'General',
+        grade         VARCHAR(20)  NOT NULL DEFAULT '',
+        standard_code VARCHAR(100),
+        standard_text TEXT,
+        plan_data     TEXT NOT NULL,
+        created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at    TIMESTAMP NOT NULL DEFAULT NOW()
+      )`;
+    await rawSql`CREATE INDEX IF NOT EXISTS idx_slp_coach ON saved_lesson_plans(coach_user_id)`;
+    await rawSql`CREATE INDEX IF NOT EXISTS idx_slp_subject ON saved_lesson_plans(subject)`;
+    await rawSql`CREATE INDEX IF NOT EXISTS idx_slp_grade ON saved_lesson_plans(grade)`;
+  } catch (err) {
+    console.error('[migration] ensureSavedLessonPlansTable error:', err.message);
+  }
+}
+
 async function syncPendingInvoicesToProgramTuitions() {
   try {
     // Fetch all pending invoices joined to their enrollment + program
@@ -540,6 +563,7 @@ ensureFamilyInvoicesTable();
 ensureInvoiceManualOverrideColumn();
 ensureAccountingTables();
 ensureLessonStandardsColumn();
+ensureSavedLessonPlansTable();
 seedProgramTuitions().then(() => syncPendingInvoicesToProgramTuitions());
 seedChartOfAccounts();
 backfillHistoricalLedger();
@@ -576,6 +600,7 @@ import coachesRouter from './routes/coaches.js';
 import eventsRouter from './routes/events.js';
 import accountingRouter from './routes/accounting.js';
 import lessonAIRouter from './routes/lessonAI.js';
+import savedLessonsRouter from './routes/savedLessons.js';
 import cron from 'node-cron';
 
 const isDev = process.env.NODE_ENV !== 'production';
@@ -706,6 +731,7 @@ app.use('/api/coaches', coachesRouter);
 app.use('/api/events', eventsRouter);
 app.use('/api/accounting', accountingRouter);
 app.use('/api/lesson-ai', lessonAIRouter);
+app.use('/api/saved-lessons', savedLessonsRouter);
 app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), stripeWebhookHandler);
 app.use('/api/stripe', stripeRouter);
 

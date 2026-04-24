@@ -31,6 +31,7 @@ import ParentDashboard from "./pages/parent/Dashboard";
 import ParentCheckout from "./pages/parent/Checkout";
 import AcademicCoachDashboard from "./pages/academic-coach/Dashboard";
 import AcademicCoachGradebook from "./pages/academic-coach/Gradebook";
+import AcademicCoachLessons from "./pages/academic-coach/Lessons";
 import PerformanceCoachDashboard from "./pages/performance-coach/Dashboard";
 import AdminDashboard from "./pages/admin/Dashboard";
 import AccessLogs from "./pages/admin/AccessLogs";
@@ -137,6 +138,7 @@ const AuthenticatedApp = () => {
         <Route element={<PortalLayout />}>
           <Route path="/academic-coach/dashboard" element={<AcademicCoachDashboard />} />
           <Route path="/academic-coach/gradebook" element={<AcademicCoachGradebook />} />
+          <Route path="/academic-coach/lessons" element={<AcademicCoachLessons />} />
           <Route path="/academic-coach/schedule" element={<Schedule />} />
           <Route path="/academic-coach/attendance" element={<Attendance />} />
           <Route path="/academic-coach/messages" element={<Messages />} />
