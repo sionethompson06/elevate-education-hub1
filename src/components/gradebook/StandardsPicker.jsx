@@ -18,10 +18,14 @@ const GRADE_ORDER = (g) => {
   return Number.isFinite(n) ? n : 999;
 };
 
+const LEVEL_ORDER = { Elementary: 0, "Middle School": 1, "High School": 2, "K-12": 3 };
+
 const sortGrades = (grades) =>
   [...grades].sort((a, b) => GRADE_ORDER(a) - GRADE_ORDER(b));
 
-// Strip CCSS framework prefix so display is terse (e.g. "3.OA.A.1" or "RL.K.1")
+const sortLevels = (levels) =>
+  [...levels].sort((a, b) => (LEVEL_ORDER[a] ?? 99) - (LEVEL_ORDER[b] ?? 99));
+
 function shortCode(code) {
   if (!code) return "";
   return code
@@ -44,25 +48,56 @@ export default function StandardsPicker({ lessonSubject = "", value = [], onChan
   const [fetchError, setFetchError] = useState(null);
 
   const [subjectFilter, setSubjectFilter] = useState("all");
+  const [levelFilter, setLevelFilter] = useState("");
+  const [courseFilter, setCourseFilter] = useState("");
   const [gradeFilter, setGradeFilter] = useState("");
   const [domainFilter, setDomainFilter] = useState("");
   const [clusterFilter, setClusterFilter] = useState("");
   const [query, setQuery] = useState("");
 
-  // Auto-map the lesson subject into the filter
+  // Auto-map lesson subject into the filter
   useEffect(() => {
     const mapped = SUBJECT_MAP[lessonSubject];
     setSubjectFilter(mapped ?? "all");
+    setLevelFilter("");
+    setCourseFilter("");
     setGradeFilter("");
     setDomainFilter("");
     setClusterFilter("");
   }, [lessonSubject]);
 
-  // Reset child filters when parent filter changes
-  useEffect(() => { setDomainFilter(""); setClusterFilter(""); }, [subjectFilter, gradeFilter]);
-  useEffect(() => { setClusterFilter(""); }, [domainFilter]);
+  // Cascade resets
+  useEffect(() => {
+    setLevelFilter("");
+    setCourseFilter("");
+    setGradeFilter("");
+    setDomainFilter("");
+    setClusterFilter("");
+  }, [subjectFilter]);
 
-  // Fetch the full dataset on first open
+  useEffect(() => {
+    setCourseFilter("");
+    setGradeFilter("");
+    setDomainFilter("");
+    setClusterFilter("");
+  }, [levelFilter]);
+
+  useEffect(() => {
+    setGradeFilter("");
+    setDomainFilter("");
+    setClusterFilter("");
+  }, [courseFilter]);
+
+  useEffect(() => {
+    setDomainFilter("");
+    setClusterFilter("");
+  }, [gradeFilter]);
+
+  useEffect(() => {
+    setClusterFilter("");
+  }, [domainFilter]);
+
+  // Fetch full dataset on first open
   useEffect(() => {
     if (!open || allStandards.length > 0 || loading) return;
     setLoading(true);
@@ -73,24 +108,45 @@ export default function StandardsPicker({ lessonSubject = "", value = [], onChan
       .finally(() => setLoading(false));
   }, [open]);
 
-  // Scoped pool after subject + grade filter (used to derive domain/cluster options)
+  // Pool filtered down to subject + level + course + grade (used for domain/cluster options)
   const scopedPool = useMemo(
     () =>
       allStandards.filter((s) => {
         if (subjectFilter !== "all" && s.subject !== subjectFilter) return false;
+        if (levelFilter && s.level !== levelFilter) return false;
+        if (courseFilter && s.course !== courseFilter) return false;
         if (gradeFilter && s.grade !== gradeFilter) return false;
         return true;
       }),
-    [allStandards, subjectFilter, gradeFilter],
+    [allStandards, subjectFilter, levelFilter, courseFilter, gradeFilter],
   );
 
-  const availableGrades = useMemo(() => {
-    const src =
-      subjectFilter === "all"
-        ? allStandards
-        : allStandards.filter((s) => s.subject === subjectFilter);
-    return sortGrades([...new Set(src.map((s) => s.grade).filter(Boolean))]);
+  // Available options for each dropdown, derived from progressively narrowed pool
+  const availableLevels = useMemo(() => {
+    const src = subjectFilter === "all"
+      ? allStandards
+      : allStandards.filter((s) => s.subject === subjectFilter);
+    return sortLevels([...new Set(src.map((s) => s.level).filter(Boolean))]);
   }, [allStandards, subjectFilter]);
+
+  const availableCourses = useMemo(() => {
+    const src = allStandards.filter(
+      (s) =>
+        (subjectFilter === "all" || s.subject === subjectFilter) &&
+        (!levelFilter || s.level === levelFilter),
+    );
+    return [...new Set(src.map((s) => s.course).filter(Boolean))].sort();
+  }, [allStandards, subjectFilter, levelFilter]);
+
+  const availableGrades = useMemo(() => {
+    const src = allStandards.filter(
+      (s) =>
+        (subjectFilter === "all" || s.subject === subjectFilter) &&
+        (!levelFilter || s.level === levelFilter) &&
+        (!courseFilter || s.course === courseFilter),
+    );
+    return sortGrades([...new Set(src.map((s) => s.grade).filter(Boolean))]);
+  }, [allStandards, subjectFilter, levelFilter, courseFilter]);
 
   const availableDomains = useMemo(
     () => [...new Set(scopedPool.map((s) => s.domain).filter(Boolean))].sort(),
@@ -109,12 +165,12 @@ export default function StandardsPicker({ lessonSubject = "", value = [], onChan
     ].sort();
   }, [scopedPool, domainFilter]);
 
-  // Final filtered results
+  // Final filtered results (exclude already-selected, apply domain/cluster/query)
   const results = useMemo(() => {
     const selected = new Set(value);
     const q = query.trim().toLowerCase();
     return scopedPool.filter((s) => {
-      const code = s.standard_code ?? s.code; // support both new + legacy shape
+      const code = s.standard_code ?? s.code;
       if (selected.has(code)) return false;
       if (domainFilter && s.domain !== domainFilter) return false;
       if (clusterFilter && s.cluster !== clusterFilter) return false;
@@ -131,7 +187,7 @@ export default function StandardsPicker({ lessonSubject = "", value = [], onChan
     });
   }, [scopedPool, value, domainFilter, clusterFilter, query]);
 
-  // Lookup map for selected-pill display (accepts either code field)
+  // Lookup map for selected-pill display
   const standardsByCode = useMemo(() => {
     const map = {};
     for (const s of allStandards) {
@@ -145,6 +201,8 @@ export default function StandardsPicker({ lessonSubject = "", value = [], onChan
   const remove = (code) => onChange(value.filter((c) => c !== code));
 
   const clearFilters = () => {
+    setLevelFilter("");
+    setCourseFilter("");
     setGradeFilter("");
     setDomainFilter("");
     setClusterFilter("");
@@ -152,7 +210,12 @@ export default function StandardsPicker({ lessonSubject = "", value = [], onChan
   };
 
   const activeFilterCount =
-    (gradeFilter ? 1 : 0) + (domainFilter ? 1 : 0) + (clusterFilter ? 1 : 0) + (query ? 1 : 0);
+    (levelFilter ? 1 : 0) +
+    (courseFilter ? 1 : 0) +
+    (gradeFilter ? 1 : 0) +
+    (domainFilter ? 1 : 0) +
+    (clusterFilter ? 1 : 0) +
+    (query ? 1 : 0);
 
   return (
     <div className="border border-slate-200 rounded-xl overflow-hidden">
@@ -206,7 +269,7 @@ export default function StandardsPicker({ lessonSubject = "", value = [], onChan
           )}
 
           {/* Subject tabs */}
-          <div className="flex gap-1">
+          <div className="flex gap-1 flex-wrap">
             {["all", "Math", "ELA-Literacy"].map((sub) => (
               <button
                 key={sub}
@@ -227,12 +290,41 @@ export default function StandardsPicker({ lessonSubject = "", value = [], onChan
                 onClick={clearFilters}
                 className="ml-auto px-2 py-1 text-xs text-slate-500 hover:text-slate-800 underline"
               >
-                Clear filters
+                Clear filters ({activeFilterCount})
               </button>
             )}
           </div>
 
-          {/* Grade + Domain + Cluster dropdowns */}
+          {/* Level + Course row */}
+          <div className="grid grid-cols-2 gap-2">
+            <select
+              value={levelFilter}
+              onChange={(e) => setLevelFilter(e.target.value)}
+              className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30"
+            >
+              <option value="">All levels</option>
+              {availableLevels.map((l) => (
+                <option key={l} value={l}>
+                  {l}
+                </option>
+              ))}
+            </select>
+            <select
+              value={courseFilter}
+              onChange={(e) => setCourseFilter(e.target.value)}
+              disabled={availableCourses.length === 0}
+              className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs bg-white disabled:bg-slate-50 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30 truncate"
+            >
+              <option value="">All courses</option>
+              {availableCourses.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Grade + Domain + Cluster row */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
             <select
               value={gradeFilter}
@@ -255,7 +347,7 @@ export default function StandardsPicker({ lessonSubject = "", value = [], onChan
               <option value="">All domains</option>
               {availableDomains.map((d) => (
                 <option key={d} value={d}>
-                  {d}
+                  {d.length > 45 ? d.slice(0, 42) + "…" : d}
                 </option>
               ))}
             </select>
@@ -268,7 +360,7 @@ export default function StandardsPicker({ lessonSubject = "", value = [], onChan
               <option value="">All clusters</option>
               {availableClusters.map((c) => (
                 <option key={c} value={c}>
-                  {c.length > 60 ? c.slice(0, 57) + "…" : c}
+                  {c.length > 45 ? c.slice(0, 42) + "…" : c}
                 </option>
               ))}
             </select>
@@ -301,7 +393,7 @@ export default function StandardsPicker({ lessonSubject = "", value = [], onChan
               <div className="py-6 text-center text-xs text-slate-400">
                 {allStandards.length === 0
                   ? "No standards data loaded."
-                  : "No matching standards."}
+                  : "No matching standards — try adjusting the filters."}
               </div>
             )}
             {results.map((s) => {
@@ -323,13 +415,12 @@ export default function StandardsPicker({ lessonSubject = "", value = [], onChan
                       {text}
                     </span>
                   </div>
-                  {(s.domain || s.cluster) && (
-                    <p className="text-[10px] text-slate-400 mt-0.5 truncate">
-                      {s.subject} · {gradeLabel(s.grade)}
-                      {s.domain ? ` · ${s.domain}` : ""}
-                      {s.cluster ? ` · ${s.cluster}` : ""}
-                    </p>
-                  )}
+                  <p className="text-[10px] text-slate-400 mt-0.5 truncate">
+                    {s.subject} · {s.level}
+                    {s.course ? ` · ${s.course}` : ""}
+                    {" · "}{gradeLabel(s.grade)}
+                    {s.domain ? ` · ${s.domain}` : ""}
+                  </p>
                 </button>
               );
             })}
