@@ -636,6 +636,326 @@ function buildExitTicketQuestions(s: StandardInput): LessonQuestion[] {
   ];
 }
 
+function buildStudentSupports(s: StandardInput): StudentSupports {
+  const band = gradeBand(s.grade);
+  const topic = (s.cluster || s.domain || "today's skill").toLowerCase();
+  const code = s.short_code || shortStandardCode(s.standard_code);
+
+  if (isMath(s)) {
+    const focus = mathFocus(s);
+    const manipulative =
+      band === "K-2"
+        ? "counters, ten frames, or base-ten blocks"
+        : band === "3-5"
+          ? "fraction tiles, area models, or number lines"
+          : band === "6-8"
+            ? "algebra tiles, ratio tables, or graph paper"
+            : "graphing calculator or dynamic geometry software";
+
+    return {
+      el: {
+        languageObjective: `Students will explain their problem-solving process for ${topic} using precise math vocabulary in speaking and writing.`,
+        vocabularySupports: [
+          `Create a visual word wall for key ${topic} terms with diagrams and simple definitions.`,
+          `Provide a bilingual math glossary with pictures and worked examples for high-frequency terms.`,
+          `Use color-coding to connect vocabulary words to their symbolic counterparts in equations.`,
+        ],
+        sentenceFrames: [
+          `"I solved this problem by ___, because ___.`,
+          `"The answer is ___ because I know that ___.`,
+          `"First I ___, then I ___, finally I ___.`,
+          focus === "fractions"
+            ? `"The fractions are equivalent because ___.`
+            : focus === "geometry"
+              ? `"The shape has ___, which means the ___ is ___.`
+              : `"I noticed that ___, so I ___.`,
+        ],
+        oralLanguageSupports: [
+          `Partner math talk: both partners must explain their strategy before recording any work.`,
+          `Use think-alouds with posted sentence starters during guided practice.`,
+          `Allow students to process in their home language before sharing in English.`,
+        ],
+        accessStrategies: [
+          `Provide visual models (diagrams, arrays, number lines) alongside all symbolic notation.`,
+          `Offer ${manipulative} as physical entry points into the concept.`,
+          `Preview key vocabulary and the lesson goal the day before when possible.`,
+        ],
+      },
+      sped: {
+        accommodations: [
+          `Allow extended time for independent practice (1.5× minimum).`,
+          `Permit use of a calculator for computation-heavy steps — focus on the concept, not arithmetic.`,
+          `Allow oral responses in place of written explanations.`,
+        ],
+        modifications: [
+          `Reduce problem count: assign 2–3 targeted problems instead of the full set.`,
+          `Use smaller, whole-number values first before introducing decimals or fractions.`,
+          `Provide partially completed templates or fill-in-the-blank solution frames.`,
+        ],
+        scaffolds: [
+          `Display a worked-example card showing every step for reference during practice.`,
+          `Use a graphic organizer: "What I know / What I need to find / My work / My answer."`,
+          `Keep an anchor chart with solution steps visible throughout all practice time.`,
+        ],
+        processingSupports: [
+          `Chunk multi-step problems one step at a time with a teacher check-in before continuing.`,
+          `Break the lesson into shorter blocks (5–7 min) with brief transitions between.`,
+          `Provide written step-by-step directions alongside all oral instructions.`,
+        ],
+      },
+      idea: {
+        accessConsiderations: [
+          `Offer multiple representations: visual, symbolic, and verbal for every concept.`,
+          `Allow students to demonstrate understanding through drawing, modeling, or oral explanation.`,
+          `Ensure all printed materials use clear fonts, ample spacing, and accessible formatting.`,
+        ],
+        universalDesignSupports: [
+          `Provide digital materials with text-to-speech access.`,
+          `Offer ${manipulative} as a permanent alternative to symbolic-only tasks.`,
+          `Allow student choice in how to show work: drawing, table, equation, or explanation.`,
+        ],
+        progressMonitoringIdeas: [
+          `Daily exit slip: one problem at the lesson target level, scored for accuracy and reasoning.`,
+          `Skill-specific probe (2–3 items) aligned to ${code} at the start of the next class.`,
+          `Anecdotal notes during guided practice — track which scaffolds are still needed.`,
+        ],
+      },
+      intervention: {
+        reteachStrategies: [
+          `Use the Concrete–Representational–Abstract (CRA) sequence: ${manipulative} first, then diagrams, then symbols.`,
+          `Anchor back to prerequisite skills before reintroducing ${topic}.`,
+          `Use error analysis: show a common mistake and ask students to find and fix it before re-teaching.`,
+        ],
+        simplifiedTasks: [
+          `Begin with single-step, context-free problems using small whole numbers (under 10).`,
+          `Provide a step-by-step checklist students follow for each problem.`,
+          `Offer a "starter" version of the practice set with guided cues before the regular problems.`,
+        ],
+        guidedPracticeSupports: [
+          `Teacher models one problem; student mirrors the next step-by-step alongside the teacher.`,
+          `Check in with intervention students every 3–4 minutes during independent work.`,
+          `Pair with a structured partner who can explain — not just show — their thinking.`,
+        ],
+      },
+      advanced: {
+        extensions: [
+          `Create an original problem that targets ${topic}, solve it, and write a justification.`,
+          `Find two different solution strategies for the same problem; argue which is more efficient.`,
+          focus === "functions" || focus === "ratios"
+            ? `Connect ${topic} to a real-world dataset: collect data, model it, and interpret the result.`
+            : `Write a brief "proof" explaining why the strategy always works — or find a case where it breaks down.`,
+        ],
+        higherOrderQuestions: [
+          `"How would this problem change if you doubled one of the values? What stays the same? What changes?"`,
+          `"Is this strategy always true? Can you find a counterexample, or prove it always holds?"`,
+          focus === "geometry"
+            ? `"How does changing one dimension affect area vs. perimeter? Are they proportional? Explain."`
+            : `"Explain the connection between ${topic} and a concept you learned in a previous unit."`,
+        ],
+        independentChallenges: [
+          `Open-ended modeling task: use ${topic} to solve a novel real-world scenario with no single correct answer.`,
+          `Peer teaching: prepare a 2-minute explanation of today's strategy to teach to a partner.`,
+          `Extension problem set: pull 2–3 items from the next grade band to preview upcoming complexity.`,
+        ],
+      },
+    };
+  }
+
+  if (isELA(s)) {
+    const focus = elaFocus(s);
+
+    return {
+      el: {
+        languageObjective: `Students will use academic language to discuss and write about ${topic} using sentence frames and key vocabulary.`,
+        vocabularySupports: [
+          `Build a visual semantic map for 3–5 priority vocabulary terms before any reading begins.`,
+          `Provide a bilingual glossary with images and sentence examples for key academic terms.`,
+          `Use concept sorts (cut-up word cards with pictures) to build word ownership before the lesson.`,
+        ],
+        sentenceFrames: [
+          `"The author claims ___ because ___.`,
+          `"Based on the text, I think ___, and the evidence is ___.`,
+          focus === "writing"
+            ? `"My argument is ___. One reason is ___. The evidence is ___.`
+            : focus === "speaking"
+              ? `"I agree / disagree with ___ because ___.`
+              : `"The main idea of this section is ___, supported by ___.`,
+        ],
+        oralLanguageSupports: [
+          `Partner oral rehearsal: both partners summarize a paragraph before any written response.`,
+          `Allow students to discuss ideas in their home language before drafting in English.`,
+          `Post a discussion norms anchor chart with sentence starters for agreeing, disagreeing, and adding on.`,
+        ],
+        accessStrategies: [
+          `Preview the text with images, titles, and headings to activate schema before reading.`,
+          `Provide a graphic organizer that pre-structures the reading (main idea boxes, evidence slots).`,
+          `Annotate a shared paragraph together before students annotate independently.`,
+        ],
+      },
+      sped: {
+        accommodations: [
+          `Read the text aloud or provide an audio version for students with decoding challenges.`,
+          `Allow oral responses (recorded or scribed) in place of written responses.`,
+          `Allow extended time for reading and written responses (1.5× minimum).`,
+        ],
+        modifications: [
+          `Use a shorter excerpt (1–2 paragraphs) before assigning the full passage.`,
+          `Provide sentence-level response options before paragraph-level writing.`,
+          `Pre-highlight the most important evidence so students focus on analysis, not location.`,
+        ],
+        scaffolds: [
+          `Provide a graphic organizer with labeled boxes guiding the student's response.`,
+          `Post an annotation anchor chart: circle vocabulary, underline evidence, box main idea.`,
+          `Offer a writing frame with fill-in-the-blank sentence starters tied to the standard.`,
+        ],
+        processingSupports: [
+          `Chunk the text with numbered paragraphs and "stop and think" questions between sections.`,
+          `Separate "finding evidence" and "writing response" as two distinct tasks with a break between.`,
+          `Check for comprehension after each paragraph with a brief oral check before continuing.`,
+        ],
+      },
+      idea: {
+        accessConsiderations: [
+          `Offer multiple text formats: print, digital (text-to-speech), and audio versions per IEP.`,
+          `Accept multiple response modalities: drawing, annotating, oral, or written per student need.`,
+          `Adjust text complexity (Lexile) while keeping the content and standard rigorous.`,
+        ],
+        universalDesignSupports: [
+          `Provide text-to-speech access for all digital reading materials.`,
+          `Offer choice boards: students select how to demonstrate comprehension.`,
+          `Build in structured partner talk before any individual written response.`,
+        ],
+        progressMonitoringIdeas: [
+          `Daily exit slip: one text-based question at the lesson standard's level.`,
+          `Annotation rubric: score student annotations on specificity, accuracy, and quantity of evidence.`,
+          `Running record of which graphic organizer supports are still being used vs. faded.`,
+        ],
+      },
+      intervention: {
+        reteachStrategies: [
+          `Re-read a shorter, simpler text and model the strategy with a think-aloud before the grade-level text.`,
+          `Use explicit vocabulary instruction (teach → practice → apply) for the 2–3 hardest words before any reading.`,
+          `Break the standard into micro-skills: e.g., for inference start with single sentences before full paragraphs.`,
+        ],
+        simplifiedTasks: [
+          `Annotate one paragraph (not the full passage) applying the modeled strategy.`,
+          `Use a modeled writing frame with sentence starters; fill in the frame before writing independently.`,
+          `Answer scaffolded questions that build toward the standard (literal → inferential → evaluative).`,
+        ],
+        guidedPracticeSupports: [
+          `Teacher think-aloud through the first paragraph; student annotates the second with teacher nearby.`,
+          `Small-group close reading: 3–5 students, teacher facilitates line-by-line discussion.`,
+          `Check in with the intervention group every 4–5 minutes during independent practice.`,
+        ],
+      },
+      advanced: {
+        extensions: [
+          `Compare the strategy across two texts: same standard, different genre — what changes? What stays?`,
+          `Write a counter-argument response: take the opposing position and defend it with equal evidence.`,
+          focus === "writing"
+            ? `Revise their writing using a mentor text as a model — identify three specific craft moves to borrow.`
+            : `Analyze the author's craft: how does structure, diction, or syntax reinforce the main idea?`,
+        ],
+        higherOrderQuestions: [
+          `"How would this text read differently if told from a different point of view? What would change — and what would stay the same?"`,
+          `"What assumptions does the author make about the reader? How do you know?"`,
+          focus === "writing"
+            ? `"What counter-argument has the author not addressed? Why might they have left it out?"`
+            : `"Evaluate the strength of the author's evidence. Is it sufficient? What is missing?"`,
+        ],
+        independentChallenges: [
+          `Independent research: find two sources that support or challenge the text's main claim; write a synthesis paragraph.`,
+          `Prepare for a Socratic seminar: generate 3 evaluative discussion questions and locate evidence for each.`,
+          `Mentor text study: analyze how a professional author applies the same standard — identify 5 specific techniques.`,
+        ],
+      },
+    };
+  }
+
+  // Generic fallback for other subjects
+  return {
+    el: {
+      languageObjective: `Students will use academic language to discuss and apply ${topic}.`,
+      vocabularySupports: [
+        `Pre-teach key vocabulary with visual aids and simple definitions.`,
+        `Provide sentence examples for each key term.`,
+      ],
+      sentenceFrames: [
+        `"I learned that ___ because ___.`,
+        `"This connects to ___ because ___.`,
+      ],
+      oralLanguageSupports: [
+        `Partner discussions with sentence starters before any written response.`,
+        `Allow home-language discussion before producing English output.`,
+      ],
+      accessStrategies: [
+        `Provide visual representations alongside text instructions.`,
+        `Preview key concepts before the lesson when possible.`,
+      ],
+    },
+    sped: {
+      accommodations: [
+        `Extended time for all tasks.`,
+        `Provide written directions alongside oral instructions.`,
+      ],
+      modifications: [
+        `Fewer problems or a shorter task with the same core concept.`,
+        `Provide a partially completed template.`,
+      ],
+      scaffolds: [
+        `Anchor chart visible during all work time.`,
+        `Worked example for reference.`,
+      ],
+      processingSupports: [
+        `Break tasks into smaller steps with teacher checkpoints.`,
+        `Allow extra think time and oral responses.`,
+      ],
+    },
+    idea: {
+      accessConsiderations: [
+        `Multiple representation formats per IEP requirements.`,
+        `Flexible response modalities.`,
+      ],
+      universalDesignSupports: [
+        `Digital materials with text-to-speech.`,
+        `Multiple means of engagement and expression.`,
+      ],
+      progressMonitoringIdeas: [
+        `Exit slip after each lesson.`,
+        `Anecdotal observation notes during guided practice.`,
+      ],
+    },
+    intervention: {
+      reteachStrategies: [
+        `Reteach prerequisite skills before the lesson concept.`,
+        `Use explicit, step-by-step modeling in a small group.`,
+      ],
+      simplifiedTasks: [
+        `Begin with simpler, single-step tasks before building complexity.`,
+        `Use scaffolded materials with guided cues.`,
+      ],
+      guidedPracticeSupports: [
+        `Frequent teacher check-ins during independent practice.`,
+        `Small-group guided practice before releasing to independent work.`,
+      ],
+    },
+    advanced: {
+      extensions: [
+        `Create an original application of today's concept.`,
+        `Find a real-world connection and present it to the class.`,
+      ],
+      higherOrderQuestions: [
+        `"How would this change if one variable was different?"`,
+        `"Is this always true? How would you prove it?"`,
+      ],
+      independentChallenges: [
+        `Open-ended project connecting today's skill to a broader context.`,
+        `Peer teaching role with a structured explanation.`,
+      ],
+    },
+  };
+}
+
 function buildTeacherNotes(s: StandardInput): string {
   const band = gradeBand(s.grade);
   const pacing =
@@ -691,6 +1011,7 @@ export function generateLessonPlan(standard: StandardInput): LessonPlan {
     exitTicket: buildExitTicket(standard),
     exitTicketQuestions: buildExitTicketQuestions(standard),
     teacherNotes: buildTeacherNotes(standard),
+    studentSupports: buildStudentSupports(standard),
   };
 }
 
@@ -731,6 +1052,49 @@ export function parseLessonPlanInstructions(
   const asString = (v: unknown, d = ""): string => (typeof v === "string" ? v : d);
   const asStringArray = (v: unknown): string[] =>
     Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+
+  const asStudentSupports = (v: unknown): StudentSupports | undefined => {
+    if (!v || typeof v !== "object") return undefined;
+    const raw = v as Record<string, unknown>;
+    if (!raw.el && !raw.sped && !raw.intervention && !raw.advanced) return undefined;
+    const asObj = (x: unknown): Record<string, unknown> =>
+      x && typeof x === "object" ? (x as Record<string, unknown>) : {};
+    const el = asObj(raw.el);
+    const sped = asObj(raw.sped);
+    const idea = asObj(raw.idea);
+    const intervention = asObj(raw.intervention);
+    const advanced = asObj(raw.advanced);
+    return {
+      el: {
+        languageObjective: asString(el.languageObjective),
+        vocabularySupports: asStringArray(el.vocabularySupports),
+        sentenceFrames: asStringArray(el.sentenceFrames),
+        oralLanguageSupports: asStringArray(el.oralLanguageSupports),
+        accessStrategies: asStringArray(el.accessStrategies),
+      },
+      sped: {
+        accommodations: asStringArray(sped.accommodations),
+        modifications: asStringArray(sped.modifications),
+        scaffolds: asStringArray(sped.scaffolds),
+        processingSupports: asStringArray(sped.processingSupports),
+      },
+      idea: {
+        accessConsiderations: asStringArray(idea.accessConsiderations),
+        universalDesignSupports: asStringArray(idea.universalDesignSupports),
+        progressMonitoringIdeas: asStringArray(idea.progressMonitoringIdeas),
+      },
+      intervention: {
+        reteachStrategies: asStringArray(intervention.reteachStrategies),
+        simplifiedTasks: asStringArray(intervention.simplifiedTasks),
+        guidedPracticeSupports: asStringArray(intervention.guidedPracticeSupports),
+      },
+      advanced: {
+        extensions: asStringArray(advanced.extensions),
+        higherOrderQuestions: asStringArray(advanced.higherOrderQuestions),
+        independentChallenges: asStringArray(advanced.independentChallenges),
+      },
+    };
+  };
 
   const asQuestions = (v: unknown): LessonQuestion[] => {
     if (!Array.isArray(v)) return [];
@@ -774,6 +1138,7 @@ export function parseLessonPlanInstructions(
     exitTicket: asString(p.exitTicket),
     exitTicketQuestions: asQuestions(p.exitTicketQuestions),
     teacherNotes: asString(p.teacherNotes),
+    studentSupports: asStudentSupports(p.studentSupports),
   };
 }
 
