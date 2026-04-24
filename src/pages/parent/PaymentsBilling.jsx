@@ -475,6 +475,26 @@ export default function PaymentsBilling() {
                           <span>Enrolled: {new Date(enrolledDate).toLocaleDateString()}</span>
                         )}
                       </div>
+                      {e.activeOverride && (
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200 capitalize">
+                            {e.activeOverride.overrideType?.replace(/_/g, " ") || "Override"}
+                          </span>
+                          {e.activeOverride.amountWaivedCents > 0 && (
+                            <span className="text-[10px] text-amber-700 font-medium">
+                              ${(e.activeOverride.amountWaivedCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })} waived
+                            </span>
+                          )}
+                          {e.activeOverride.amountDeferredCents > 0 && (
+                            <span className="text-[10px] text-blue-600 font-medium">
+                              ${(e.activeOverride.amountDeferredCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })} deferred
+                            </span>
+                          )}
+                          {e.activeOverride.reason && (
+                            <span className="text-[10px] text-slate-400 italic">"{e.activeOverride.reason}"</span>
+                          )}
+                        </div>
+                      )}
                     </div>
                     {/* Only show individual pay button for payment_failed; pending are handled by FamilyInvoiceCard */}
                     {e.status === "payment_failed" && (

@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost, apiPatch } from "@/api/apiClient";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, Loader2, CreditCard, BookOpen, ChevronDown, ChevronRight, Search, Pencil, Check, X, CheckCircle, XCircle, RotateCcw } from "lucide-react";
+import { RefreshCw, Loader2, CreditCard, BookOpen, ChevronDown, ChevronRight, Search, Pencil, Check, X, CheckCircle, XCircle, RotateCcw, Tag } from "lucide-react";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function daysOverdue(dueDate) {
@@ -298,6 +298,48 @@ function RowDetail({ row, onRefetch }) {
               <p className="font-semibold text-slate-800">{fmtDate(row.startDate)}</p>
             </div>
           </div>
+
+          {/* Override / Scholarship section */}
+          {row.activeOverride && (
+            <div>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Override / Scholarship</p>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200 capitalize">
+                    <Tag className="w-3 h-3" />
+                    {row.activeOverride.overrideType?.replace(/_/g, " ") || "Override"}
+                  </span>
+                  {row.activeOverride.approvedByName && (
+                    <span className="text-xs text-slate-500">Approved by {row.activeOverride.approvedByName}</span>
+                  )}
+                </div>
+                <div className="grid grid-cols-3 gap-3 text-xs">
+                  {row.activeOverride.amountWaivedCents > 0 && (
+                    <div>
+                      <p className="text-slate-400 mb-0.5">Waived</p>
+                      <p className="font-semibold text-amber-700">{fmtMoney(row.activeOverride.amountWaivedCents / 100)}</p>
+                    </div>
+                  )}
+                  {row.activeOverride.amountDeferredCents > 0 && (
+                    <div>
+                      <p className="text-slate-400 mb-0.5">Deferred</p>
+                      <p className="font-semibold text-blue-700">{fmtMoney(row.activeOverride.amountDeferredCents / 100)}</p>
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-slate-400 mb-0.5">Amount Due</p>
+                    <p className="font-semibold text-slate-800">{fmtMoney(row.activeOverride.amountDueNowCents / 100)}</p>
+                  </div>
+                </div>
+                {row.activeOverride.reason && (
+                  <p className="text-xs text-slate-600 italic">"{row.activeOverride.reason}"</p>
+                )}
+                {row.activeOverride.notes && row.activeOverride.notes !== row.activeOverride.reason && (
+                  <p className="text-xs text-slate-500">{row.activeOverride.notes}</p>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Admin billing actions */}
           {row.invoiceId && (

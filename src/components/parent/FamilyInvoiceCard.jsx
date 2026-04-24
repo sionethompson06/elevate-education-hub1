@@ -120,17 +120,38 @@ export default function FamilyInvoiceCard({ familyInvoice, variant = "pending", 
             const studentName = item.studentFirstName
               ? `${item.studentFirstName} ${item.studentLastName || ""}`.trim()
               : null;
+            const ov = item.activeOverride;
             return (
-              <div key={item.invoiceId || i} className="flex items-center justify-between px-5 py-3">
-                <div>
+              <div key={item.invoiceId || i} className="flex items-start justify-between px-5 py-3 gap-3">
+                <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-slate-800">
                     {item.programName || item.description || "Program"}
                   </p>
                   {studentName && (
                     <p className="text-xs text-slate-400">Student: {studentName}</p>
                   )}
+                  {ov && (
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-200 capitalize">
+                        {ov.overrideType?.replace(/_/g, " ") || "Override"}
+                      </span>
+                      {ov.amountWaivedCents > 0 && (
+                        <span className="text-[10px] text-amber-700 font-medium">
+                          ${(ov.amountWaivedCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })} waived
+                        </span>
+                      )}
+                      {ov.amountDeferredCents > 0 && (
+                        <span className="text-[10px] text-blue-600 font-medium">
+                          ${(ov.amountDeferredCents / 100).toLocaleString(undefined, { minimumFractionDigits: 2 })} deferred
+                        </span>
+                      )}
+                      {ov.approvedByName && (
+                        <span className="text-[10px] text-slate-400">· {ov.approvedByName}</span>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <p className="text-sm font-semibold text-slate-700">
+                <p className="text-sm font-semibold text-slate-700 shrink-0">
                   ${parseFloat(item.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
               </div>
