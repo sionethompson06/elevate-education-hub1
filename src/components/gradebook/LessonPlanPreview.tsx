@@ -412,6 +412,7 @@ export default function LessonPlanPreview({ plan, onChange, onReset }: Props) {
   const [showAnswers, setShowAnswers] = useState(false);
   const [aiLoadingType, setAiLoadingType] = useState<keyof StudentSupports | null>(null);
   const [aiError, setAiError] = useState<{ type: keyof StudentSupports; message: string } | null>(null);
+  const [aiSuccess, setAiSuccess] = useState<string | null>(null);
 
   const update = <K extends keyof LessonPlan>(key: K, value: LessonPlan[K]) => {
     onChange({ ...plan, [key]: value });
@@ -420,6 +421,7 @@ export default function LessonPlanPreview({ plan, onChange, onReset }: Props) {
   const handleAIEnhance = async (supportType: keyof StudentSupports) => {
     setAiLoadingType(supportType);
     setAiError(null);
+    setAiSuccess(null);
     try {
       const selectedStandard = {
         standard_code: plan.standardCode,
@@ -434,15 +436,19 @@ export default function LessonPlanPreview({ plan, onChange, onReset }: Props) {
         selectedStandard,
         supportType,
       });
+      if (!res?.enhancedSupports) {
+        throw new Error("No enhancement data returned from server.");
+      }
       const merged = mergeAIEnhancedSupports(plan, {
         [supportType]: res.enhancedSupports,
       });
       onChange(merged);
+      setAiSuccess(`${supportType.toUpperCase()} supports enhanced. Review and edit below, then save.`);
+      setTimeout(() => setAiSuccess(null), 6000);
     } catch (err: unknown) {
-      setAiError({
-        type: supportType,
-        message: err instanceof Error ? err.message : "Enhancement failed. Please try again.",
-      });
+      const message = err instanceof Error ? err.message : "Enhancement failed. Please try again.";
+      console.error("[lesson-ai] enhance-supports error:", message, err);
+      setAiError({ type: supportType, message });
     } finally {
       setAiLoadingType(null);
     }
@@ -531,6 +537,28 @@ export default function LessonPlanPreview({ plan, onChange, onReset }: Props) {
           )}
         </div>
       </div>
+
+      {/* AI global status banner */}
+      {aiLoadingType && (
+        <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2.5 text-sm text-blue-800">
+          <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+          Enhancing <strong className="capitalize">{aiLoadingType}</strong> supports with AI…
+        </div>
+      )}
+      {aiSuccess && (
+        <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-4 py-2.5 text-sm text-green-800">
+          <Check className="w-4 h-4 shrink-0" />
+          {aiSuccess}
+        </div>
+      )}
+      {aiError && (
+        <div className="flex items-center justify-between gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-2.5 text-sm text-red-700">
+          <span><strong>AI enhancement failed:</strong> {aiError.message}</span>
+          <button type="button" onClick={() => setAiError(null)} className="shrink-0 text-red-400 hover:text-red-600">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Title + Standard reference */}
       <Section title="Lesson Title & Standard" defaultOpen={true}>
