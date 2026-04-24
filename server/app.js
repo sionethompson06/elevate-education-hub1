@@ -834,4 +834,18 @@ if (!process.env.VERCEL) cron.schedule('0 2 1 * *', async () => {
   }
 });
 
+// Temporary env diagnostics — admin only, shows presence not values
+app.get('/api/debug-env', requireAdmin, (req, res) => {
+  const vars = [
+    'DATABASE_URL', 'ADMIN_TOKEN', 'ADMIN_PASSWORD',
+    'JWT_SECRET', 'SESSION_SECRET', 'OPENAI_API_KEY',
+    'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'STRIPE_PUBLISHABLE_KEY',
+    'SENDGRID_API_KEY', 'FROM_EMAIL', 'APP_URL',
+    'NODE_ENV', 'VERCEL', 'VERCEL_ENV',
+  ];
+  const result = {};
+  for (const v of vars) result[v] = !!process.env[v];
+  res.json(result);
+});
+
 export default app;
