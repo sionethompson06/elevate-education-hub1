@@ -114,11 +114,19 @@ export default function AdminStudents() {
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-slate-800 group-hover:text-[#1a3c5e]">{fullName}</p>
-                  <div className="flex gap-1 mt-0.5 flex-wrap">
+                  <div className="flex gap-1 mt-0.5 flex-wrap items-center">
                     {s.grade && <span className="text-xs text-slate-400">Gr. {s.grade}</span>}
-                    {se.length > 0 && <span className="text-xs text-green-600">· Enrolled</span>}
                     {!hasAcademic && !hasPerf && <span className="text-xs text-red-500">· Unassigned</span>}
                   </div>
+                  {se.length > 0 && (
+                    <div className="flex gap-1 mt-1 flex-wrap">
+                      {se.map(e => (
+                        <span key={e.id} className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100">
+                          {e.programName || `Program #${e.programId}`}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </button>
             );
