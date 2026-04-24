@@ -75,7 +75,9 @@ export function checkRouteAccess(role, pathname) {
  * Get the home dashboard route for a given role.
  */
 export function getDashboardForRole(role) {
-  return ROLE_DASHBOARDS[role] || "/";
+  // Normalize: API may return "academic-coach" (hyphen) but keys use "academic_coach" (underscore)
+  const normalized = role?.replace(/-/g, '_');
+  return ROLE_DASHBOARDS[normalized] || ROLE_DASHBOARDS[role] || "/";
 }
 
 /**
