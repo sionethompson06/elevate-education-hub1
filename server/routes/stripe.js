@@ -8,6 +8,7 @@ import {
   createPortalSession, constructWebhookEvent
 } from '../services/stripe.service.js';
 import { sendPaymentConfirmationEmail, sendPaymentFailedEmail } from '../services/email.service.js';
+import { recordPaymentReceived, allocatePayment } from '../services/accounting.service.js';
 
 const router = Router();
 
@@ -444,7 +445,7 @@ export async function stripeWebhookHandler(req, res) {
 
           // One payment record for the total amount
           const firstInvoice = childInvoices[0];
-          await db.insert(payments).values({
+          const [familyWebhookPayment] = await db.insert(payments).values({
             billingAccountId: fi.billingAccountId,
             invoiceId: firstInvoice?.id || null,
             amount: String(session.amount_total / 100),
@@ -452,7 +453,13 @@ export async function stripeWebhookHandler(req, res) {
             stripePaymentIntentId: String(stripePaymentId),
             status: 'paid',
             processedAt: new Date(),
-          }).catch(err => console.error('[webhook] family payment record error:', err));
+          }).returning().catch(() => [null]);
+
+          // Non-blocking accounting — must never break webhook 200 response
+          if (familyWebhookPayment) {
+            recordPaymentReceived(familyWebhookPayment).catch(err => console.error('[accounting] stripe family payment error:', err.message));
+            allocatePayment(familyWebhookPayment.id).catch(err => console.error('[accounting] allocatePayment error:', err.message));
+          }
 
           if (parentUserId) {
             const [parentUser] = await db.select().from(users)
@@ -503,7 +510,7 @@ export async function stripeWebhookHandler(req, res) {
         }
 
         if (billingAccountId) {
-          await db.insert(payments).values({
+          const [singleWebhookPayment] = await db.insert(payments).values({
             billingAccountId,
             invoiceId,
             amount: String(session.amount_total / 100),
@@ -511,7 +518,13 @@ export async function stripeWebhookHandler(req, res) {
             stripePaymentIntentId: String(stripePaymentId),
             status: 'paid',
             processedAt: new Date(),
-          }).catch(err => console.error('[webhook] payment record error:', err));
+          }).returning().catch(() => [null]);
+
+          // Non-blocking accounting
+          if (singleWebhookPayment) {
+            recordPaymentReceived(singleWebhookPayment).catch(err => console.error('[accounting] stripe single payment error:', err.message));
+            allocatePayment(singleWebhookPayment.id).catch(err => console.error('[accounting] allocatePayment error:', err.message));
+          }
         }
 
         if (parentUserId && enrollment) {
@@ -569,7 +582,7 @@ export async function stripeWebhookHandler(req, res) {
 
           // Create a payment record for this recurring charge
           if (billingAccountId) {
-            await db.insert(payments).values({
+            const [recurringPayment] = await db.insert(payments).values({
               billingAccountId,
               invoiceId: linkedInvoice?.id || null,
               amount: String(stripeInvoice.amount_paid / 100),
@@ -577,7 +590,13 @@ export async function stripeWebhookHandler(req, res) {
               stripePaymentIntentId: String(stripeInvoice.payment_intent || subscriptionId),
               status: 'paid',
               processedAt: new Date(),
-            }).catch(err => console.error('[webhook] recurring payment record error:', err));
+            }).returning().catch(() => [null]);
+
+            // Non-blocking accounting
+            if (recurringPayment) {
+              recordPaymentReceived(recurringPayment).catch(err => console.error('[accounting] recurring payment error:', err.message));
+              allocatePayment(recurringPayment.id).catch(err => console.error('[accounting] allocatePayment error:', err.message));
+            }
           }
 
           // Send renewal confirmation email

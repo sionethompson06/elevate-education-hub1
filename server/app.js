@@ -248,6 +248,135 @@ async function ensureInvoiceManualOverrideColumn() {
   }
 }
 
+async function ensureAccountingTables() {
+  try {
+    await rawSql`
+      CREATE TABLE IF NOT EXISTS chart_of_accounts (
+        id              SERIAL PRIMARY KEY,
+        code            VARCHAR(20) NOT NULL UNIQUE,
+        name            VARCHAR(200) NOT NULL,
+        type            VARCHAR(20) NOT NULL,
+        normal_balance  VARCHAR(10) NOT NULL,
+        is_system       BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at      TIMESTAMP NOT NULL DEFAULT NOW()
+      )`;
+    await rawSql`
+      CREATE TABLE IF NOT EXISTS journal_entries (
+        id                  SERIAL PRIMARY KEY,
+        date                DATE NOT NULL,
+        description         VARCHAR(500) NOT NULL,
+        reference_type      VARCHAR(30),
+        reference_id        INTEGER,
+        idempotency_key     VARCHAR(100) UNIQUE,
+        billing_account_id  INTEGER REFERENCES billing_accounts(id),
+        enrollment_id       INTEGER REFERENCES enrollments(id),
+        status              VARCHAR(20) NOT NULL DEFAULT 'posted',
+        created_by          INTEGER REFERENCES users(id),
+        created_at          TIMESTAMP NOT NULL DEFAULT NOW()
+      )`;
+    await rawSql`
+      CREATE TABLE IF NOT EXISTS journal_entry_lines (
+        id                SERIAL PRIMARY KEY,
+        journal_entry_id  INTEGER NOT NULL REFERENCES journal_entries(id) ON DELETE CASCADE,
+        account_id        INTEGER NOT NULL REFERENCES chart_of_accounts(id),
+        debit             NUMERIC(10,2) NOT NULL DEFAULT 0,
+        credit            NUMERIC(10,2) NOT NULL DEFAULT 0,
+        description       VARCHAR(300),
+        created_at        TIMESTAMP NOT NULL DEFAULT NOW()
+      )`;
+    await rawSql`
+      CREATE TABLE IF NOT EXISTS payment_allocations (
+        id          SERIAL PRIMARY KEY,
+        payment_id  INTEGER NOT NULL REFERENCES payments(id),
+        invoice_id  INTEGER NOT NULL REFERENCES invoices(id),
+        amount      NUMERIC(10,2) NOT NULL,
+        created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+        UNIQUE (payment_id, invoice_id)
+      )`;
+    // Indexes for query performance
+    await rawSql`CREATE INDEX IF NOT EXISTS idx_je_billing_account ON journal_entries(billing_account_id)`;
+    await rawSql`CREATE INDEX IF NOT EXISTS idx_je_date ON journal_entries(date)`;
+    await rawSql`CREATE INDEX IF NOT EXISTS idx_je_ref ON journal_entries(reference_type, reference_id)`;
+    await rawSql`CREATE INDEX IF NOT EXISTS idx_jel_entry ON journal_entry_lines(journal_entry_id)`;
+    await rawSql`CREATE INDEX IF NOT EXISTS idx_jel_account ON journal_entry_lines(account_id)`;
+    await rawSql`CREATE INDEX IF NOT EXISTS idx_pa_payment ON payment_allocations(payment_id)`;
+    await rawSql`CREATE INDEX IF NOT EXISTS idx_pa_invoice ON payment_allocations(invoice_id)`;
+    console.log('[migration] Accounting tables ready');
+  } catch (err) {
+    console.error('[migration] ensureAccountingTables error:', err.message);
+  }
+}
+
+async function seedChartOfAccounts() {
+  try {
+    const accounts = [
+      { code: '1000', name: 'Cash',                  type: 'asset',     normalBalance: 'debit'  },
+      { code: '1050', name: 'Stripe Clearing',        type: 'asset',     normalBalance: 'debit'  },
+      { code: '1100', name: 'Accounts Receivable',    type: 'asset',     normalBalance: 'debit'  },
+      { code: '2000', name: 'Deferred Revenue',       type: 'liability', normalBalance: 'credit' },
+      { code: '4000', name: 'Tuition Revenue',        type: 'revenue',   normalBalance: 'credit' },
+      { code: '4900', name: 'Scholarship Allowance',  type: 'revenue',   normalBalance: 'debit'  },
+    ];
+    for (const acct of accounts) {
+      await rawSql`
+        INSERT INTO chart_of_accounts (code, name, type, normal_balance, is_system)
+        VALUES (${acct.code}, ${acct.name}, ${acct.type}, ${acct.normalBalance}, TRUE)
+        ON CONFLICT (code) DO NOTHING`;
+    }
+    console.log('[seed] Chart of accounts ready');
+  } catch (err) {
+    console.error('[seed] seedChartOfAccounts error:', err.message);
+  }
+}
+
+async function backfillHistoricalLedger() {
+  try {
+    const { recordInvoiceCreated, recordPaymentReceived, allocatePayment } = await import('./services/accounting.service.js');
+
+    // Backfill paid invoices that predate the ledger (no journal entry yet)
+    const paidInvoices = await rawSql`
+      SELECT i.id, i.amount, i.description, i.billing_account_id, i.enrollment_id, i.created_at
+      FROM invoices i
+      WHERE i.status IN ('paid', 'pending', 'past_due')
+        AND NOT EXISTS (
+          SELECT 1 FROM journal_entries je
+          WHERE je.reference_type = 'invoice' AND je.reference_id = i.id
+        )`;
+    for (const inv of paidInvoices) {
+      await recordInvoiceCreated(
+        { id: inv.id, amount: inv.amount, description: inv.description, createdAt: inv.created_at },
+        inv.enrollment_id,
+        inv.billing_account_id,
+      ).catch(() => {}); // skip if conflict
+    }
+
+    // Backfill payments
+    const oldPayments = await rawSql`
+      SELECT p.id, p.amount, p.method, p.billing_account_id, p.invoice_id,
+             p.stripe_payment_intent_id, p.processed_at
+      FROM payments p
+      WHERE p.status = 'paid'
+        AND NOT EXISTS (
+          SELECT 1 FROM journal_entries je
+          WHERE je.reference_type = 'payment' AND je.reference_id = p.id
+        )`;
+    for (const pmt of oldPayments) {
+      await recordPaymentReceived({
+        id: pmt.id, amount: pmt.amount, method: pmt.method,
+        billingAccountId: pmt.billing_account_id, invoiceId: pmt.invoice_id,
+        stripePaymentIntentId: pmt.stripe_payment_intent_id, processedAt: pmt.processed_at,
+      }).catch(() => {});
+      await allocatePayment(pmt.id).catch(() => {});
+    }
+
+    if (paidInvoices.length > 0 || oldPayments.length > 0) {
+      console.log(`[migration] Backfilled ${paidInvoices.length} invoice(s) and ${oldPayments.length} payment(s) into ledger`);
+    }
+  } catch (err) {
+    console.error('[migration] backfillHistoricalLedger error:', err.message);
+  }
+}
+
 async function seedProgramTuitions() {
   try {
     // ── Hybrid Microschool ────────────────────────────────────────────────────
@@ -400,7 +529,10 @@ ensureEnrollmentBillingCycleColumn();
 ensureInvoiceDiscountColumn();
 ensureFamilyInvoicesTable();
 ensureInvoiceManualOverrideColumn();
+ensureAccountingTables();
 seedProgramTuitions().then(() => syncPendingInvoicesToProgramTuitions());
+seedChartOfAccounts();
+backfillHistoricalLedger();
 seedDemoUsers();
 import applicationsRouter from './routes/applications.js';
 import authRouter from './routes/auth.js';
@@ -432,6 +564,8 @@ import familyBillingRouter from './routes/familyBilling.js';
 import coachAssignmentsRouter from './routes/coach-assignments.js';
 import coachesRouter from './routes/coaches.js';
 import eventsRouter from './routes/events.js';
+import accountingRouter from './routes/accounting.js';
+import cron from 'node-cron';
 
 const isDev = process.env.NODE_ENV !== 'production';
 
@@ -559,6 +693,7 @@ app.use('/api/audit-logs', auditLogsRouter);
 app.use('/api/coach-assignments', coachAssignmentsRouter);
 app.use('/api/coaches', coachesRouter);
 app.use('/api/events', eventsRouter);
+app.use('/api/accounting', accountingRouter);
 app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), stripeWebhookHandler);
 app.use('/api/stripe', stripeRouter);
 
@@ -670,6 +805,19 @@ app.post('/api/admin/seed-demo-data', requireAdmin, async (req, res) => {
   } catch (err) {
     console.error('[admin/seed-demo-data] error:', err);
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Revenue recognition cron — runs on the 1st of every month at 2:00 AM
+cron.schedule('0 2 1 * *', async () => {
+  try {
+    const { recognizeRevenue } = await import('./services/accounting.service.js');
+    const d = new Date(); d.setMonth(d.getMonth() - 1);
+    const period = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const result = await recognizeRevenue(period);
+    console.log(`[cron] Revenue recognition ${period}: ${result.recognized} entries created, ${result.skipped} skipped`);
+  } catch (err) {
+    console.error('[cron] Revenue recognition error:', err.message);
   }
 });
 

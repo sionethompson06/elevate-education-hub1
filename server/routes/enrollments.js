@@ -6,6 +6,7 @@ import { requireAuth, requireRole } from '../middleware/auth.js';
 import { logAudit } from '../services/audit.service.js';
 import { createNotification } from '../services/notification.service.js';
 import { broadcastEvent } from '../services/sse.service.js';
+import { recordInvoiceCreated, recordInvoiceAdjustment } from '../services/accounting.service.js';
 
 const router = Router();
 
@@ -281,6 +282,11 @@ router.post('/', requireAuth, async (req, res) => {
 
     const result = { enrollment, invoice, billingAccount };
 
+    // Non-blocking — accounting failures must never break enrollment creation
+    recordInvoiceCreated(invoice, enrollment.id, billingAccount.id).catch(err =>
+      console.error('[accounting] recordInvoiceCreated error:', err.message)
+    );
+
     await logAudit({
       userId: req.user.id,
       action: 'create',
@@ -474,7 +480,14 @@ router.patch('/:id/invoice', requireAuth, requireRole('admin'), async (req, res)
         amount: amount ? String(amount) : '0',
         dueDate: dueDate || defaultDueDate.toISOString().split('T')[0],
       }).returning();
+      // New invoice — record opening AR entry
+      recordInvoiceCreated(invoice, enrollmentId, billingAccountId).catch(err =>
+        console.error('[accounting] recordInvoiceCreated error:', err.message)
+      );
     }
+
+    // Capture existing amount before any update (used for adjustment journal entry below)
+    const originalAmount = parseFloat(invoice.amount);
 
     // Block financial edits on closed invoices — admin must void/refund instead of editing amount
     if (amount !== undefined && ['paid', 'waived'].includes(invoice.status)) {
@@ -557,6 +570,15 @@ router.patch('/:id/invoice', requireAuth, requireRole('admin'), async (req, res)
       details: { enrollmentId, ...updateData },
       ipAddress: req.ip,
     });
+
+    // Adjustment journal entry when an existing invoice's amount changed
+    if (updateData.amount !== undefined) {
+      const newAmount = parseFloat(updateData.amount);
+      recordInvoiceAdjustment(
+        invoice.id, originalAmount, newAmount,
+        updated.billingAccountId, updated.enrollmentId,
+      ).catch(err => console.error('[accounting] recordInvoiceAdjustment error:', err.message));
+    }
 
     broadcastEvent('billing.invoice.updated', { enrollmentId });
     res.json({ success: true, invoice: updated });
