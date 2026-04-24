@@ -10,12 +10,21 @@ const router = Router();
 router.get('/', requireAuth, async (req, res) => {
   try {
     const allPrograms = await db.select().from(programs).orderBy(desc(programs.createdAt));
+
+    // Fetch section counts per program
+    const allSections = await db.select({ programId: sections.programId }).from(sections);
+    const sectionCountMap = {};
+    for (const s of allSections) {
+      if (s.programId) sectionCountMap[s.programId] = (sectionCountMap[s.programId] || 0) + 1;
+    }
+
     res.json({
       success: true,
       programs: allPrograms.map(p => ({
         ...p,
         category: p.type,
         ...(p.metadata || {}),
+        sectionCount: sectionCountMap[p.id] || 0,
       })),
     });
   } catch (err) {

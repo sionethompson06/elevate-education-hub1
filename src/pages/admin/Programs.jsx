@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost, apiPatch, apiDelete } from "@/api/apiClient";
-import { BookOpen, Plus, X, Pencil, Loader2, ToggleLeft, ToggleRight, Trash2, AlertTriangle, ShieldAlert, Users, Clock, AlertCircle } from "lucide-react";
+import { BookOpen, Plus, X, Pencil, Loader2, ToggleLeft, ToggleRight, Trash2, AlertTriangle, ShieldAlert, Users, Clock, AlertCircle, LayoutList } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
@@ -192,9 +192,10 @@ export default function AdminPrograms() {
                 const pendingCount = progEnrollments.filter(e => ["pending_payment", "pending"].includes(e.status)).length;
                 const pastDueCount = progEnrollments.filter(e => ["past_due", "payment_failed"].includes(e.status)).length;
                 const totalCount   = progEnrollments.length;
+                const sectionCount = p.sectionCount || 0;
                 // Cancelled/paused are historical records only — not a deletion blocker
                 const blockingCount = activeCount + pendingCount + pastDueCount;
-                const canDelete    = blockingCount === 0;
+                const canDelete    = blockingCount === 0 && sectionCount === 0;
 
                 return (
                   <div key={p.id} className="flex items-center justify-between px-5 py-4 hover:bg-slate-50 gap-4">
@@ -230,7 +231,7 @@ export default function AdminPrograms() {
                         <Pencil className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => setDeleteTarget({ ...p, canDelete, activeCount, pendingCount, pastDueCount, blockingCount, totalCount })}
+                        onClick={() => setDeleteTarget({ ...p, canDelete, activeCount, pendingCount, pastDueCount, blockingCount, sectionCount, totalCount })}
                         title={canDelete ? "Delete program" : "Cannot delete — click for details"}
                         className={`p-1.5 rounded transition-colors ${canDelete ? "hover:bg-red-50 text-slate-400 hover:text-red-600" : "text-amber-400 hover:text-amber-600 hover:bg-amber-50"}`}
                       >
@@ -320,12 +321,27 @@ export default function AdminPrograms() {
                 </div>
               )}
 
+              {deleteTarget.sectionCount > 0 && (
+                <div className="flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
+                  <LayoutList className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-semibold text-blue-800">
+                      {deleteTarget.sectionCount} Section{deleteTarget.sectionCount > 1 ? "s" : ""} Assigned
+                    </p>
+                    <p className="text-xs text-blue-700 mt-0.5">
+                      This program has {deleteTarget.sectionCount > 1 ? "sections" : "a section"} linked to it.
+                      Go to <strong>Schedules</strong> or the coach management area to delete or reassign {deleteTarget.sectionCount > 1 ? "these sections" : "this section"} first.
+                    </p>
+                  </div>
+                </div>
+              )}
+
             </div>
 
             {/* Footer */}
             <div className="flex items-center justify-between px-6 py-4 border-t border-slate-100">
               <p className="text-xs text-slate-400">
-                {deleteTarget.blockingCount} enrollment{deleteTarget.blockingCount > 1 ? "s" : ""} must be resolved
+                {deleteTarget.blockingCount + (deleteTarget.sectionCount || 0)} issue{(deleteTarget.blockingCount + (deleteTarget.sectionCount || 0)) !== 1 ? "s" : ""} must be resolved
               </p>
               <button
                 onClick={() => setDeleteTarget(null)}
