@@ -41,6 +41,49 @@ function PlanBody({ text }) {
   return <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{text}</p>;
 }
 
+function QuestionBlock({ questions, showAnswers }) {
+  if (!questions?.length) return <p className="text-sm text-slate-400 italic">—</p>;
+  return (
+    <ol className="space-y-3 list-none pl-0">
+      {questions.map((q, i) => (
+        <li key={i} className="border border-slate-200 rounded-lg bg-white px-3 py-2.5">
+          <div className="flex items-start gap-2">
+            <span className="text-xs font-semibold text-slate-400 shrink-0 mt-0.5">
+              {i + 1}.
+            </span>
+            <div className="flex-1 min-w-0 space-y-1.5">
+              <p className="text-sm text-slate-800 leading-snug">{q.question}</p>
+              <span className="inline-block text-[10px] font-semibold uppercase tracking-wide text-slate-500 bg-slate-100 rounded px-1.5 py-0.5">
+                {q.type.replace("_", " ")}
+              </span>
+              {q.type === "multiple_choice" && q.choices?.length > 0 && (
+                <ul className="mt-1 space-y-0.5">
+                  {q.choices.map((c, j) => (
+                    <li key={j} className="text-sm text-slate-700 flex gap-2">
+                      <span className="font-mono text-slate-400 shrink-0">
+                        {String.fromCharCode(65 + j)}.
+                      </span>
+                      <span>{c}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {showAnswers && q.answer && (
+                <div className="mt-1.5 bg-green-50 border border-green-200 rounded px-2 py-1">
+                  <p className="text-[10px] font-semibold text-green-700 uppercase tracking-wide">
+                    Answer / Rubric
+                  </p>
+                  <p className="text-xs text-green-900 mt-0.5 whitespace-pre-wrap">{q.answer}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 export default function LessonDetailPanel({ lesson, onClose, onUpdated, readOnly = false }) {
   const { user } = useAuth();
   const [saving, setSaving] = useState(false);
@@ -74,6 +117,8 @@ export default function LessonDetailPanel({ lesson, onClose, onUpdated, readOnly
     () => parseLessonPlanInstructions(lesson.instructions),
     [lesson.instructions],
   );
+  const isTeacher = user?.role === 'admin' || user?.role === 'academic_coach';
+  const [showAnswers, setShowAnswers] = useState(false);
 
   // Load standards text for any linked codes
   const [standardsMap, setStandardsMap] = useState({});
@@ -164,12 +209,44 @@ export default function LessonDetailPanel({ lesson, onClose, onUpdated, readOnly
                 <PlanList items={lessonPlan.checksForUnderstanding} />
               </PlanSection>
 
+              {isTeacher && (lessonPlan.assessmentQuestions?.length > 0 || lessonPlan.exitTicketQuestions?.length > 0) && (
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowAnswers((v) => !v)}
+                    className={`text-[11px] font-semibold px-2.5 py-1 rounded border ${
+                      showAnswers
+                        ? "border-green-200 bg-green-50 text-green-800"
+                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    }`}
+                  >
+                    {showAnswers ? "Hide answers" : "Show answers"}
+                  </button>
+                </div>
+              )}
+
               <PlanSection title="Assessment">
                 <PlanBody text={lessonPlan.assessment} />
+                {lessonPlan.assessmentQuestions?.length > 0 && (
+                  <div className="mt-3">
+                    <QuestionBlock
+                      questions={lessonPlan.assessmentQuestions}
+                      showAnswers={isTeacher && showAnswers}
+                    />
+                  </div>
+                )}
               </PlanSection>
 
               <PlanSection title="Exit Ticket">
                 <PlanBody text={lessonPlan.exitTicket} />
+                {lessonPlan.exitTicketQuestions?.length > 0 && (
+                  <div className="mt-3">
+                    <QuestionBlock
+                      questions={lessonPlan.exitTicketQuestions}
+                      showAnswers={isTeacher && showAnswers}
+                    />
+                  </div>
+                )}
               </PlanSection>
 
               {lessonPlan.teacherNotes?.trim() && (user?.role === 'admin' || user?.role === 'academic_coach') && (

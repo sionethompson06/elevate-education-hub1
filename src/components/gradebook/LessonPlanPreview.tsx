@@ -7,9 +7,11 @@ import {
   ChevronUp,
   Plus,
   X,
+  Eye,
+  EyeOff,
 } from "lucide-react";
-import type { LessonPlan } from "@/types/lesson-plan";
-import { lessonPlanToMarkdown } from "@/lib/lesson-builder";
+import type { LessonPlan, LessonQuestion, QuestionType } from "@/types/lesson-plan";
+import { lessonPlanToMarkdown, questionsToMarkdown } from "@/lib/lesson-builder";
 
 interface Props {
   plan: LessonPlan;
@@ -72,6 +74,175 @@ function EditableList({
   );
 }
 
+const QUESTION_TYPES: QuestionType[] = [
+  "word_problem",
+  "multiple_choice",
+  "short_answer",
+];
+
+function QuestionEditor({
+  question,
+  index,
+  showAnswers,
+  onChange,
+  onRemove,
+}: {
+  question: LessonQuestion;
+  index: number;
+  showAnswers: boolean;
+  onChange: (next: LessonQuestion) => void;
+  onRemove: () => void;
+}) {
+  const update = <K extends keyof LessonQuestion>(key: K, value: LessonQuestion[K]) =>
+    onChange({ ...question, [key]: value });
+
+  return (
+    <div className="border border-slate-200 rounded-xl p-3 space-y-2 bg-white">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-semibold text-[#1a3c5e]">
+          Question {index + 1}
+        </span>
+        <div className="flex items-center gap-2">
+          <select
+            value={question.type}
+            onChange={(e) => {
+              const nextType = e.target.value as QuestionType;
+              if (nextType === "multiple_choice" && !question.choices?.length) {
+                onChange({ ...question, type: nextType, choices: ["", "", "", ""] });
+              } else if (nextType !== "multiple_choice") {
+                const { choices: _drop, ...rest } = question;
+                onChange({ ...rest, type: nextType });
+              } else {
+                update("type", nextType);
+              }
+            }}
+            className="text-[11px] font-medium border border-slate-200 rounded-md px-2 py-0.5 bg-slate-50 focus:outline-none focus:ring-1 focus:ring-[#1a3c5e]/30"
+          >
+            {QUESTION_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {t.replace("_", " ")}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={onRemove}
+            className="p-1 text-slate-400 hover:text-red-500 rounded hover:bg-red-50"
+            title="Remove question"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+
+      <textarea
+        className={`${inputCls} min-h-[60px] resize-y`}
+        value={question.question}
+        onChange={(e) => update("question", e.target.value)}
+        placeholder="Question prompt…"
+      />
+
+      {question.type === "multiple_choice" && (
+        <div className="space-y-1.5">
+          <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+            Choices
+          </p>
+          {(question.choices ?? []).map((choice, i) => (
+            <div key={i} className="flex gap-2 items-start">
+              <span className="text-xs font-mono font-bold text-slate-400 mt-2 w-4 shrink-0">
+                {String.fromCharCode(65 + i)}.
+              </span>
+              <input
+                className={inputCls}
+                value={choice}
+                onChange={(e) =>
+                  update(
+                    "choices",
+                    (question.choices ?? []).map((c, j) => (j === i ? e.target.value : c)),
+                  )
+                }
+              />
+              <button
+                type="button"
+                onClick={() =>
+                  update("choices", (question.choices ?? []).filter((_, j) => j !== i))
+                }
+                className="p-1.5 text-slate-400 hover:text-red-500 rounded hover:bg-red-50 shrink-0"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() => update("choices", [...(question.choices ?? []), ""])}
+            className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#1a3c5e] hover:text-blue-700"
+          >
+            <Plus className="w-3 h-3" /> Add choice
+          </button>
+        </div>
+      )}
+
+      {showAnswers ? (
+        <div>
+          <p className="text-[11px] font-semibold text-green-700 uppercase tracking-wide mb-1">
+            Answer / Rubric
+          </p>
+          <textarea
+            className={`${inputCls} min-h-[44px] resize-y border-green-200 bg-green-50/30`}
+            value={question.answer}
+            onChange={(e) => update("answer", e.target.value)}
+          />
+        </div>
+      ) : (
+        <p className="text-[11px] text-slate-400 italic">
+          Answer hidden — toggle "Show Answers" to edit.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function QuestionList({
+  questions,
+  showAnswers,
+  onChange,
+}: {
+  questions: LessonQuestion[];
+  showAnswers: boolean;
+  onChange: (next: LessonQuestion[]) => void;
+}) {
+  const emptyQuestion = (): LessonQuestion => ({
+    question: "",
+    type: "short_answer",
+    answer: "",
+  });
+  return (
+    <div className="space-y-2">
+      {questions.length === 0 && (
+        <p className="text-sm text-slate-400 italic">No questions yet.</p>
+      )}
+      {questions.map((q, i) => (
+        <QuestionEditor
+          key={i}
+          question={q}
+          index={i}
+          showAnswers={showAnswers}
+          onChange={(next) => onChange(questions.map((x, j) => (j === i ? next : x)))}
+          onRemove={() => onChange(questions.filter((_, j) => j !== i))}
+        />
+      ))}
+      <button
+        type="button"
+        onClick={() => onChange([...questions, emptyQuestion()])}
+        className="inline-flex items-center gap-1 text-xs font-semibold text-[#1a3c5e] hover:text-blue-700"
+      >
+        <Plus className="w-3.5 h-3.5" /> Add question
+      </button>
+    </div>
+  );
+}
+
 function Section({
   title,
   defaultOpen = true,
@@ -102,21 +273,40 @@ function Section({
 }
 
 export default function LessonPlanPreview({ plan, onChange, onReset }: Props) {
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
+  const [showAnswers, setShowAnswers] = useState(false);
 
   const update = <K extends keyof LessonPlan>(key: K, value: LessonPlan[K]) => {
     onChange({ ...plan, [key]: value });
   };
 
-  const handleCopy = async () => {
+  const copyText = async (text: string, key: string) => {
     try {
-      await navigator.clipboard.writeText(lessonPlanToMarkdown(plan));
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      await navigator.clipboard.writeText(text);
+      setCopied(key);
+      setTimeout(() => setCopied((c) => (c === key ? null : c)), 2000);
     } catch {
-      // no-op — clipboard unavailable in some contexts
+      // clipboard unavailable in some contexts
     }
   };
+
+  const handleCopyFull = () => copyText(lessonPlanToMarkdown(plan), "full");
+  const handleCopyAssessment = () =>
+    copyText(
+      questionsToMarkdown(plan.assessmentQuestions, {
+        includeAnswers: showAnswers,
+        heading: "Assessment Questions",
+      }),
+      "assessment",
+    );
+  const handleCopyExitTicket = () =>
+    copyText(
+      questionsToMarkdown(plan.exitTicketQuestions, {
+        includeAnswers: showAnswers,
+        heading: "Exit Ticket",
+      }),
+      "exit",
+    );
 
   return (
     <div className="space-y-4">
@@ -126,19 +316,39 @@ export default function LessonPlanPreview({ plan, onChange, onReset }: Props) {
           <BookOpen className="w-5 h-5" />
           <h3 className="font-bold text-base">Generated Lesson Plan</h3>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             type="button"
-            onClick={handleCopy}
+            onClick={() => setShowAnswers((v) => !v)}
+            className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border ${
+              showAnswers
+                ? "border-green-200 bg-green-50 text-green-800"
+                : "border-slate-200 text-slate-700 hover:bg-slate-50"
+            }`}
+            title="Toggle answer visibility for assessment and exit ticket questions"
+          >
+            {showAnswers ? (
+              <>
+                <EyeOff className="w-3.5 h-3.5" /> Hide Answers
+              </>
+            ) : (
+              <>
+                <Eye className="w-3.5 h-3.5" /> Show Answers
+              </>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={handleCopyFull}
             className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50"
           >
-            {copied ? (
+            {copied === "full" ? (
               <>
                 <Check className="w-3.5 h-3.5 text-green-600" /> Copied
               </>
             ) : (
               <>
-                <Copy className="w-3.5 h-3.5" /> Copy
+                <Copy className="w-3.5 h-3.5" /> Copy Full Plan
               </>
             )}
           </button>
@@ -278,18 +488,82 @@ export default function LessonPlanPreview({ plan, onChange, onReset }: Props) {
       </Section>
 
       <Section title="Assessment">
-        <textarea
-          className={textareaCls}
-          value={plan.assessment}
-          onChange={(e) => update("assessment", e.target.value)}
+        <label className="block">
+          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+            Assessment overview
+          </span>
+          <textarea
+            className={textareaCls}
+            value={plan.assessment}
+            onChange={(e) => update("assessment", e.target.value)}
+          />
+        </label>
+
+        <div className="flex items-center justify-between mt-3">
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+            Assessment questions ({plan.assessmentQuestions.length})
+          </p>
+          <button
+            type="button"
+            onClick={handleCopyAssessment}
+            className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 hover:text-[#1a3c5e]"
+          >
+            {copied === "assessment" ? (
+              <>
+                <Check className="w-3 h-3 text-green-600" /> Copied
+              </>
+            ) : (
+              <>
+                <Copy className="w-3 h-3" /> Copy assessment
+                {showAnswers ? " (with answers)" : ""}
+              </>
+            )}
+          </button>
+        </div>
+        <QuestionList
+          questions={plan.assessmentQuestions}
+          showAnswers={showAnswers}
+          onChange={(next) => update("assessmentQuestions", next)}
         />
       </Section>
 
       <Section title="Exit Ticket">
-        <textarea
-          className={textareaCls}
-          value={plan.exitTicket}
-          onChange={(e) => update("exitTicket", e.target.value)}
+        <label className="block">
+          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+            Exit ticket overview
+          </span>
+          <textarea
+            className={textareaCls}
+            value={plan.exitTicket}
+            onChange={(e) => update("exitTicket", e.target.value)}
+          />
+        </label>
+
+        <div className="flex items-center justify-between mt-3">
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+            Exit ticket questions ({plan.exitTicketQuestions.length})
+          </p>
+          <button
+            type="button"
+            onClick={handleCopyExitTicket}
+            className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 hover:text-[#1a3c5e]"
+          >
+            {copied === "exit" ? (
+              <>
+                <Check className="w-3 h-3 text-green-600" /> Copied
+              </>
+            ) : (
+              <>
+                <Copy className="w-3 h-3" /> Copy exit ticket
+                {showAnswers ? " (with answers)" : ""}
+              </>
+            )}
+          </button>
+        </div>
+        <QuestionList
+          questions={plan.exitTicketQuestions}
+          showAnswers={showAnswers}
+          onChange={(next) => update("exitTicketQuestions", next)}
         />
       </Section>
 

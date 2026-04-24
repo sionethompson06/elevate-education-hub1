@@ -18,6 +18,15 @@ export interface StandardInput {
   course?: string | null;
 }
 
+export type QuestionType = "multiple_choice" | "short_answer" | "word_problem";
+
+export interface LessonQuestion {
+  question: string;
+  type: QuestionType;
+  choices?: string[];
+  answer: string;
+}
+
 export interface LessonPlan {
   title: string;
   standardCode: string;
@@ -37,6 +46,8 @@ export interface LessonPlan {
   differentiation: string;
   checksForUnderstanding: string[];
   assessment: string;
+  assessmentQuestions: LessonQuestion[];
   exitTicket: string;
+  exitTicketQuestions: LessonQuestion[];
   teacherNotes: string;
 }
