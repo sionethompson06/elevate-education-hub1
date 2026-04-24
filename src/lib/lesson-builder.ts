@@ -351,6 +351,68 @@ export function generateLessonPlan(standard: StandardInput): LessonPlan {
 }
 
 /**
+ * Parse a `lesson_assignments.instructions` string into a LessonPlan if it
+ * looks like one. Returns `null` for plain-text instructions, invalid JSON,
+ * or JSON that is missing required LessonPlan fields. Safe to call on any
+ * string — never throws.
+ */
+export function parseLessonPlanInstructions(
+  instructions: string | null | undefined,
+): LessonPlan | null {
+  if (!instructions) return null;
+  const trimmed = instructions.trim();
+  if (!trimmed.startsWith("{")) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") return null;
+
+  const p = parsed as Record<string, unknown>;
+  const looksLikePlan =
+    typeof p.title === "string" &&
+    typeof p.objective === "string" &&
+    typeof p.standardCode === "string" &&
+    Array.isArray(p.successCriteria) &&
+    typeof p.warmUp === "string" &&
+    typeof p.directInstruction === "string";
+
+  if (!looksLikePlan) return null;
+
+  // Tolerate missing/extra fields — coerce arrays and strings so the renderer
+  // never needs to guard.
+  const asString = (v: unknown, d = ""): string => (typeof v === "string" ? v : d);
+  const asStringArray = (v: unknown): string[] =>
+    Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+
+  return {
+    title: asString(p.title),
+    standardCode: asString(p.standardCode),
+    standardText: asString(p.standardText),
+    subject: asString(p.subject),
+    grade: asString(p.grade),
+    domain: asString(p.domain),
+    cluster: asString(p.cluster),
+    objective: asString(p.objective),
+    successCriteria: asStringArray(p.successCriteria),
+    vocabulary: asStringArray(p.vocabulary),
+    materials: asStringArray(p.materials),
+    warmUp: asString(p.warmUp),
+    directInstruction: asString(p.directInstruction),
+    guidedPractice: asString(p.guidedPractice),
+    independentPractice: asString(p.independentPractice),
+    differentiation: asString(p.differentiation),
+    checksForUnderstanding: asStringArray(p.checksForUnderstanding),
+    assessment: asString(p.assessment),
+    exitTicket: asString(p.exitTicket),
+    teacherNotes: asString(p.teacherNotes),
+  };
+}
+
+/**
  * Serialize a LessonPlan to a readable Markdown string suitable for storing in
  * `lesson_assignments.instructions` or copying to clipboard.
  */
