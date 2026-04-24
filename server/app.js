@@ -821,7 +821,8 @@ app.post('/api/admin/seed-demo-data', requireAdmin, async (req, res) => {
 });
 
 // Revenue recognition cron — runs on the 1st of every month at 2:00 AM
-cron.schedule('0 2 1 * *', async () => {
+// Skipped on Vercel (no persistent process; trigger manually via POST /api/accounting/recognize-revenue)
+if (!process.env.VERCEL) cron.schedule('0 2 1 * *', async () => {
   try {
     const { recognizeRevenue } = await import('./services/accounting.service.js');
     const d = new Date(); d.setMonth(d.getMonth() - 1);
