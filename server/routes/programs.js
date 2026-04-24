@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { eq, desc } from 'drizzle-orm';
 import db from '../db-postgres.js';
-import { programs, schoolYears } from '../schema.js';
+import { programs, schoolYears, enrollments, sections } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { logAudit } from '../services/audit.service.js';
 
@@ -117,6 +117,46 @@ router.patch('/:id', requireAuth, requireRole('admin'), async (req, res) => {
 router.delete('/:id', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     const id = parseInt(req.params.id);
+
+    // Check for any enrollments referencing this program (any status)
+    const programEnrollments = await db
+      .select({ id: enrollments.id, status: enrollments.status })
+      .from(enrollments)
+      .where(eq(enrollments.programId, id));
+
+    if (programEnrollments.length > 0) {
+      const byStatus = {
+        active:   programEnrollments.filter(e => ['active', 'active_override'].includes(e.status)).length,
+        pending:  programEnrollments.filter(e => ['pending_payment', 'pending'].includes(e.status)).length,
+        pastDue:  programEnrollments.filter(e => ['past_due', 'payment_failed'].includes(e.status)).length,
+        other:    programEnrollments.filter(e => ['cancelled', 'paused'].includes(e.status)).length,
+      };
+      const reasons = [];
+      if (byStatus.active  > 0) reasons.push(`${byStatus.active} active enrollment${byStatus.active > 1 ? 's' : ''}`);
+      if (byStatus.pending > 0) reasons.push(`${byStatus.pending} pending enrollment${byStatus.pending > 1 ? 's' : ''}`);
+      if (byStatus.pastDue > 0) reasons.push(`${byStatus.pastDue} past-due enrollment${byStatus.pastDue > 1 ? 's' : ''}`);
+      if (byStatus.other   > 0) reasons.push(`${byStatus.other} historical record${byStatus.other > 1 ? 's' : ''}`);
+      return res.status(409).json({
+        success: false,
+        error: `Cannot delete: ${reasons.join(', ')}. Resolve or remove all enrollments before deleting this program.`,
+        blockers: { total: programEnrollments.length, ...byStatus },
+      });
+    }
+
+    // Check for sections assigned to this program
+    const programSections = await db
+      .select({ id: sections.id, name: sections.name })
+      .from(sections)
+      .where(eq(sections.programId, id));
+
+    if (programSections.length > 0) {
+      return res.status(409).json({
+        success: false,
+        error: `Cannot delete: ${programSections.length} section${programSections.length > 1 ? 's are' : ' is'} assigned to this program. Delete or reassign all sections first.`,
+        blockers: { sections: programSections.length },
+      });
+    }
+
     await db.delete(programs).where(eq(programs.id, id));
     await logAudit({
       userId: req.user.id,

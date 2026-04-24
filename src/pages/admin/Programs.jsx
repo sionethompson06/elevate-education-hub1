@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost, apiPatch, apiDelete } from "@/api/apiClient";
-import { BookOpen, Plus, X, Pencil, Loader2, ToggleLeft, ToggleRight, Trash2 } from "lucide-react";
+import { BookOpen, Plus, X, Pencil, Loader2, ToggleLeft, ToggleRight, Trash2, AlertTriangle } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
@@ -154,7 +154,8 @@ export default function AdminPrograms() {
       setDeleteTarget(null);
       toast({ title: "Program deleted" });
     } catch (err) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      // Surface the server's blocking reason in the dialog rather than a toast
+      setDeleteTarget(prev => prev ? { ...prev, blockReason: err.message } : null);
     } finally {
       setDeleting(false);
     }
@@ -186,8 +187,22 @@ export default function AdminPrograms() {
           ) : (
             <div className="divide-y">
               {programs.map(p => {
-                const activeCount = allEnrollments.filter(e => e.programId === p.id && ["active", "active_override"].includes(e.status)).length;
-                const totalCount = allEnrollments.filter(e => e.programId === p.id).length;
+                const progEnrollments = allEnrollments.filter(e => e.programId === p.id);
+                const activeCount  = progEnrollments.filter(e => ["active", "active_override"].includes(e.status)).length;
+                const pendingCount = progEnrollments.filter(e => ["pending_payment", "pending"].includes(e.status)).length;
+                const pastDueCount = progEnrollments.filter(e => ["past_due", "payment_failed"].includes(e.status)).length;
+                const totalCount   = progEnrollments.length;
+                const canDelete    = totalCount === 0;
+
+                const deleteTooltip = !canDelete
+                  ? [
+                      activeCount  > 0 && `${activeCount} active`,
+                      pendingCount > 0 && `${pendingCount} pending`,
+                      pastDueCount > 0 && `${pastDueCount} past-due`,
+                      (totalCount - activeCount - pendingCount - pastDueCount) > 0 && `${totalCount - activeCount - pendingCount - pastDueCount} other`,
+                    ].filter(Boolean).join(", ") + " enrollment" + (totalCount > 1 ? "s" : "") + " — cannot delete"
+                  : "Delete program";
+
                 return (
                   <div key={p.id} className="flex items-center justify-between px-5 py-4 hover:bg-slate-50 gap-4">
                     <div className="flex-1 min-w-0">
@@ -203,7 +218,14 @@ export default function AdminPrograms() {
                         {p.tuitionAmount && (
                           <span className="text-xs text-slate-600 font-medium">${parseFloat(p.tuitionAmount).toLocaleString()} / {p.billingCycle?.replace("_", " ")}</span>
                         )}
-                        <span className="text-xs text-slate-400">{activeCount} active · {totalCount} total enrollments</span>
+                        <span className="text-xs text-slate-400">
+                          {activeCount > 0 && <span className="text-green-600 font-medium">{activeCount} active</span>}
+                          {activeCount > 0 && pendingCount > 0 && <span> · </span>}
+                          {pendingCount > 0 && <span className="text-yellow-600 font-medium">{pendingCount} pending</span>}
+                          {(activeCount > 0 || pendingCount > 0) && pastDueCount > 0 && <span> · </span>}
+                          {pastDueCount > 0 && <span className="text-red-500 font-medium">{pastDueCount} past-due</span>}
+                          {totalCount === 0 && <span className="text-slate-400">No enrollments</span>}
+                        </span>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
@@ -214,8 +236,12 @@ export default function AdminPrograms() {
                       <button onClick={() => setEditing(p)} className="p-1.5 rounded hover:bg-slate-200 text-slate-500 hover:text-slate-700 transition-colors">
                         <Pencil className="w-4 h-4" />
                       </button>
-                      <button onClick={() => setDeleteTarget(p)} className="p-1.5 rounded hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors"
-                        title={activeCount > 0 ? "Cannot delete — has active enrollments" : "Delete"} disabled={activeCount > 0}>
+                      <button
+                        onClick={() => canDelete && setDeleteTarget(p)}
+                        title={deleteTooltip}
+                        disabled={!canDelete}
+                        className={`p-1.5 rounded transition-colors ${canDelete ? "hover:bg-red-50 text-slate-400 hover:text-red-600 cursor-pointer" : "text-slate-200 cursor-not-allowed"}`}
+                      >
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
@@ -235,17 +261,27 @@ export default function AdminPrograms() {
         />
       )}
 
-      <AlertDialog open={!!deleteTarget} onOpenChange={open => !open && setDeleteTarget(null)}>
+      <AlertDialog open={!!deleteTarget} onOpenChange={open => { if (!open) setDeleteTarget(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete "{deleteTarget?.name}"?</AlertDialogTitle>
-            <AlertDialogDescription>This will permanently delete the program. This cannot be undone.</AlertDialogDescription>
+            <AlertDialogDescription>
+              This will permanently remove the program from the system. This cannot be undone.
+            </AlertDialogDescription>
           </AlertDialogHeader>
+          {deleteTarget?.blockReason && (
+            <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
+              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-red-500" />
+              <p>{deleteTarget.blockReason}</p>
+            </div>
+          )}
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={handleDelete} disabled={deleting}>
-              {deleting ? "Deleting…" : "Delete Program"}
-            </AlertDialogAction>
+            <AlertDialogCancel onClick={() => setDeleteTarget(null)}>Cancel</AlertDialogCancel>
+            {!deleteTarget?.blockReason && (
+              <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={handleDelete} disabled={deleting}>
+                {deleting ? "Deleting…" : "Delete Program"}
+              </AlertDialogAction>
+            )}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
