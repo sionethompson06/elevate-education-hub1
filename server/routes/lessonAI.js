@@ -121,9 +121,10 @@ router.post('/enhance-supports', requireAuth, async (req, res) => {
 
   // ── API key guard ────────────────────────────────────────────────────────────
   if (!process.env.OPENAI_API_KEY) {
+    console.error('[lesson-ai] OPENAI_API_KEY is not set. NODE_ENV=%s VERCEL=%s', process.env.NODE_ENV, process.env.VERCEL ?? 'unset');
     return res.status(500).json({
       success: false,
-      error: 'OPENAI_API_KEY is not set. Add it to your environment variables and restart the server.',
+      error: 'OPENAI_API_KEY is not configured on the server. In Vercel: Settings → Environment Variables → ensure OPENAI_API_KEY is set for the Production environment, then redeploy.',
     });
   }
 
