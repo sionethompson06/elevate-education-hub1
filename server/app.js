@@ -1,4 +1,5 @@
 import 'dotenv/config';
+console.log('[startup] ENV CHECK — OPENAI_API_KEY:', !!process.env.OPENAI_API_KEY, '| DATABASE_URL:', !!process.env.DATABASE_URL, '| VERCEL:', process.env.VERCEL ?? 'unset', '| NODE_ENV:', process.env.NODE_ENV);
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
