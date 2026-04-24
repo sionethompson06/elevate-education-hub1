@@ -56,6 +56,14 @@ export interface LessonQuestion {
   type: QuestionType;
   choices?: string[];
   answer: string;
+  teacherNotes?: string;
+}
+
+export interface ResourceSuggestion {
+  type: "video_search" | "article_search" | "practice_resource";
+  provider: string;
+  searchQuery: string;
+  purpose: string;
 }
 
 export interface LessonPlan {
@@ -82,4 +90,5 @@ export interface LessonPlan {
   exitTicketQuestions: LessonQuestion[];
   teacherNotes: string;
   studentSupports?: StudentSupports;
+  resourceSuggestions?: ResourceSuggestion[];
 }
