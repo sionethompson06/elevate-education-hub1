@@ -1,10 +1,17 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { apiPatch } from "@/api/apiClient";
 import { Button } from "@/components/ui/button";
-import { X, CheckCircle, Circle, Loader2 } from "lucide-react";
+import { X, CheckCircle, Circle, Loader2, BookMarked } from "lucide-react";
 import LessonStatusBadge from "./LessonStatusBadge";
 import { format } from "date-fns";
 import { useAuth } from "@/lib/AuthContext";
+import { getAllStandards } from "@/lib/standards";
+
+function shortCode(code) {
+  return code
+    .replace(/^CCSS\.(Math\.Content|Math\.Practice|ELA-Literacy)\./, "")
+    .replace(/^CCSS\./, "");
+}
 
 export default function LessonDetailPanel({ lesson, onClose, onUpdated, readOnly = false }) {
   const { user } = useAuth();
@@ -33,6 +40,23 @@ export default function LessonDetailPanel({ lesson, onClose, onUpdated, readOnly
   const isAdmin = user?.role === 'admin';
   const isStudent = user?.role === 'student';
   const isCoach = ['academic_coach'].includes(user?.role);
+
+  // Load standards text for any linked codes
+  const [standardsMap, setStandardsMap] = useState({});
+  useEffect(() => {
+    const codes = lesson.standards_codes ?? [];
+    if (!codes.length) return;
+    getAllStandards().then(all => {
+      const map = {};
+      for (const s of all) map[s.code] = s;
+      setStandardsMap(map);
+    }).catch(() => {});
+  }, [lesson.standards_codes]);
+
+  const linkedStandards = useMemo(
+    () => (lesson.standards_codes ?? []).map(code => ({ code, ...(standardsMap[code] ?? {}) })),
+    [lesson.standards_codes, standardsMap],
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -80,6 +104,26 @@ export default function LessonDetailPanel({ lesson, onClose, onUpdated, readOnly
               </div>
             )}
           </div>
+
+          {linkedStandards.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                <BookMarked className="w-3.5 h-3.5" /> Standards
+              </p>
+              <div className="space-y-1.5">
+                {linkedStandards.map(s => (
+                  <div key={s.code} className="flex items-start gap-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+                    <span className="text-[10px] font-mono font-bold text-[#1a3c5e] shrink-0 mt-0.5">
+                      {shortCode(s.code)}
+                    </span>
+                    <span className="text-xs text-slate-700 leading-snug">
+                      {s.text || s.code}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {!readOnly && (
             <div className="space-y-3">

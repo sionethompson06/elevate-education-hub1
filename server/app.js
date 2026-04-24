@@ -473,6 +473,15 @@ async function seedProgramTuitions() {
   }
 }
 
+async function ensureLessonStandardsColumn() {
+  try {
+    await rawSql`ALTER TABLE lesson_assignments ADD COLUMN IF NOT EXISTS standards_codes TEXT`;
+    console.log('[migration] lesson_assignments.standards_codes column ready');
+  } catch (err) {
+    console.error('[migration] ensureLessonStandardsColumn error:', err.message);
+  }
+}
+
 async function syncPendingInvoicesToProgramTuitions() {
   try {
     // Fetch all pending invoices joined to their enrollment + program
@@ -530,6 +539,7 @@ ensureInvoiceDiscountColumn();
 ensureFamilyInvoicesTable();
 ensureInvoiceManualOverrideColumn();
 ensureAccountingTables();
+ensureLessonStandardsColumn();
 seedProgramTuitions().then(() => syncPendingInvoicesToProgramTuitions());
 seedChartOfAccounts();
 backfillHistoricalLedger();

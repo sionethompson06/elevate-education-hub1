@@ -446,6 +446,7 @@ export const lessonAssignments = pgTable('lesson_assignments', {
   subject: varchar('subject', { length: 100 }).notNull().default('General'),
   title: varchar('title', { length: 255 }).notNull(),
   instructions: text('instructions'),
+  standardsCodes: text('standards_codes'),
   assignedAt: timestamp('assigned_at').defaultNow().notNull(),
   dueAt: timestamp('due_at'),
   status: varchar('status', { length: 30 }).notNull().default('incomplete'),

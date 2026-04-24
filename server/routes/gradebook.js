@@ -10,6 +10,8 @@ const router = Router();
 
 // ── Normalize lesson to snake_case for frontend ────────────────────────────────
 function formatLesson(l) {
+  let standards_codes = [];
+  try { standards_codes = l.standardsCodes ? JSON.parse(l.standardsCodes) : []; } catch {}
   return {
     id: l.id,
     student_id: l.studentId,
@@ -17,6 +19,7 @@ function formatLesson(l) {
     title: l.title,
     subject: l.subject,
     instructions: l.instructions,
+    standards_codes,
     due_at: l.dueAt ? new Date(l.dueAt).toISOString() : null,
     points_possible: l.pointsPossible,
     status: l.status,
@@ -165,7 +168,7 @@ router.get('/queue', requireAuth, requireRole('admin', 'academic_coach'), async 
 // POST /api/gradebook/lessons — create lesson(s)
 router.post('/lessons', requireAuth, requireRole('admin', 'academic_coach'), async (req, res) => {
   try {
-    const { student_id, student_ids, title, subject, instructions, due_at, points_possible } = req.body;
+    const { student_id, student_ids, title, subject, instructions, due_at, points_possible, standards_codes } = req.body;
     if (!title) return res.status(400).json({ error: 'title required' });
 
     const targets = student_ids?.length ? student_ids.map(Number) : [Number(student_id)];
@@ -181,6 +184,10 @@ router.post('/lessons', requireAuth, requireRole('admin', 'academic_coach'), asy
       if (forbidden.length) return res.status(403).json({ error: 'One or more students are not assigned to you' });
     }
 
+    const codesJson = Array.isArray(standards_codes) && standards_codes.length
+      ? JSON.stringify(standards_codes)
+      : null;
+
     const created = [];
     for (const sid of targets) {
       const [lesson] = await db.insert(lessonAssignments).values({
@@ -189,6 +196,7 @@ router.post('/lessons', requireAuth, requireRole('admin', 'academic_coach'), asy
         subject: subject || 'General',
         title,
         instructions: instructions || '',
+        standardsCodes: codesJson,
         dueAt: due_at ? new Date(due_at) : null,
         status: 'incomplete',
         pointsPossible: points_possible || 10,
@@ -214,7 +222,7 @@ router.patch('/lessons/:id', requireAuth, requireRole('admin', 'academic_coach')
       return res.status(403).json({ error: 'Not authorized to update this lesson' });
     }
 
-    const { new_status, points_earned } = req.body;
+    const { new_status, points_earned, standards_codes } = req.body;
     const updates = {};
 
     if (new_status) {
@@ -223,6 +231,11 @@ router.patch('/lessons/:id', requireAuth, requireRole('admin', 'academic_coach')
       else updates.completedAt = null;
     }
     if (points_earned != null) updates.pointsEarned = points_earned;
+    if (standards_codes !== undefined) {
+      updates.standardsCodes = Array.isArray(standards_codes) && standards_codes.length
+        ? JSON.stringify(standards_codes)
+        : null;
+    }
 
     const [updated] = await db.update(lessonAssignments).set(updates)
       .where(eq(lessonAssignments.id, id)).returning();
