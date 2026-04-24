@@ -1,11 +1,12 @@
 import { Router } from 'express';
-import { eq, desc, inArray, and } from 'drizzle-orm';
+import { eq, desc, inArray, and, sql } from 'drizzle-orm';
 import db from '../db-postgres.js';
-import { billingAccounts, invoices, familyInvoices, payments, enrollments, students, programs, guardianStudents, users } from '../schema.js';
+import { billingAccounts, invoices, familyInvoices, payments, enrollments, students, programs, guardianStudents, users, paymentAllocations } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { logAudit } from '../services/audit.service.js';
 import { createNotification } from '../services/notification.service.js';
 import { broadcastEvent } from '../services/sse.service.js';
+import { recordPaymentReceived, recordWaiver, allocatePayment } from '../services/accounting.service.js';
 
 const router = Router();
 
@@ -182,6 +183,10 @@ router.post('/pay', requireAuth, async (req, res) => {
           .where(eq(students.id, enrollment.studentId));
       }
     }
+
+    // Non-blocking accounting
+    recordPaymentReceived(payment).catch(err => console.error('[accounting] recordPaymentReceived error:', err.message));
+    allocatePayment(payment.id).catch(err => console.error('[accounting] allocatePayment error:', err.message));
 
     await logAudit({
       userId: req.user.id,
@@ -453,14 +458,14 @@ router.post('/invoices/:invoiceId/admin-action', requireAuth, requireRole('admin
         return res.status(400).json({ success: false, error: 'Invoice is already closed' });
       }
       await db.update(invoices).set({ status: 'paid', paidDate: today }).where(eq(invoices.id, invoiceId));
-      await db.insert(payments).values({
+      const [adminPayment] = await db.insert(payments).values({
         billingAccountId: inv.billingAccountId,
         invoiceId: inv.id,
         amount: String(inv.amount),
         method: 'manual',
         status: 'paid',
         processedAt: new Date(),
-      });
+      }).returning();
       if (inv.enrollmentId) {
         const [enr] = await db.select().from(enrollments).where(eq(enrollments.id, inv.enrollmentId));
         if (enr) {
@@ -468,12 +473,23 @@ router.post('/invoices/:invoiceId/admin-action', requireAuth, requireRole('admin
           if (enr.studentId) await db.update(students).set({ status: 'active' }).where(eq(students.id, enr.studentId));
         }
       }
+      // Non-blocking accounting
+      if (adminPayment) {
+        recordPaymentReceived(adminPayment).catch(err => console.error('[accounting] recordPaymentReceived error:', err.message));
+        allocatePayment(adminPayment.id).catch(err => console.error('[accounting] allocatePayment error:', err.message));
+      }
     }
 
     if (action === 'waive') {
       if (['paid', 'waived'].includes(inv.status)) {
         return res.status(400).json({ success: false, error: 'Invoice is already closed' });
       }
+      // Capture remaining AR balance before zeroing invoice (partial payment may have reduced it)
+      const [allocRow] = await db.select({ total: sql`COALESCE(SUM(${paymentAllocations.amount}::numeric), 0)` })
+        .from(paymentAllocations)
+        .where(eq(paymentAllocations.invoiceId, invoiceId));
+      const remainingAR = Math.max(0, parseFloat(inv.amount) - parseFloat(allocRow?.total || 0));
+
       await db.update(invoices).set({ status: 'waived', paidDate: today }).where(eq(invoices.id, invoiceId));
       if (inv.enrollmentId) {
         const [enr] = await db.select().from(enrollments).where(eq(enrollments.id, inv.enrollmentId));
@@ -481,6 +497,10 @@ router.post('/invoices/:invoiceId/admin-action', requireAuth, requireRole('admin
           await db.update(enrollments).set({ status: 'active_override' }).where(eq(enrollments.id, enr.id));
           if (enr.studentId) await db.update(students).set({ status: 'active' }).where(eq(students.id, enr.studentId));
         }
+      }
+      // Non-blocking accounting — DR Scholarship Allowance / CR AR for remaining balance
+      if (remainingAR > 0) {
+        recordWaiver(inv, remainingAR).catch(err => console.error('[accounting] recordWaiver error:', err.message));
       }
     }
 

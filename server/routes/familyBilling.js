@@ -7,6 +7,7 @@ import {
 } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { logAudit } from '../services/audit.service.js';
+import { recordPaymentReceived, allocatePayment } from '../services/accounting.service.js';
 
 const router = Router();
 
@@ -358,14 +359,20 @@ router.post('/family-invoice/manual-pay', requireAuth, requireRole('admin'), asy
     }
 
     // Create one payment record for the total
-    await db.insert(payments).values({
+    const [familyPayment] = await db.insert(payments).values({
       billingAccountId: fi.billingAccountId,
       invoiceId: childInvs[0]?.id || null,
       amount: String(fi.totalAmount),
       method: 'manual',
       status: 'paid',
       processedAt: new Date(),
-    });
+    }).returning();
+
+    // Non-blocking accounting
+    if (familyPayment) {
+      recordPaymentReceived(familyPayment).catch(err => console.error('[accounting] recordPaymentReceived error:', err.message));
+      allocatePayment(familyPayment.id).catch(err => console.error('[accounting] allocatePayment error:', err.message));
+    }
 
     await logAudit({
       userId: req.user.id,

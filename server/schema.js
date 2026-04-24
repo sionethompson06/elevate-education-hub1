@@ -1,4 +1,4 @@
-import { pgTable, serial, varchar, text, integer, timestamp, boolean, jsonb, date, numeric } from 'drizzle-orm/pg-core';
+import { pgTable, serial, varchar, text, integer, timestamp, boolean, jsonb, date, numeric, unique } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
   id: serial('id').primaryKey(),
@@ -202,6 +202,52 @@ export const payments = pgTable('payments', {
   stripePaymentIntentId: varchar('stripe_payment_intent_id', { length: 255 }),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
+
+// ── Accounting / Ledger ───────────────────────────────────────────────────────
+
+export const chartOfAccounts = pgTable('chart_of_accounts', {
+  id: serial('id').primaryKey(),
+  code: varchar('code', { length: 20 }).notNull().unique(),
+  name: varchar('name', { length: 200 }).notNull(),
+  type: varchar('type', { length: 20 }).notNull(), // 'asset' | 'liability' | 'equity' | 'revenue' | 'expense'
+  normalBalance: varchar('normal_balance', { length: 10 }).notNull(), // 'debit' | 'credit'
+  isSystem: boolean('is_system').notNull().default(true),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const journalEntries = pgTable('journal_entries', {
+  id: serial('id').primaryKey(),
+  date: date('date').notNull(),
+  description: varchar('description', { length: 500 }).notNull(),
+  referenceType: varchar('reference_type', { length: 30 }), // 'invoice'|'payment'|'waiver'|'recognition'|'adjustment'
+  referenceId: integer('reference_id'),
+  idempotencyKey: varchar('idempotency_key', { length: 100 }).unique(),
+  billingAccountId: integer('billing_account_id').references(() => billingAccounts.id),
+  enrollmentId: integer('enrollment_id').references(() => enrollments.id),
+  status: varchar('status', { length: 20 }).notNull().default('posted'),
+  createdBy: integer('created_by').references(() => users.id),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const journalEntryLines = pgTable('journal_entry_lines', {
+  id: serial('id').primaryKey(),
+  journalEntryId: integer('journal_entry_id').notNull().references(() => journalEntries.id, { onDelete: 'cascade' }),
+  accountId: integer('account_id').notNull().references(() => chartOfAccounts.id),
+  debit: numeric('debit', { precision: 10, scale: 2 }).notNull().default('0'),
+  credit: numeric('credit', { precision: 10, scale: 2 }).notNull().default('0'),
+  description: varchar('description', { length: 300 }),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+export const paymentAllocations = pgTable('payment_allocations', {
+  id: serial('id').primaryKey(),
+  paymentId: integer('payment_id').notNull().references(() => payments.id),
+  invoiceId: integer('invoice_id').notNull().references(() => invoices.id),
+  amount: numeric('amount', { precision: 10, scale: 2 }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (t) => ({
+  uniqPaymentInvoice: unique().on(t.paymentId, t.invoiceId),
+}));
 
 export const sectionStudents = pgTable('section_students', {
   id: serial('id').primaryKey(),
