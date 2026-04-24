@@ -457,6 +457,19 @@ export const lessonAssignments = pgTable('lesson_assignments', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+export const savedLessonPlans = pgTable('saved_lesson_plans', {
+  id: serial('id').primaryKey(),
+  coachUserId: integer('coach_user_id').notNull().references(() => users.id),
+  title: varchar('title', { length: 255 }).notNull(),
+  subject: varchar('subject', { length: 100 }).notNull().default('General'),
+  grade: varchar('grade', { length: 20 }).notNull().default(''),
+  standardCode: varchar('standard_code', { length: 100 }),
+  standardText: text('standard_text'),
+  planData: text('plan_data').notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
 export const coachAssignments = pgTable('coach_assignments', {
   id: serial('id').primaryKey(),
   coachUserId: integer('coach_user_id').notNull().references(() => users.id),

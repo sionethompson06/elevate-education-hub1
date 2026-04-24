@@ -1056,7 +1056,7 @@ export function parseLessonPlanInstructions(
   const asStudentSupports = (v: unknown): StudentSupports | undefined => {
     if (!v || typeof v !== "object") return undefined;
     const raw = v as Record<string, unknown>;
-    if (!raw.el && !raw.sped && !raw.intervention && !raw.advanced) return undefined;
+    if (!raw.el && !raw.sped && !raw.idea && !raw.intervention && !raw.advanced) return undefined;
     const asObj = (x: unknown): Record<string, unknown> =>
       x && typeof x === "object" ? (x as Record<string, unknown>) : {};
     const el = asObj(raw.el);

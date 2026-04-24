@@ -127,7 +127,11 @@ function buildLessonEnhancementPrompt(lessonPlan, selectedStandard) {
   return lines.join('\n');
 }
 
-// ── Prompt builder (mirrors buildSupportEnhancementPrompt from lesson-ai-ready.ts) ──
+// ── Prompt builder ────────────────────────────────────────────────────────────
+// Mirrors buildSupportEnhancementPrompt() in src/lib/lesson-ai-ready.ts.
+// Kept separate here because the backend is CommonJS-compatible JS and cannot
+// import TypeScript source directly. If the build pipeline is ever unified,
+// these two can be consolidated into a shared utility.
 
 function buildPrompt(lessonPlan, selectedStandard, supportType) {
   const label           = SUPPORT_LABELS[supportType];
@@ -274,7 +278,7 @@ router.post('/enhance-supports', requireAuth, async (req, res) => {
       success: true,
       supportType,
       enhancedSupports,
-      source: 'ai',
+      source: 'ai', // reserved: distinguishes AI-generated from manually-authored in future analytics
     });
 
   } catch (err) {
@@ -381,7 +385,7 @@ router.post('/enhance-lesson', requireAuth, async (req, res) => {
       console.warn(`[lesson-ai] enhance-lesson response missing keys: ${missing.join(', ')}`);
     }
 
-    return res.json({ success: true, enhancedLesson: enhanced, source: 'ai' });
+    return res.json({ success: true, enhancedLesson: enhanced, source: 'ai' }); // see above
 
   } catch (err) {
     console.error('[lesson-ai] enhance-lesson error:', err.message);

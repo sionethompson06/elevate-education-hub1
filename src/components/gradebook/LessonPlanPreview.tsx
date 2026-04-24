@@ -24,6 +24,7 @@ interface Props {
   onReset?: () => void;
 }
 
+// Local variant — lesson-builder.ts has a similar gradeLabel for markdown export.
 function gradeLabel(g: string): string {
   if (!g) return "";
   if (g === "K") return "Kindergarten";
