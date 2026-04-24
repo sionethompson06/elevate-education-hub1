@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost, apiPatch, apiDelete } from "@/api/apiClient";
-import { BookOpen, Plus, X, Pencil, Loader2, ToggleLeft, ToggleRight, Trash2, AlertTriangle, ShieldAlert, Users, Clock, AlertCircle, Archive } from "lucide-react";
+import { BookOpen, Plus, X, Pencil, Loader2, ToggleLeft, ToggleRight, Trash2, AlertTriangle, ShieldAlert, Users, Clock, AlertCircle } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
@@ -191,9 +191,10 @@ export default function AdminPrograms() {
                 const activeCount  = progEnrollments.filter(e => ["active", "active_override"].includes(e.status)).length;
                 const pendingCount = progEnrollments.filter(e => ["pending_payment", "pending"].includes(e.status)).length;
                 const pastDueCount = progEnrollments.filter(e => ["past_due", "payment_failed"].includes(e.status)).length;
-                const otherCount   = progEnrollments.filter(e => ["cancelled", "paused"].includes(e.status)).length;
                 const totalCount   = progEnrollments.length;
-                const canDelete    = totalCount === 0;
+                // Cancelled/paused are historical records only — not a deletion blocker
+                const blockingCount = activeCount + pendingCount + pastDueCount;
+                const canDelete    = blockingCount === 0;
 
                 return (
                   <div key={p.id} className="flex items-center justify-between px-5 py-4 hover:bg-slate-50 gap-4">
@@ -229,7 +230,7 @@ export default function AdminPrograms() {
                         <Pencil className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => setDeleteTarget({ ...p, canDelete, activeCount, pendingCount, pastDueCount, otherCount, totalCount })}
+                        onClick={() => setDeleteTarget({ ...p, canDelete, activeCount, pendingCount, pastDueCount, blockingCount, totalCount })}
                         title={canDelete ? "Delete program" : "Cannot delete — click for details"}
                         className={`p-1.5 rounded transition-colors ${canDelete ? "hover:bg-red-50 text-slate-400 hover:text-red-600" : "text-amber-400 hover:text-amber-600 hover:bg-amber-50"}`}
                       >
@@ -319,26 +320,12 @@ export default function AdminPrograms() {
                 </div>
               )}
 
-              {deleteTarget.otherCount > 0 && (
-                <div className="flex items-start gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
-                  <Archive className="w-4 h-4 text-slate-500 mt-0.5 shrink-0" />
-                  <div>
-                    <p className="text-sm font-semibold text-slate-700">
-                      {deleteTarget.otherCount} Historical Record{deleteTarget.otherCount > 1 ? "s" : ""}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Cancelled or paused enrollments reference this program and are retained for audit history.
-                      These records cannot be automatically removed — contact system support if archival is needed.
-                    </p>
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Footer */}
             <div className="flex items-center justify-between px-6 py-4 border-t border-slate-100">
               <p className="text-xs text-slate-400">
-                {deleteTarget.totalCount} enrollment record{deleteTarget.totalCount > 1 ? "s" : ""} must be resolved
+                {deleteTarget.blockingCount} enrollment{deleteTarget.blockingCount > 1 ? "s" : ""} must be resolved
               </p>
               <button
                 onClick={() => setDeleteTarget(null)}
