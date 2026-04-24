@@ -834,8 +834,8 @@ if (!process.env.VERCEL) cron.schedule('0 2 1 * *', async () => {
   }
 });
 
-// Temporary env diagnostics — admin only, shows presence not values
-app.get('/api/debug-env', requireAdmin, (req, res) => {
+// Temporary env diagnostics — no auth, shows presence (true/false) not values
+app.get('/api/debug-env', (req, res) => {
   const vars = [
     'DATABASE_URL', 'ADMIN_TOKEN', 'ADMIN_PASSWORD',
     'JWT_SECRET', 'SESSION_SECRET', 'OPENAI_API_KEY',
