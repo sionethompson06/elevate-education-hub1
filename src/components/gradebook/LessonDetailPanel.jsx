@@ -1,16 +1,44 @@
 import { useState, useEffect, useMemo } from "react";
 import { apiPatch } from "@/api/apiClient";
 import { Button } from "@/components/ui/button";
-import { X, CheckCircle, Circle, Loader2, BookMarked } from "lucide-react";
+import { X, CheckCircle, Circle, Loader2, BookMarked, Sparkles } from "lucide-react";
 import LessonStatusBadge from "./LessonStatusBadge";
 import { format } from "date-fns";
 import { useAuth } from "@/lib/AuthContext";
 import { getAllStandards } from "@/lib/standards";
+import { parseLessonPlanInstructions } from "@/lib/lesson-builder";
 
 function shortCode(code) {
   return code
     .replace(/^CCSS\.(Math\.Content|Math\.Practice|ELA-Literacy)\./, "")
     .replace(/^CCSS\./, "");
+}
+
+function PlanSection({ title, children }) {
+  return (
+    <div>
+      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">
+        {title}
+      </p>
+      <div className="text-sm text-slate-700 leading-relaxed">{children}</div>
+    </div>
+  );
+}
+
+function PlanList({ items }) {
+  if (!items?.length) return <p className="text-sm text-slate-400 italic">—</p>;
+  return (
+    <ul className="list-disc list-inside space-y-0.5 text-sm text-slate-700 marker:text-slate-400">
+      {items.map((it, i) => (
+        <li key={i}>{it}</li>
+      ))}
+    </ul>
+  );
+}
+
+function PlanBody({ text }) {
+  if (!text?.trim()) return <p className="text-sm text-slate-400 italic">—</p>;
+  return <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{text}</p>;
 }
 
 export default function LessonDetailPanel({ lesson, onClose, onUpdated, readOnly = false }) {
@@ -40,6 +68,12 @@ export default function LessonDetailPanel({ lesson, onClose, onUpdated, readOnly
   const isAdmin = user?.role === 'admin';
   const isStudent = user?.role === 'student';
   const isCoach = ['academic_coach'].includes(user?.role);
+
+  // Detect structured LessonPlan JSON stored by the lesson builder
+  const lessonPlan = useMemo(
+    () => parseLessonPlanInstructions(lesson.instructions),
+    [lesson.instructions],
+  );
 
   // Load standards text for any linked codes
   const [standardsMap, setStandardsMap] = useState({});
@@ -83,11 +117,74 @@ export default function LessonDetailPanel({ lesson, onClose, onUpdated, readOnly
         </div>
 
         <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
-          {lesson.instructions && (
-            <div className="bg-blue-50 rounded-xl p-4">
-              <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1">Instructions</p>
-              <p className="text-sm text-slate-700 whitespace-pre-wrap">{lesson.instructions}</p>
+          {lessonPlan ? (
+            <div className="bg-blue-50/60 border border-blue-100 rounded-xl p-4 space-y-4">
+              <div className="flex items-center gap-1.5 text-[#1a3c5e]">
+                <Sparkles className="w-4 h-4" />
+                <p className="text-xs font-semibold uppercase tracking-wide">Lesson Plan</p>
+              </div>
+
+              <PlanSection title="Learning Objective">
+                <PlanBody text={lessonPlan.objective} />
+              </PlanSection>
+
+              <PlanSection title="Success Criteria">
+                <PlanList items={lessonPlan.successCriteria} />
+              </PlanSection>
+
+              <PlanSection title="Academic Vocabulary">
+                <PlanList items={lessonPlan.vocabulary} />
+              </PlanSection>
+
+              <PlanSection title="Materials">
+                <PlanList items={lessonPlan.materials} />
+              </PlanSection>
+
+              <PlanSection title="Warm-Up / Hook">
+                <PlanBody text={lessonPlan.warmUp} />
+              </PlanSection>
+
+              <PlanSection title="Direct Instruction">
+                <PlanBody text={lessonPlan.directInstruction} />
+              </PlanSection>
+
+              <PlanSection title="Guided Practice">
+                <PlanBody text={lessonPlan.guidedPractice} />
+              </PlanSection>
+
+              <PlanSection title="Independent Practice">
+                <PlanBody text={lessonPlan.independentPractice} />
+              </PlanSection>
+
+              <PlanSection title="Differentiation">
+                <PlanBody text={lessonPlan.differentiation} />
+              </PlanSection>
+
+              <PlanSection title="Checks for Understanding">
+                <PlanList items={lessonPlan.checksForUnderstanding} />
+              </PlanSection>
+
+              <PlanSection title="Assessment">
+                <PlanBody text={lessonPlan.assessment} />
+              </PlanSection>
+
+              <PlanSection title="Exit Ticket">
+                <PlanBody text={lessonPlan.exitTicket} />
+              </PlanSection>
+
+              {lessonPlan.teacherNotes?.trim() && (user?.role === 'admin' || user?.role === 'academic_coach') && (
+                <PlanSection title="Teacher Notes">
+                  <PlanBody text={lessonPlan.teacherNotes} />
+                </PlanSection>
+              )}
             </div>
+          ) : (
+            lesson.instructions && (
+              <div className="bg-blue-50 rounded-xl p-4">
+                <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1">Instructions</p>
+                <p className="text-sm text-slate-700 whitespace-pre-wrap">{lesson.instructions}</p>
+              </div>
+            )
           )}
 
           <div className="grid grid-cols-2 gap-3 text-sm">
