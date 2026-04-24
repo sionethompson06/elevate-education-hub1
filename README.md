@@ -70,14 +70,21 @@ In Vercel dashboard → **Settings → Environment Variables**:
 
 ### 4. Add optional environment variables
 
-| Variable | Description |
-|---|---|
-| `STRIPE_SECRET_KEY` | Stripe secret key (billing features) |
-| `STRIPE_WEBHOOK_SECRET` | From Stripe webhook dashboard |
-| `STRIPE_PUBLISHABLE_KEY` | Stripe publishable key |
-| `SENDGRID_API_KEY` | SendGrid API key (email features) |
-| `FROM_EMAIL` | Sender address for system emails |
-| `APP_URL` | Your deployment URL, e.g. `https://your-app.vercel.app` |
+| Variable | Default | Description |
+|---|---|---|
+| `OPENAI_MODEL_FAST` | `gpt-4o-mini` | Model for fast tasks (support enhancement, assessments, exit tickets) |
+| `OPENAI_MODEL_QUALITY` | `gpt-4o` | Model for full lesson enhancement |
+| `STRIPE_SECRET_KEY` | — | Stripe secret key (billing features) |
+| `STRIPE_WEBHOOK_SECRET` | — | From Stripe webhook dashboard |
+| `STRIPE_PUBLISHABLE_KEY` | — | Stripe publishable key |
+| `SENDGRID_API_KEY` | — | SendGrid API key (email features) |
+| `FROM_EMAIL` | — | Sender address for system emails |
+| `APP_URL` | — | Your deployment URL, e.g. `https://your-app.vercel.app` |
+
+**AI model notes:**
+- `OPENAI_MODEL_FAST` is used for smaller tasks: EL/SPED/IDEA support improvements, assessment generation, exit tickets. Defaults to `gpt-4o-mini` — fast and cost-effective (~$0.001/call).
+- `OPENAI_MODEL_QUALITY` is used for full lesson enhancement only. Defaults to `gpt-4o` — higher quality output for the most demanding curriculum task (~$0.05/call).
+- To change models without a code deploy, update these vars in Vercel and redeploy.
 
 ### 5. Deploy
 
@@ -87,8 +94,9 @@ Click **Deploy**. The first deploy takes ~2 minutes. Database tables are created
 
 ## Security notes
 
-- `OPENAI_API_KEY` is read only in `server/routes/lessonAI.js`. It is never sent to the browser and has no `VITE_` prefix.
-- The frontend calls `/api/lesson-ai/enhance-supports` — the server makes the OpenAI request and returns only the result.
+- `OPENAI_API_KEY` is read only in `server/routes/lessonAI.js` via `server/lib/openai-config.js`. It is never sent to the browser and has no `VITE_` prefix.
+- The frontend calls `/api/lesson-ai/enhance-supports` or `/api/lesson-ai/enhance-lesson` — the server makes the OpenAI request and returns only the result.
+- Model selection is centralised in `server/lib/openai-config.js`. No model names appear in route files.
 - No Supabase dependency. The only database connection is `DATABASE_URL` (Neon PostgreSQL via Drizzle ORM).
 
 ---

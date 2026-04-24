@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import OpenAI from 'openai';
 import { requireAuth } from '../middleware/auth.js';
+import { getOpenAIModelForTask, getOpenAITemperatureForTask } from '../lib/openai-config.js';
 
 const router = Router();
 
@@ -192,7 +193,7 @@ const SYSTEM_MESSAGE = [
  * POST /api/lesson-ai/enhance-supports
  *
  * Accepts lessonPlan, selectedStandard, and supportType.
- * Calls OpenAI gpt-4o-mini to generate enhanced support content.
+ * Calls OpenAI (model from OPENAI_MODEL_FAST env var) to generate enhanced support content.
  * Returns { success, supportType, enhancedSupports, source: 'ai' }.
  *
  * Requires OPENAI_API_KEY environment variable.
@@ -238,13 +239,13 @@ router.post('/enhance-supports', requireAuth, async (req, res) => {
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: getOpenAIModelForTask('support_enhancement'),
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: SYSTEM_MESSAGE },
         { role: 'user',   content: buildPrompt(lessonPlan, selectedStandard, supportType) },
       ],
-      temperature: 0.7,
+      temperature: getOpenAITemperatureForTask('support_enhancement'),
       max_tokens: 1200,
     });
 
@@ -326,13 +327,13 @@ router.post('/enhance-lesson', requireAuth, async (req, res) => {
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: getOpenAIModelForTask('full_lesson_enhancement'),
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: LESSON_SYSTEM_MESSAGE },
         { role: 'user',   content: buildLessonEnhancementPrompt(lessonPlan, selectedStandard) },
       ],
-      temperature: 0.7,
+      temperature: getOpenAITemperatureForTask('full_lesson_enhancement'),
       max_tokens: 4000,
     });
 
