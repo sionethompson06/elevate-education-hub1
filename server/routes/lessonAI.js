@@ -1,130 +1,100 @@
 import { Router } from 'express';
+import OpenAI from 'openai';
 import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
 
-// ── Valid support types and their field shapes ─────────────────────────────────
+// ── Constants ──────────────────────────────────────────────────────────────────
 
 const VALID_SUPPORT_TYPES = ['el', 'sped', 'idea', 'intervention', 'advanced'];
 
-/**
- * Returns a mock-enhanced support section keyed by supportType.
- *
- * TO WIRE IN A REAL AI CALL:
- *   1. Import buildSupportEnhancementPrompt from the compiled frontend helpers,
- *      or duplicate its logic here.
- *   2. Call the AI SDK with the prompt string.
- *   3. Parse the JSON response and return it in place of this mock.
- *   4. Change source: 'mock' → source: 'ai' in the response.
- */
-function buildMockEnhancedSupport(supportType, lessonPlan, selectedStandard) {
-  const topic   = selectedStandard?.cluster  || lessonPlan?.cluster  || 'the topic';
-  const code    = selectedStandard?.standard_code || lessonPlan?.standardCode || 'standard';
-  const subject = selectedStandard?.subject  || lessonPlan?.subject  || 'the subject';
+const SUPPORT_LABELS = {
+  el:           'English Language Learners (EL / ELL)',
+  sped:         'Special Education (SPED / 504)',
+  idea:         'IDEA / Universal Design for Learning',
+  intervention: 'Intervention / Tier 2–3 Students',
+  advanced:     'Advanced Learners / Extensions',
+};
 
-  const mocks = {
-    el: {
-      languageObjective: `[AI-enhanced] Students will use precise academic vocabulary to explain and apply ${topic} in ${subject} using structured sentence frames and peer discussion.`,
-      vocabularySupports: [
-        `Pre-teach the top 5 vocabulary terms from ${code} with visual diagrams and student-friendly definitions.`,
-        `Pair each term with a visual anchor and a native-language cognate where available.`,
-        `Create a student-facing word wall sorted by concept category, not alphabetically.`,
-      ],
-      sentenceFrames: [
-        `"I know the answer is ___ because ___.`,
-        `"This connects to ___ which relates to ___ because ___.`,
-        `"I agree / disagree with ___ because the evidence shows ___.`,
-      ],
-      oralLanguageSupports: [
-        `Structured think-pair-share before every written response — minimum 60 seconds.`,
-        `Assign a language buddy who can bridge home language and academic English.`,
-      ],
-      accessStrategies: [
-        `Provide a bilingual glossary specific to ${code} before the lesson.`,
-        `Use color-coded sentence strips to model the target language structure.`,
-      ],
-    },
+// Keys the AI must return for each support type (mirrors StudentSupports interface)
+const SUPPORT_SHAPE_KEYS = {
+  el:           ['languageObjective', 'vocabularySupports', 'sentenceFrames', 'oralLanguageSupports', 'accessStrategies'],
+  sped:         ['accommodations', 'modifications', 'scaffolds', 'processingSupports'],
+  idea:         ['accessConsiderations', 'universalDesignSupports', 'progressMonitoringIdeas'],
+  intervention: ['reteachStrategies', 'simplifiedTasks', 'guidedPracticeSupports'],
+  advanced:     ['extensions', 'higherOrderQuestions', 'independentChallenges'],
+};
 
-    sped: {
-      accommodations: [
-        `Extended time (1.5×) for all tasks tied to ${code}.`,
-        `Preferential seating near direct instruction area.`,
-        `Access to a graphic organizer aligned to the lesson structure.`,
-      ],
-      modifications: [
-        `Reduce problem count to 2–3 high-priority items that directly address ${topic}.`,
-        `Accept verbal or drawn responses as equivalents to written responses.`,
-      ],
-      scaffolds: [
-        `Provide a worked-example reference card for every step of ${topic}.`,
-        `Keep an anchor chart visible during all practice time showing key steps and vocabulary.`,
-      ],
-      processingSupports: [
-        `Break ${topic} into discrete micro-steps with a teacher check-in at each.`,
-        `Provide written instructions alongside all verbal directions.`,
-      ],
-    },
+// ── Prompt builder (mirrors buildSupportEnhancementPrompt from lesson-ai-ready.ts) ──
 
-    idea: {
-      accessConsiderations: [
-        `Ensure all materials for ${code} are available in digital, print, and audio formats.`,
-        `Accept flexible response modalities per each student's IEP.`,
-      ],
-      universalDesignSupports: [
-        `Offer three engagement options for ${topic}: visual model, hands-on task, or written explanation.`,
-        `Provide digital materials with text-to-speech compatibility.`,
-      ],
-      progressMonitoringIdeas: [
-        `Exit slip after every ${code} lesson — one question at the target level.`,
-        `Skill probe (3 items) at the start of the follow-up lesson.`,
-      ],
-    },
+function buildPrompt(lessonPlan, selectedStandard, supportType) {
+  const label           = SUPPORT_LABELS[supportType];
+  const existingSection = lessonPlan.studentSupports?.[supportType] ?? null;
+  const vocab           = Array.isArray(lessonPlan.vocabulary)
+    ? lessonPlan.vocabulary.join(', ')
+    : '—';
 
-    intervention: {
-      reteachStrategies: [
-        `Use a CRA sequence specific to ${topic}: manipulative → diagram → symbolic.`,
-        `Re-teach in a small group of 3–4 using a pared-down version of the direct instruction.`,
-      ],
-      simplifiedTasks: [
-        `Single-step entry tasks for ${topic} before introducing multi-step complexity.`,
-        `Provide a step-by-step checklist for each task type in ${code}.`,
-      ],
-      guidedPracticeSupports: [
-        `Teacher-beside modeling: teacher solves step 1, student solves step 2 immediately after.`,
-        `Check in every 3–4 minutes during independent practice; note which scaffold is still needed.`,
-      ],
-    },
+  const lines = [
+    `The teacher is working on a lesson plan for the following CCSS standard:`,
+    `  Standard : ${selectedStandard.standard_code || lessonPlan.standardCode}`,
+    `  Text     : ${selectedStandard.standard_text  || lessonPlan.standardText}`,
+    `  Subject  : ${selectedStandard.subject || lessonPlan.subject}  |  Grade: ${selectedStandard.grade || lessonPlan.grade}`,
+    `  Domain   : ${selectedStandard.domain   || lessonPlan.domain}`,
+    `  Cluster  : ${selectedStandard.cluster  || lessonPlan.cluster}`,
+    ``,
+    `Learning objective : ${lessonPlan.objective}`,
+    `Key vocabulary     : ${vocab}`,
+  ];
 
-    advanced: {
-      extensions: [
-        `Design an original problem that extends ${topic} to a real-world context and justify your approach.`,
-        `Compare two solution strategies for efficiency — argue which is superior and why.`,
-      ],
-      higherOrderQuestions: [
-        `"How would this change if we altered one constraint in ${code}? Prove your answer."`,
-        `"Identify the hidden assumption in this approach. What breaks if that assumption is false?"`,
-      ],
-      independentChallenges: [
-        `Open-ended modeling task: apply ${topic} to an unstructured real-world scenario with no single answer.`,
-        `Peer-teach the strategy — explain the why, not just the how.`,
-      ],
-    },
-  };
+  if (lessonPlan.assessmentQuestions?.length) {
+    lines.push(`Assessment         : ${lessonPlan.assessmentQuestions.length} question(s) — ${lessonPlan.assessment || ''}`);
+  }
+  if (lessonPlan.exitTicketQuestions?.length) {
+    lines.push(`Exit ticket        : ${lessonPlan.exitTicketQuestions.length} question(s) — ${lessonPlan.exitTicket || ''}`);
+  }
 
-  return mocks[supportType] ?? {};
+  lines.push(
+    ``,
+    `Enhance the student support plan for: ${label}`,
+    ``,
+    `Current support content:`,
+    JSON.stringify(existingSection, null, 2),
+    ``,
+    `Expected JSON keys for this section: ${SUPPORT_SHAPE_KEYS[supportType].join(', ')}`,
+    ``,
+    `Return ONLY a flat JSON object with exactly those keys.`,
+    `Make every item specific, grade-appropriate, and tied to this standard.`,
+    `Avoid generic advice. Prioritize practical, classroom-ready strategies.`,
+  );
+
+  return lines.join('\n');
 }
+
+const SYSTEM_MESSAGE = [
+  'You are an expert K-12 curriculum designer and instructional coach specialising in differentiated instruction.',
+  '',
+  'TASK: Enhance ONE student support section of a teacher\'s lesson plan.',
+  '',
+  'STRICT RULES:',
+  '• Respond with ONLY a valid JSON object — no explanation, no markdown, no code fences.',
+  '• Use the exact key names listed in the user message. Do NOT add or remove keys.',
+  '• String fields must remain strings. Array fields must remain arrays of strings.',
+  '• Every strategy must be directly tied to the specific standard supplied.',
+  '• Use teacher-friendly, classroom-ready language — no jargon or generic filler.',
+  '• Do NOT alter the lesson objective, lesson title, or any other part of the plan.',
+  '• Do NOT wrap the result in an outer key like "el" or "supports" — return the flat object.',
+].join('\n');
 
 // ── Route ──────────────────────────────────────────────────────────────────────
 
 /**
  * POST /api/lesson-ai/enhance-supports
  *
- * Accepts a lesson plan, a standard, and a support type.
- * Currently returns a mock response — no AI API called.
+ * Accepts lessonPlan, selectedStandard, and supportType.
+ * Calls OpenAI gpt-4o-mini to generate enhanced support content.
+ * Returns { success, supportType, enhancedSupports, source: 'ai' }.
  *
- * To wire in a real AI call, replace the buildMockEnhancedSupport() block
- * with an AI SDK call using the prompt built by buildSupportEnhancementPrompt()
- * from src/lib/lesson-ai-ready.ts.
+ * Requires OPENAI_API_KEY environment variable.
  */
 router.post('/enhance-supports', requireAuth, async (req, res) => {
   const { lessonPlan, selectedStandard, supportType } = req.body;
@@ -149,24 +119,68 @@ router.post('/enhance-supports', requireAuth, async (req, res) => {
     });
   }
 
-  // ── Log context (this is what will be passed to AI when wired) ──────────────
+  // ── API key guard ────────────────────────────────────────────────────────────
+  if (!process.env.OPENAI_API_KEY) {
+    return res.status(500).json({
+      success: false,
+      error: 'OPENAI_API_KEY is not set. Add it to your environment variables and restart the server.',
+    });
+  }
+
   console.log(
     `[lesson-ai] enhance-supports | type=${supportType} | standard=${selectedStandard.standard_code} | user=${req.user?.id}`,
   );
 
-  // ── Mock response ────────────────────────────────────────────────────────────
-  // Replace this block with a real AI SDK call:
-  //   const prompt = buildSupportEnhancementPrompt(lessonPlan, supportType);
-  //   const raw    = await aiClient.generate(prompt);
-  //   const enhancedSupports = JSON.parse(raw);
-  const enhancedSupports = buildMockEnhancedSupport(supportType, lessonPlan, selectedStandard);
+  // ── OpenAI call ──────────────────────────────────────────────────────────────
+  try {
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-  return res.json({
-    success: true,
-    supportType,
-    enhancedSupports,
-    source: 'mock', // → 'ai' once real call is wired
-  });
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: SYSTEM_MESSAGE },
+        { role: 'user',   content: buildPrompt(lessonPlan, selectedStandard, supportType) },
+      ],
+      temperature: 0.7,
+      max_tokens: 1200,
+    });
+
+    const raw = completion.choices[0]?.message?.content;
+    if (!raw) throw new Error('OpenAI returned an empty response.');
+
+    let enhancedSupports;
+    try {
+      enhancedSupports = JSON.parse(raw);
+    } catch {
+      console.error('[lesson-ai] JSON parse failed. Raw:', raw?.slice(0, 300));
+      throw new Error('AI returned malformed JSON. Please try again.');
+    }
+
+    if (!enhancedSupports || typeof enhancedSupports !== 'object' || Array.isArray(enhancedSupports)) {
+      throw new Error('AI returned an unexpected data shape. Please try again.');
+    }
+
+    // Log missing keys as warnings — non-fatal, frontend tolerates partial data
+    const missing = SUPPORT_SHAPE_KEYS[supportType].filter(k => !(k in enhancedSupports));
+    if (missing.length) {
+      console.warn(`[lesson-ai] AI response missing keys for ${supportType}: ${missing.join(', ')}`);
+    }
+
+    return res.json({
+      success: true,
+      supportType,
+      enhancedSupports,
+      source: 'ai',
+    });
+
+  } catch (err) {
+    console.error('[lesson-ai] error:', err.message);
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'AI enhancement failed. Please try again.',
+    });
+  }
 });
 
 export default router;
