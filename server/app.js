@@ -575,6 +575,7 @@ import coachAssignmentsRouter from './routes/coach-assignments.js';
 import coachesRouter from './routes/coaches.js';
 import eventsRouter from './routes/events.js';
 import accountingRouter from './routes/accounting.js';
+import lessonAIRouter from './routes/lessonAI.js';
 import cron from 'node-cron';
 
 const isDev = process.env.NODE_ENV !== 'production';
@@ -704,6 +705,7 @@ app.use('/api/coach-assignments', coachAssignmentsRouter);
 app.use('/api/coaches', coachesRouter);
 app.use('/api/events', eventsRouter);
 app.use('/api/accounting', accountingRouter);
+app.use('/api/lesson-ai', lessonAIRouter);
 app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), stripeWebhookHandler);
 app.use('/api/stripe', stripeRouter);
 
