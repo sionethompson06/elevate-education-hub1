@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { apiGet, apiPatch, apiPost } from "@/api/apiClient";
-import { X, Plus, Trash2, BookOpen, Activity, Users, Pencil, Save, Loader2, Mail } from "lucide-react";
+import { X, Trash2, BookOpen, Activity, Users, Pencil, Save, Loader2, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";

@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
 import { apiPost } from "@/api/apiClient";
 import { useAuth } from "@/lib/AuthContext";
 import StepIndicator from "@/components/apply/StepIndicator";

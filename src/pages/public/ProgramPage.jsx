@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import HeroSection from "@/components/public/HeroSection";
 import CmsContent from "@/components/public/CmsContent";
 import { Button } from "@/components/ui/button";
-import { Check, ArrowRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 
 const SLUG_MAP = {
   academics: "academics",

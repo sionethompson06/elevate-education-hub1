@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPatch } from "@/api/apiClient";
 import { Search, Users, Shield, UserCheck, UserPlus, ArchiveRestore } from "lucide-react";
