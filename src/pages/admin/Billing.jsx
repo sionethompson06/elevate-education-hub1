@@ -365,7 +365,7 @@ function RowDetail({ row, onRefetch }) {
           )}
 
           {/* Past-due reminder */}
-          {isPastDue && (row.familyInvoiceId || row.billingAccountId) && (
+          {isPastDue && (
             <div>
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Notifications</p>
               <div className="flex flex-wrap items-center gap-3" onClick={e => e.stopPropagation()}>
