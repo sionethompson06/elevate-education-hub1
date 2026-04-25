@@ -2,7 +2,7 @@ import { useAuth } from "@/lib/AuthContext";
 import { useQuery } from "@tanstack/react-query";
 import { apiGet } from "@/api/apiClient";
 import { TrendingUp, FileText } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { format } from "date-fns";
 
 const VISIBILITY_LABELS = {

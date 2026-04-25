@@ -14,6 +14,12 @@ const SUBJECTS = ["all", "Math", "English", "Science", "History", "Reading", "Wr
 const STATUS_TABS = ["all", "incomplete", "complete"];
 const PAGE_TABS = ["lessons", "assignments"];
 const SORT_OPTS = ["due_date", "subject"];
+const WORKFLOW_LABELS = {
+  assigned: "Assigned",
+  in_progress: "In Progress",
+  submitted: "Submitted",
+  reviewed: "Reviewed",
+};
 
 function sortLessons(lessons) {
   const now = new Date();
@@ -57,8 +63,8 @@ export default function StudentProgress() {
   });
 
   const { data: submissionsData, refetch: refetchSubmissions } = useQuery({
-    queryKey: ["my-submissions", user?.id],
-    queryFn: () => apiGet("/assignments/my-submissions"),
+    queryKey: ["my-assignment-work", user?.id],
+    queryFn: () => apiGet("/assignments/my-work"),
     enabled: !!user && pageTab === "assignments",
   });
 
@@ -68,7 +74,7 @@ export default function StudentProgress() {
   const filtered = sortBy === "due_date"
     ? sortLessons(baseFiltered)
     : [...baseFiltered].sort((a, b) => (a.subject || "").localeCompare(b.subject || ""));
-  const mySubmissions = submissionsData?.submissions || [];
+  const myAssignments = submissionsData?.assignments || [];
 
   const submitWork = async (assignmentId) => {
     const content = submitContent[assignmentId];
@@ -177,21 +183,31 @@ export default function StudentProgress() {
 
       {pageTab === "assignments" && (
         <div className="space-y-4">
-          {mySubmissions.length === 0 ? (
+          {myAssignments.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center">
                 <Send className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-                <p className="text-slate-400">No assignment submissions yet.</p>
-                <p className="text-xs text-slate-300 mt-1">Your coach will assign work you can submit here.</p>
+                <p className="text-slate-400">No class assignments yet.</p>
+                <p className="text-xs text-slate-300 mt-1">When your class coach assigns work, it appears here.</p>
               </CardContent>
             </Card>
           ) : (
-            mySubmissions.map(sub => (
-              <Card key={sub.id} className="border border-slate-100">
+            myAssignments.map(sub => (
+              <Card key={sub.assignment_id} className="border border-slate-100">
                 <CardContent className="py-4 px-5">
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-slate-800">{sub.assignment_title}</p>
+                      <div className="flex items-center flex-wrap gap-2">
+                        <p className="font-semibold text-slate-800">{sub.assignment_title}</p>
+                        <span className="text-[10px] uppercase tracking-wide font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                          {WORKFLOW_LABELS[sub.workflow_status] || "Assigned"}
+                        </span>
+                        {sub.section_name && (
+                          <span className="text-[10px] uppercase tracking-wide font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                            {sub.section_name}
+                          </span>
+                        )}
+                      </div>
                       {sub.assignment_description && <p className="text-xs text-slate-500 mt-0.5">{sub.assignment_description}</p>}
                       {sub.due_date && <p className="text-xs text-slate-400 mt-1">Due: {format(new Date(sub.due_date), "MMM d, yyyy")}</p>}
                       {sub.submission_content && (
@@ -211,7 +227,7 @@ export default function StudentProgress() {
                       )}
                     </div>
                   </div>
-                  {!sub.submission_content && (
+                  {sub.workflow_status !== "reviewed" && (
                     <div className="mt-3 space-y-2">
                       <textarea
                         className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30 min-h-[70px] resize-none"
@@ -223,7 +239,7 @@ export default function StudentProgress() {
                         disabled={!submitContent[sub.assignment_id]?.trim() || submitting === sub.assignment_id}
                         onClick={() => submitWork(sub.assignment_id)}>
                         {submitting === sub.assignment_id ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Send className="w-3.5 h-3.5 mr-1.5" />}
-                        Submit
+                        {sub.submission_content ? "Resubmit" : "Submit"}
                       </Button>
                     </div>
                   )}

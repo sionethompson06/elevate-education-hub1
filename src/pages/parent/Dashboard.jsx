@@ -5,7 +5,7 @@ import { useSearchParams, Link } from "react-router-dom";
 import {
   CreditCard, Calendar, MessageCircle, FileText, TrendingUp,
   PlusCircle, UserPlus, Users, GraduationCap, User,
-  ChevronDown, ChevronUp, Heart, Phone, Pencil, Trash2, Plus, Check, X, Loader2,
+  ChevronDown, ChevronUp, Heart, Phone, Pencil, Trash2, Plus, Check, Loader2,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";

@@ -505,6 +505,47 @@ async function ensureSavedLessonPlansTable() {
   }
 }
 
+async function ensureSectionStudentPlacementColumns() {
+  try {
+    await rawSql`ALTER TABLE section_students ADD COLUMN IF NOT EXISTS enrollment_id INTEGER REFERENCES enrollments(id)`;
+    await rawSql`ALTER TABLE section_students ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active'`;
+    await rawSql`ALTER TABLE section_students ADD COLUMN IF NOT EXISTS placed_at TIMESTAMP NOT NULL DEFAULT NOW()`;
+    await rawSql`ALTER TABLE section_students ADD COLUMN IF NOT EXISTS removed_at TIMESTAMP`;
+    await rawSql`ALTER TABLE section_students ADD COLUMN IF NOT EXISTS removed_reason TEXT`;
+    await rawSql`CREATE UNIQUE INDEX IF NOT EXISTS section_students_section_student_active_uniq
+      ON section_students(section_id, student_id) WHERE removed_at IS NULL`;
+    await rawSql`CREATE UNIQUE INDEX IF NOT EXISTS section_students_section_enrollment_active_uniq
+      ON section_students(section_id, enrollment_id) WHERE removed_at IS NULL AND enrollment_id IS NOT NULL`;
+    console.log('[migration] section_students placement columns/indexes ready');
+  } catch (err) {
+    console.error('[migration] ensureSectionStudentPlacementColumns error:', err.message);
+  }
+}
+
+async function ensureClassSessionsTable() {
+  try {
+    await rawSql`
+      CREATE TABLE IF NOT EXISTS class_sessions (
+        id               SERIAL PRIMARY KEY,
+        section_id       INTEGER NOT NULL REFERENCES sections(id),
+        session_date     DATE NOT NULL,
+        start_at         TIMESTAMP,
+        end_at           TIMESTAMP,
+        location         VARCHAR(200),
+        status           VARCHAR(20) NOT NULL DEFAULT 'scheduled',
+        canceled_reason  TEXT,
+        notes            TEXT,
+        created_by       INTEGER REFERENCES users(id),
+        created_at       TIMESTAMP NOT NULL DEFAULT NOW()
+      )
+    `;
+    await rawSql`CREATE INDEX IF NOT EXISTS class_sessions_section_date_idx ON class_sessions(section_id, session_date)`;
+    console.log('[migration] class_sessions table ready');
+  } catch (err) {
+    console.error('[migration] ensureClassSessionsTable error:', err.message);
+  }
+}
+
 async function syncPendingInvoicesToProgramTuitions() {
   try {
     // Fetch all pending invoices joined to their enrollment + program
@@ -564,6 +605,8 @@ ensureInvoiceManualOverrideColumn();
 ensureAccountingTables();
 ensureLessonStandardsColumn();
 ensureSavedLessonPlansTable();
+ensureSectionStudentPlacementColumns();
+ensureClassSessionsTable();
 seedProgramTuitions().then(() => syncPendingInvoicesToProgramTuitions());
 seedChartOfAccounts();
 backfillHistoricalLedger();

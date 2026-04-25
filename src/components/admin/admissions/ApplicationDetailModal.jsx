@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { X, CheckCircle, XCircle, Clock, Loader2, Mail, Pencil, Save, ExternalLink } from "lucide-react";
+import { X, CheckCircle, XCircle, Clock, Loader2, Mail, Pencil, Save } from "lucide-react";
 import { format } from "date-fns";
 
 const Row = ({ label, value }) => (

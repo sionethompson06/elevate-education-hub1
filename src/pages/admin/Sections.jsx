@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost, apiPatch, apiDelete } from "@/api/apiClient";
-import { Users, Plus, X, Pencil, Loader2, Trash2, ChevronRight, UserPlus, UserMinus } from "lucide-react";
+import { Users, Plus, X, Pencil, Loader2, Trash2, ChevronRight, UserPlus, UserMinus, CalendarDays } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
@@ -319,6 +319,367 @@ function CoachesTab({ section, coaches }) {
   );
 }
 
+const WEEKDAY_OPTIONS = [
+  { value: "mon", label: "Mon" },
+  { value: "tue", label: "Tue" },
+  { value: "wed", label: "Wed" },
+  { value: "thu", label: "Thu" },
+  { value: "fri", label: "Fri" },
+  { value: "sat", label: "Sat" },
+  { value: "sun", label: "Sun" },
+];
+
+function SessionsTab({ section }) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [form, setForm] = useState({
+    startDate: "",
+    endDate: "",
+    weekdays: ["mon", "wed"],
+    startTime: "16:00",
+    endTime: "17:00",
+    location: section.room || "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["section-sessions", section.id],
+    queryFn: () => apiGet(`/sections/${section.id}/sessions`),
+  });
+  const sessions = data?.sessions || [];
+
+  const toggleWeekday = (day) => {
+    setForm((prev) => ({
+      ...prev,
+      weekdays: prev.weekdays.includes(day)
+        ? prev.weekdays.filter((d) => d !== day)
+        : [...prev.weekdays, day],
+    }));
+  };
+
+  const generateSessions = async () => {
+    if (!form.startDate || !form.endDate || form.weekdays.length === 0) {
+      toast({ title: "Missing required fields", description: "Set date range and at least one weekday.", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await apiPost(`/sections/${section.id}/sessions/generate`, form);
+      qc.invalidateQueries({ queryKey: ["section-sessions", section.id] });
+      toast({
+        title: "Sessions generated",
+        description: `${res.createdCount || 0} created, ${res.skippedCount || 0} skipped as duplicates.`,
+      });
+    } catch (err) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateSession = async (sessionId, payload) => {
+    await apiPatch(`/sections/${section.id}/sessions/${sessionId}`, payload);
+    qc.invalidateQueries({ queryKey: ["section-sessions", section.id] });
+  };
+
+  const deleteSession = async (sessionId) => {
+    setDeletingId(sessionId);
+    try {
+      await apiDelete(`/sections/${section.id}/sessions/${sessionId}`);
+      qc.invalidateQueries({ queryKey: ["section-sessions", section.id] });
+      toast({ title: "Session deleted" });
+    } catch (err) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const toggleCanceled = async (session) => {
+    try {
+      const isCanceled = session.status === "canceled";
+      await updateSession(session.id, {
+        status: isCanceled ? "scheduled" : "canceled",
+        canceledReason: isCanceled ? null : "admin_canceled",
+      });
+      toast({ title: isCanceled ? "Session restored" : "Session canceled" });
+    } catch (err) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="border rounded-xl p-3 space-y-3 bg-slate-50/70">
+        <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Generate recurring sessions</p>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Start date</label>
+            <input type="date" className="w-full border border-slate-200 rounded-lg px-2.5 py-2 text-sm" value={form.startDate}
+              onChange={(e) => setForm((prev) => ({ ...prev, startDate: e.target.value }))} />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">End date</label>
+            <input type="date" className="w-full border border-slate-200 rounded-lg px-2.5 py-2 text-sm" value={form.endDate}
+              onChange={(e) => setForm((prev) => ({ ...prev, endDate: e.target.value }))} />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Start time</label>
+            <input type="time" className="w-full border border-slate-200 rounded-lg px-2.5 py-2 text-sm" value={form.startTime}
+              onChange={(e) => setForm((prev) => ({ ...prev, startTime: e.target.value }))} />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">End time</label>
+            <input type="time" className="w-full border border-slate-200 rounded-lg px-2.5 py-2 text-sm" value={form.endTime}
+              onChange={(e) => setForm((prev) => ({ ...prev, endTime: e.target.value }))} />
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs text-slate-500 mb-1">Location override</label>
+          <input className="w-full border border-slate-200 rounded-lg px-2.5 py-2 text-sm" placeholder="Use section room if blank" value={form.location}
+            onChange={(e) => setForm((prev) => ({ ...prev, location: e.target.value }))} />
+        </div>
+        <div>
+          <p className="block text-xs text-slate-500 mb-1">Weekdays</p>
+          <div className="flex flex-wrap gap-2">
+            {WEEKDAY_OPTIONS.map((day) => (
+              <button
+                type="button"
+                key={day.value}
+                onClick={() => toggleWeekday(day.value)}
+                className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${form.weekdays.includes(day.value)
+                  ? "bg-[#1a3c5e] text-white border-[#1a3c5e]"
+                  : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"}`}
+              >
+                {day.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <Button size="sm" onClick={generateSessions} disabled={saving} className="w-full bg-[#1a3c5e] hover:bg-[#0d2540]">
+          {saving ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : <CalendarDays className="w-4 h-4 mr-1.5" />}
+          Generate Sessions
+        </Button>
+      </div>
+
+      <div className="divide-y border rounded-lg overflow-hidden">
+        {isLoading ? (
+          <p className="text-xs text-slate-400 text-center py-6">Loading sessions…</p>
+        ) : sessions.length === 0 ? (
+          <p className="text-xs text-slate-400 text-center py-6">No sessions scheduled yet.</p>
+        ) : sessions.map((session) => {
+          const dateLabel = session.sessionDate ? new Date(`${session.sessionDate}T00:00:00`).toLocaleDateString() : "Unknown date";
+          const timeLabel = session.startAt
+            ? new Date(session.startAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+            : "TBD";
+          const endLabel = session.endAt
+            ? new Date(session.endAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+            : null;
+          return (
+            <div key={session.id} className="flex items-center justify-between px-3 py-2.5 bg-white">
+              <div>
+                <p className="text-sm font-medium text-slate-800">{dateLabel} · {timeLabel}{endLabel ? ` - ${endLabel}` : ""}</p>
+                <p className="text-xs text-slate-400">{session.location || section.room || "Location TBD"}</p>
+                {session.canceledReason && <p className="text-xs text-amber-600 mt-0.5">Reason: {session.canceledReason}</p>}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize ${session.status === "scheduled" ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"}`}>
+                  {session.status}
+                </span>
+                <button onClick={() => setEditing(session)} className="text-xs px-2 py-1 rounded border border-slate-200 text-slate-600 hover:bg-slate-50">
+                  Edit
+                </button>
+                <button onClick={() => toggleCanceled(session)} className="text-xs px-2 py-1 rounded border border-amber-200 text-amber-700 hover:bg-amber-50">
+                  {session.status === "canceled" ? "Restore" : "Cancel"}
+                </button>
+                <button
+                  onClick={() => deleteSession(session.id)}
+                  disabled={deletingId === session.id}
+                  className="text-xs px-2 py-1 rounded border border-red-200 text-red-700 hover:bg-red-50 disabled:opacity-60"
+                >
+                  {deletingId === session.id ? "Deleting…" : "Delete"}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <SessionEditModal
+        section={section}
+        session={editing}
+        onClose={() => setEditing(null)}
+        onSave={async (payload) => {
+          await updateSession(editing.id, payload);
+          setEditing(null);
+          toast({ title: "Session updated" });
+        }}
+      />
+    </div>
+  );
+}
+
+function SessionEditModal({ section, session, onClose, onSave }) {
+  const [form, setForm] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!session) {
+      setForm(null);
+      return;
+    }
+    const start = session.startAt ? new Date(session.startAt) : null;
+    const end = session.endAt ? new Date(session.endAt) : null;
+    setForm({
+      sessionDate: session.sessionDate || "",
+      startTime: start ? `${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}` : "",
+      endTime: end ? `${String(end.getHours()).padStart(2, "0")}:${String(end.getMinutes()).padStart(2, "0")}` : "",
+      location: session.location || section.room || "",
+      status: session.status || "scheduled",
+      canceledReason: session.canceledReason || "",
+    });
+  }, [session, section.room]);
+
+  if (!session || !form) return null;
+
+  const combineDateTime = (date, time) => (date && time ? `${date}T${time}:00` : null);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-5 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-bold text-[#1a3c5e]">Edit Session</h3>
+          <button onClick={onClose} className="p-1 rounded hover:bg-slate-100"><X className="w-4 h-4 text-slate-500" /></button>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Date</label>
+            <input type="date" value={form.sessionDate} onChange={(e) => setForm((prev) => ({ ...prev, sessionDate: e.target.value }))}
+              className="w-full border border-slate-200 rounded-lg px-2.5 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Status</label>
+            <select value={form.status} onChange={(e) => setForm((prev) => ({ ...prev, status: e.target.value }))}
+              className="w-full border border-slate-200 rounded-lg px-2.5 py-2 text-sm">
+              <option value="scheduled">Scheduled</option>
+              <option value="completed">Completed</option>
+              <option value="canceled">Canceled</option>
+            </select>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Start time</label>
+            <input type="time" value={form.startTime} onChange={(e) => setForm((prev) => ({ ...prev, startTime: e.target.value }))}
+              className="w-full border border-slate-200 rounded-lg px-2.5 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">End time</label>
+            <input type="time" value={form.endTime} onChange={(e) => setForm((prev) => ({ ...prev, endTime: e.target.value }))}
+              className="w-full border border-slate-200 rounded-lg px-2.5 py-2 text-sm" />
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs text-slate-500 mb-1">Location</label>
+          <input value={form.location} onChange={(e) => setForm((prev) => ({ ...prev, location: e.target.value }))}
+            className="w-full border border-slate-200 rounded-lg px-2.5 py-2 text-sm" />
+        </div>
+        {form.status === "canceled" && (
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">Cancel reason</label>
+            <input value={form.canceledReason} onChange={(e) => setForm((prev) => ({ ...prev, canceledReason: e.target.value }))}
+              className="w-full border border-slate-200 rounded-lg px-2.5 py-2 text-sm" />
+          </div>
+        )}
+        <div className="flex gap-2 pt-2">
+          <Button variant="outline" className="flex-1" onClick={onClose}>Cancel</Button>
+          <Button
+            className="flex-1 bg-[#1a3c5e] hover:bg-[#0d2540]"
+            disabled={saving || !form.sessionDate}
+            onClick={async () => {
+              setSaving(true);
+              try {
+                await onSave({
+                  sessionDate: form.sessionDate,
+                  startAt: combineDateTime(form.sessionDate, form.startTime),
+                  endAt: combineDateTime(form.sessionDate, form.endTime),
+                  location: form.location || null,
+                  status: form.status,
+                  canceledReason: form.status === "canceled" ? (form.canceledReason || "admin_canceled") : null,
+                });
+              } finally {
+                setSaving(false);
+              }
+            }}
+          >
+            {saving ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : null}
+            Save
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScheduleBoard({ programFilter }) {
+  const [from, setFrom] = useState(() => new Date().toISOString().slice(0, 10));
+  const [to, setTo] = useState(() => {
+    const dt = new Date();
+    dt.setDate(dt.getDate() + 14);
+    return dt.toISOString().slice(0, 10);
+  });
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["admin-schedule-overview", from, to, programFilter],
+    queryFn: () => apiGet(`/sections/schedule/overview?from=${from}&to=${to}${programFilter ? `&programId=${programFilter}` : ""}`),
+  });
+  const sessions = data?.sessions || [];
+
+  return (
+    <Card>
+      <CardContent className="p-4 space-y-4">
+        <div className="flex flex-wrap gap-2 items-end">
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">From</label>
+            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)}
+              className="border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">To</label>
+            <input type="date" value={to} onChange={(e) => setTo(e.target.value)}
+              className="border border-slate-200 rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <p className="text-xs text-slate-400 mb-1">Showing {sessions.length} scheduled session(s).</p>
+        </div>
+
+        <div className="divide-y border rounded-lg overflow-hidden">
+          {isLoading ? (
+            <p className="text-xs text-slate-400 text-center py-6">Loading schedule…</p>
+          ) : sessions.length === 0 ? (
+            <p className="text-xs text-slate-400 text-center py-6">No sessions in this range.</p>
+          ) : sessions.map((s) => (
+            <div key={s.sessionId} className="px-3 py-2.5 bg-white flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-slate-800">
+                  {new Date(`${s.sessionDate}T00:00:00`).toLocaleDateString()} · {s.sectionName}
+                </p>
+                <p className="text-xs text-slate-500">{s.programName || "Program"} · {s.location || s.room || "Location TBD"}</p>
+              </div>
+              <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize ${s.status === "scheduled" ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"}`}>
+                {s.status}
+              </span>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function SectionDetail({ section, allStudents, enrollments, coaches, onEdit, onClose }) {
   const [tab, setTab] = useState("roster");
   const qc = useQueryClient();
@@ -358,7 +719,7 @@ function SectionDetail({ section, allStudents, enrollments, coaches, onEdit, onC
         </div>
 
         <div className="flex border-b">
-          {["roster", "coaches"].map(t => (
+          {["roster", "coaches", "sessions"].map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`flex-1 py-2.5 text-sm font-medium capitalize transition-colors ${tab === t ? "text-[#1a3c5e] border-b-2 border-[#1a3c5e]" : "text-slate-500 hover:text-slate-700"}`}>
               {t}
@@ -369,8 +730,10 @@ function SectionDetail({ section, allStudents, enrollments, coaches, onEdit, onC
         <div className="flex-1 overflow-y-auto p-5">
           {tab === "roster" ? (
             <RosterTab section={section} allStudents={allStudents} enrollments={enrollments} onRefresh={onRefresh} />
-          ) : (
+          ) : tab === "coaches" ? (
             <CoachesTab section={section} coaches={coaches} />
+          ) : (
+            <SessionsTab section={section} />
           )}
         </div>
       </div>
@@ -387,6 +750,7 @@ export default function AdminSections() {
   const [selectedSection, setSelectedSection] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [view, setView] = useState("sections");
 
   const { data: programsData } = useQuery({
     queryKey: ["admin-programs-page"],
@@ -459,62 +823,82 @@ export default function AdminSections() {
       </div>
 
       <div className="mb-4">
-        <select className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none w-56"
-          value={programFilter} onChange={e => setProgramFilter(e.target.value)}>
-          <option value="">All Programs</option>
-          {programs.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
+        <div className="flex flex-wrap items-center gap-2">
+          <select className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none w-56"
+            value={programFilter} onChange={e => setProgramFilter(e.target.value)}>
+            <option value="">All Programs</option>
+            {programs.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <div className="flex border rounded-lg overflow-hidden">
+            <button
+              onClick={() => setView("sections")}
+              className={`px-3 py-2 text-xs font-medium ${view === "sections" ? "bg-[#1a3c5e] text-white" : "bg-white text-slate-600"}`}
+            >
+              Sections
+            </button>
+            <button
+              onClick={() => setView("schedule")}
+              className={`px-3 py-2 text-xs font-medium ${view === "schedule" ? "bg-[#1a3c5e] text-white" : "bg-white text-slate-600"}`}
+            >
+              Schedule Board
+            </button>
+          </div>
+        </div>
       </div>
 
-      <Card>
-        <CardContent className="p-0">
-          {isLoading ? (
-            <div className="flex justify-center py-16"><div className="w-6 h-6 border-4 border-slate-200 border-t-[#1a3c5e] rounded-full animate-spin" /></div>
-          ) : sections.length === 0 ? (
-            <div className="py-16 text-center">
-              <Users className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-              <p className="text-slate-400 text-sm mb-3">No sections yet.</p>
-              <Button className="bg-[#1a3c5e] hover:bg-[#0d2540]" onClick={() => setShowModal(true)}><Plus className="w-4 h-4 mr-2" /> Create First Section</Button>
-            </div>
-          ) : (
-            <div className="divide-y">
-              {sections.map(s => {
-                const rosterCount = allEnrollments.filter(e => e.sectionId === s.id).length;
-                const scheduleText = typeof s.schedule === "string" ? s.schedule : s.schedule?.text || "";
-                return (
-                  <div key={s.id}
-                    className="flex items-center justify-between px-5 py-4 hover:bg-slate-50 gap-4 cursor-pointer"
-                    onClick={() => setSelectedSection(s)}>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap mb-0.5">
-                        <p className="font-semibold text-slate-800">{s.name}</p>
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold capitalize ${s.status === "active" ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}>
-                          {s.status}
-                        </span>
+      {view === "schedule" ? (
+        <ScheduleBoard programFilter={programFilter} />
+      ) : (
+        <Card>
+          <CardContent className="p-0">
+            {isLoading ? (
+              <div className="flex justify-center py-16"><div className="w-6 h-6 border-4 border-slate-200 border-t-[#1a3c5e] rounded-full animate-spin" /></div>
+            ) : sections.length === 0 ? (
+              <div className="py-16 text-center">
+                <Users className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+                <p className="text-slate-400 text-sm mb-3">No sections yet.</p>
+                <Button className="bg-[#1a3c5e] hover:bg-[#0d2540]" onClick={() => setShowModal(true)}><Plus className="w-4 h-4 mr-2" /> Create First Section</Button>
+              </div>
+            ) : (
+              <div className="divide-y">
+                {sections.map(s => {
+                  const rosterCount = allEnrollments.filter(e => e.sectionId === s.id).length;
+                  const scheduleText = typeof s.schedule === "string" ? s.schedule : s.schedule?.text || "";
+                  return (
+                    <div key={s.id}
+                      className="flex items-center justify-between px-5 py-4 hover:bg-slate-50 gap-4 cursor-pointer"
+                      onClick={() => setSelectedSection(s)}>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                          <p className="font-semibold text-slate-800">{s.name}</p>
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-semibold capitalize ${s.status === "active" ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}>
+                            {s.status}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-500">{s.programName}</p>
+                        <div className="flex items-center gap-3 mt-1 flex-wrap text-xs text-slate-400">
+                          <span>{rosterCount} / {s.capacity} students</span>
+                          {scheduleText && <span>{scheduleText}</span>}
+                          {s.room && <span>{s.room}</span>}
+                        </div>
                       </div>
-                      <p className="text-xs text-slate-500">{s.programName}</p>
-                      <div className="flex items-center gap-3 mt-1 flex-wrap text-xs text-slate-400">
-                        <span>{rosterCount} / {s.capacity} students</span>
-                        {scheduleText && <span>{scheduleText}</span>}
-                        {s.room && <span>{s.room}</span>}
+                      <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                        <button onClick={() => openEdit(s)} className="p-1.5 rounded hover:bg-slate-200 text-slate-500 hover:text-slate-700 transition-colors">
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => setDeleteTarget(s)} className="p-1.5 rounded hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                        <ChevronRight className="w-4 h-4 text-slate-300 ml-1" />
                       </div>
                     </div>
-                    <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
-                      <button onClick={() => openEdit(s)} className="p-1.5 rounded hover:bg-slate-200 text-slate-500 hover:text-slate-700 transition-colors">
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      <button onClick={() => setDeleteTarget(s)} className="p-1.5 rounded hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                      <ChevronRight className="w-4 h-4 text-slate-300 ml-1" />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {(showModal || editing) && (
         <SectionModal

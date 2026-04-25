@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { eq, desc, and, inArray } from 'drizzle-orm';
+import { eq, desc, asc, and, inArray, isNull } from 'drizzle-orm';
 import db, { rawSql } from '../db-postgres.js';
 import { assignments, assignmentSubmissions, sectionStudents, sections, students } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
@@ -55,8 +55,149 @@ router.get('/section/:sectionId/roster', requireAuth, async (req, res) => {
       grade: students.grade,
     }).from(sectionStudents)
       .innerJoin(students, eq(sectionStudents.studentId, students.id))
-      .where(eq(sectionStudents.sectionId, sectionId));
+      .where(and(
+        eq(sectionStudents.sectionId, sectionId),
+        eq(sectionStudents.status, 'active'),
+        isNull(sectionStudents.removedAt)
+      ));
     res.json({ success: true, students: roster });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.get('/section/:sectionId/gradebook', requireAuth, async (req, res) => {
+  try {
+    const sectionId = parseInt(req.params.sectionId, 10);
+    if (req.user.role !== 'admin') {
+      const sectionIds = await getCoachSectionIds(req.user.id);
+      if (!sectionIds.includes(sectionId)) {
+        return res.status(403).json({ success: false, error: 'Not assigned to this section' });
+      }
+    }
+
+    const roster = await db.select({
+      studentId: students.id,
+      firstName: students.firstName,
+      lastName: students.lastName,
+      grade: students.grade,
+    }).from(sectionStudents)
+      .innerJoin(students, eq(sectionStudents.studentId, students.id))
+      .where(and(
+        eq(sectionStudents.sectionId, sectionId),
+        eq(sectionStudents.status, 'active'),
+        isNull(sectionStudents.removedAt)
+      ))
+      .orderBy(asc(students.lastName), asc(students.firstName));
+
+    const sectionAssignments = await db.select({
+      assignmentId: assignments.id,
+      title: assignments.title,
+      dueDate: assignments.dueDate,
+      maxScore: assignments.maxScore,
+      status: assignments.status,
+      createdAt: assignments.createdAt,
+    }).from(assignments)
+      .where(eq(assignments.sectionId, sectionId))
+      .orderBy(desc(assignments.createdAt));
+
+    const assignmentIds = sectionAssignments.map((a) => a.assignmentId);
+    const studentIds = roster.map((r) => r.studentId);
+    const submissions = assignmentIds.length > 0 && studentIds.length > 0
+      ? await db.select({
+        submissionId: assignmentSubmissions.id,
+        assignmentId: assignmentSubmissions.assignmentId,
+        studentId: assignmentSubmissions.studentId,
+        score: assignmentSubmissions.score,
+        isMissing: assignmentSubmissions.isMissing,
+        isLate: assignmentSubmissions.isLate,
+        feedback: assignmentSubmissions.feedback,
+        gradedAt: assignmentSubmissions.gradedAt,
+        submittedAt: assignmentSubmissions.submittedAt,
+        submissionContent: assignmentSubmissions.submissionContent,
+      }).from(assignmentSubmissions).where(and(
+        inArray(assignmentSubmissions.assignmentId, assignmentIds),
+        inArray(assignmentSubmissions.studentId, studentIds)
+      ))
+      : [];
+
+    const matrixRows = roster.map((student) => {
+      const work = sectionAssignments.map((assignment) => {
+        const submission = submissions.find((s) => s.assignmentId === assignment.assignmentId && s.studentId === student.studentId);
+        let workflowStatus = 'assigned';
+        if (submission?.submissionId && !submission?.submissionContent?.trim()) workflowStatus = 'in_progress';
+        if (submission?.submissionContent?.trim()) workflowStatus = 'submitted';
+        if (submission?.gradedAt || submission?.score != null || submission?.feedback?.trim()) workflowStatus = 'reviewed';
+        return {
+          assignment_id: assignment.assignmentId,
+          title: assignment.title,
+          due_date: assignment.dueDate,
+          max_score: assignment.maxScore,
+          workflow_status: workflowStatus,
+          submission_id: submission?.submissionId || null,
+          submitted_at: submission?.submittedAt || null,
+          score: submission?.score ?? null,
+          feedback: submission?.feedback ?? null,
+          is_late: submission?.isLate ?? false,
+          is_missing: submission?.isMissing ?? false,
+        };
+      });
+      return {
+        student_id: student.studentId,
+        first_name: student.firstName,
+        last_name: student.lastName,
+        grade: student.grade,
+        work,
+      };
+    });
+
+    res.json({
+      success: true,
+      assignments: sectionAssignments,
+      students: matrixRows,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.get('/section/:sectionId/review-queue', requireAuth, async (req, res) => {
+  try {
+    const sectionId = parseInt(req.params.sectionId, 10);
+    if (req.user.role !== 'admin') {
+      const sectionIds = await getCoachSectionIds(req.user.id);
+      if (!sectionIds.includes(sectionId)) {
+        return res.status(403).json({ success: false, error: 'Not assigned to this section' });
+      }
+    }
+
+    const queued = await db.select({
+      submissionId: assignmentSubmissions.id,
+      assignmentId: assignmentSubmissions.assignmentId,
+      assignmentTitle: assignments.title,
+      dueDate: assignments.dueDate,
+      studentId: assignmentSubmissions.studentId,
+      studentFirstName: students.firstName,
+      studentLastName: students.lastName,
+      submissionContent: assignmentSubmissions.submissionContent,
+      submittedAt: assignmentSubmissions.submittedAt,
+      score: assignmentSubmissions.score,
+      feedback: assignmentSubmissions.feedback,
+      gradedAt: assignmentSubmissions.gradedAt,
+    }).from(assignmentSubmissions)
+      .innerJoin(assignments, eq(assignmentSubmissions.assignmentId, assignments.id))
+      .innerJoin(students, eq(assignmentSubmissions.studentId, students.id))
+      .where(and(
+        eq(assignments.sectionId, sectionId),
+        eq(assignments.status, 'active')
+      ))
+      .orderBy(desc(assignmentSubmissions.submittedAt), desc(assignmentSubmissions.id));
+
+    const reviewQueue = queued
+      .filter((item) => item.submissionContent?.trim())
+      .filter((item) => !(item.gradedAt || item.score != null || item.feedback?.trim()));
+
+    res.json({ success: true, queue: reviewQueue });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -252,6 +393,87 @@ router.get('/my-submissions', requireAuth, async (req, res) => {
   }
 });
 
+// Student assignment inbox (includes assigned work even before first submission)
+router.get('/my-work', requireAuth, async (req, res) => {
+  try {
+    if (req.user.role !== 'student') {
+      return res.status(403).json({ success: false, error: 'Students only' });
+    }
+
+    const [studentRec] = await db.select().from(students).where(eq(students.userId, req.user.id));
+    if (!studentRec) return res.json({ success: true, assignments: [] });
+
+    const rows = await db.select({
+      assignmentId: assignments.id,
+      assignmentTitle: assignments.title,
+      assignmentDescription: assignments.description,
+      assignmentDueDate: assignments.dueDate,
+      assignmentMaxScore: assignments.maxScore,
+      assignmentCategory: assignments.category,
+      assignmentStatus: assignments.status,
+      sectionId: assignments.sectionId,
+      sectionName: sections.name,
+      submissionId: assignmentSubmissions.id,
+      score: assignmentSubmissions.score,
+      isMissing: assignmentSubmissions.isMissing,
+      isLate: assignmentSubmissions.isLate,
+      feedback: assignmentSubmissions.feedback,
+      submissionContent: assignmentSubmissions.submissionContent,
+      submittedAt: assignmentSubmissions.submittedAt,
+      gradedBy: assignmentSubmissions.gradedBy,
+      gradedAt: assignmentSubmissions.gradedAt,
+      createdAt: assignments.createdAt,
+    }).from(assignments)
+      .innerJoin(sectionStudents, and(
+        eq(sectionStudents.sectionId, assignments.sectionId),
+        eq(sectionStudents.studentId, studentRec.id),
+        eq(sectionStudents.status, 'active'),
+        isNull(sectionStudents.removedAt)
+      ))
+      .leftJoin(assignmentSubmissions, and(
+        eq(assignmentSubmissions.assignmentId, assignments.id),
+        eq(assignmentSubmissions.studentId, studentRec.id)
+      ))
+      .leftJoin(sections, eq(assignments.sectionId, sections.id))
+      .where(eq(assignments.status, 'active'))
+      .orderBy(desc(assignments.createdAt));
+
+    const assignmentsWithState = rows.map((r) => {
+      let workflowStatus = 'assigned';
+      if (r.submissionId && r.submissionContent?.trim()) workflowStatus = 'submitted';
+      if (r.submissionId && !r.submissionContent?.trim()) workflowStatus = 'in_progress';
+      if (r.submissionId && (r.gradedAt || r.score != null || r.feedback?.trim())) workflowStatus = 'reviewed';
+
+      return {
+        assignment_id: r.assignmentId,
+        assignment_title: r.assignmentTitle,
+        assignment_description: r.assignmentDescription,
+        due_date: r.assignmentDueDate,
+        max_score: r.assignmentMaxScore,
+        assignment_category: r.assignmentCategory,
+        assignment_status: r.assignmentStatus,
+        section_id: r.sectionId,
+        section_name: r.sectionName,
+        submission_id: r.submissionId,
+        workflow_status: workflowStatus,
+        score: r.score,
+        is_missing: r.isMissing,
+        is_late: r.isLate,
+        feedback: r.feedback,
+        submission_content: r.submissionContent,
+        submitted_at: r.submittedAt,
+        graded_by: r.gradedBy,
+        graded_at: r.gradedAt,
+        created_at: r.createdAt,
+      };
+    });
+
+    res.json({ success: true, assignments: assignmentsWithState });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 router.get('/:id/submissions', requireAuth, async (req, res) => {
   try {
     const assignmentId = parseInt(req.params.id);
@@ -313,6 +535,70 @@ router.patch('/submissions/:id/grade', requireAuth, requireRole('admin'), async 
       details: { score, feedback, note: 'admin_override' },
       ipAddress: req.ip,
     });
+
+    res.json({ success: true, submission: updated });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.patch('/submissions/:id/review', requireAuth, async (req, res) => {
+  try {
+    const submissionId = parseInt(req.params.id, 10);
+    const { score, feedback, isMissing, isLate } = req.body;
+    const [existing] = await db.select({
+      id: assignmentSubmissions.id,
+      assignmentId: assignmentSubmissions.assignmentId,
+    }).from(assignmentSubmissions).where(eq(assignmentSubmissions.id, submissionId));
+    if (!existing) return res.status(404).json({ success: false, error: 'Submission not found' });
+
+    const [assignment] = await db.select({ sectionId: assignments.sectionId, title: assignments.title })
+      .from(assignments).where(eq(assignments.id, existing.assignmentId));
+    if (!assignment) return res.status(404).json({ success: false, error: 'Assignment not found' });
+
+    if (req.user.role !== 'admin') {
+      const sectionIds = await getCoachSectionIds(req.user.id);
+      if (!sectionIds.includes(assignment.sectionId)) {
+        return res.status(403).json({ success: false, error: 'Not assigned to this section' });
+      }
+    }
+
+    const updateData = {
+      gradedBy: req.user.id,
+      gradedAt: new Date(),
+    };
+    if (score !== undefined) updateData.score = score === null ? null : Number(score);
+    if (feedback !== undefined) updateData.feedback = feedback;
+    if (isMissing !== undefined) updateData.isMissing = !!isMissing;
+    if (isLate !== undefined) updateData.isLate = !!isLate;
+
+    const [updated] = await db.update(assignmentSubmissions)
+      .set(updateData)
+      .where(eq(assignmentSubmissions.id, submissionId))
+      .returning();
+
+    await logAudit({
+      userId: req.user.id,
+      action: 'review',
+      entityType: 'assignment_submission',
+      entityId: submissionId,
+      details: { assignmentId: existing.assignmentId, score, feedback },
+      ipAddress: req.ip,
+    });
+
+    try {
+      const [student] = await db.select().from(students).where(eq(students.id, updated.studentId));
+      if (student?.userId) {
+        await createNotification({
+          userId: student.userId,
+          type: 'assignment_reviewed',
+          title: 'Assignment Reviewed',
+          body: `Your assignment "${assignment.title}" has feedback from your coach.`,
+        });
+      }
+    } catch (notifErr) {
+      console.error('Review notification error:', notifErr);
+    }
 
     res.json({ success: true, submission: updated });
   } catch (err) {

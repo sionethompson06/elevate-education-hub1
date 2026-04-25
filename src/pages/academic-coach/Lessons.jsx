@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import {
-  BookMarked, Search, Plus, Pencil, Trash2, BookOpen,
+  BookMarked, Search, Plus, Trash2, BookOpen,
   Loader2, AlertCircle,
 } from "lucide-react";
 import { apiGet, apiDelete } from "@/api/apiClient";

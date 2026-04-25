@@ -1,4 +1,4 @@
-import { MoreVertical, Mail, ExternalLink, UserX } from "lucide-react";
+import { MoreVertical, Mail, ExternalLink } from "lucide-react";
 import { useState } from "react";
 
 const TYPE_COLORS = {
