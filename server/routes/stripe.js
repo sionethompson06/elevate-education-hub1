@@ -237,14 +237,17 @@ router.post('/family-checkout', requireAuth, requireRole('parent', 'admin'), asy
     if (pastDueInvoices.length > 0) {
       const pastDueEnrollmentIds = [...new Set(pastDueInvoices.filter(i => i.enrollmentId).map(i => i.enrollmentId))];
       if (pastDueEnrollmentIds.length > 0) {
+        // billingCycle lives on programs, not enrollments — must join to get base cycle
         const enrollmentCycles = await db.select({
           id: enrollments.id,
-          billingCycle: enrollments.billingCycle,
           billingCycleOverride: enrollments.billingCycleOverride,
-        }).from(enrollments).where(inArray(enrollments.id, pastDueEnrollmentIds));
+          programBillingCycle: programs.billingCycle,
+        }).from(enrollments)
+          .leftJoin(programs, eq(enrollments.programId, programs.id))
+          .where(inArray(enrollments.id, pastDueEnrollmentIds));
 
         const hasSubscriptionCycle = enrollmentCycles.some(e => {
-          const cycle = e.billingCycleOverride || e.billingCycle;
+          const cycle = e.billingCycleOverride || e.programBillingCycle;
           return cycle === 'monthly' || cycle === 'annual';
         });
 
