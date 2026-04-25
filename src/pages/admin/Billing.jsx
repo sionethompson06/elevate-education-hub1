@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost, apiPatch } from "@/api/apiClient";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, Loader2, CreditCard, BookOpen, ChevronDown, ChevronRight, Search, Pencil, Check, X, CheckCircle, XCircle, RotateCcw, Tag, ShieldAlert, Calendar, Scale } from "lucide-react";
+import { RefreshCw, Loader2, CreditCard, BookOpen, ChevronDown, ChevronRight, Search, Pencil, Check, X, CheckCircle, XCircle, RotateCcw, Tag, ShieldAlert, Calendar, Scale, Bell } from "lucide-react";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function daysOverdue(dueDate) {
@@ -110,6 +110,29 @@ function RowDetail({ row, onRefetch }) {
   const [actionReason, setActionReason] = useState("");
   const [takingAction, setTakingAction] = useState(false);
   const [actionError, setActionError] = useState("");
+
+  // Past-due reminder
+  const [sendingReminder, setSendingReminder] = useState(false);
+  const [reminderMsg, setReminderMsg] = useState(null); // { ok: bool, text: string }
+
+  const isPastDue = row.invoiceStatus === "past_due" || row.enrollmentStatus === "payment_failed";
+
+  const handleSendReminder = async (e) => {
+    e.stopPropagation();
+    setSendingReminder(true);
+    setReminderMsg(null);
+    try {
+      const body = row.familyInvoiceId
+        ? { familyInvoiceId: row.familyInvoiceId }
+        : { billingAccountId: row.billingAccountId };
+      await apiPost("/billing/send-past-due-reminder", body);
+      setReminderMsg({ ok: true, text: `Reminder sent to ${row.parentEmail || row.parentName}.` });
+    } catch (err) {
+      setReminderMsg({ ok: false, text: err.message || "Failed to send reminder." });
+    } finally {
+      setSendingReminder(false);
+    }
+  };
 
   const isAmountEditable = row.invoiceId && !["paid", "waived"].includes(row.invoiceStatus);
 
@@ -336,6 +359,34 @@ function RowDetail({ row, onRefetch }) {
                 )}
                 {row.activeOverride.notes && row.activeOverride.notes !== row.activeOverride.reason && (
                   <p className="text-xs text-slate-500">{row.activeOverride.notes}</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Past-due reminder */}
+          {isPastDue && (row.familyInvoiceId || row.billingAccountId) && (
+            <div>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Notifications</p>
+              <div className="flex flex-wrap items-center gap-3" onClick={e => e.stopPropagation()}>
+                <button
+                  onClick={handleSendReminder}
+                  disabled={sendingReminder}
+                  className="flex items-center gap-1.5 text-xs font-semibold bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 px-3 py-1.5 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {sendingReminder
+                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    : <Bell className="w-3.5 h-3.5" />}
+                  Send Past-Due Reminder
+                </button>
+                {reminderMsg && (
+                  <span className={`text-xs px-2.5 py-1 rounded-lg border font-medium ${
+                    reminderMsg.ok
+                      ? "bg-green-50 text-green-700 border-green-200"
+                      : "bg-red-50 text-red-600 border-red-200"
+                  }`}>
+                    {reminderMsg.ok ? "✓ " : "✕ "}{reminderMsg.text}
+                  </span>
                 )}
               </div>
             </div>

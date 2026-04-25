@@ -405,6 +405,7 @@ router.get('/accounting', requireAuth, requireRole('admin'), async (req, res) =>
         invoiceAmount: invoice?.amount ?? null,
         invoiceDiscountPercent: invoice?.discountPercent ?? null,
         invoiceStatus: effectiveInvoiceStatus ?? null,
+        billingAccountId: invoice?.billingAccountId ?? null,
         familyInvoiceId: invoice?.familyInvoiceId ?? null,
         familyInvoiceTotal: null,  // populated below
         dueDate: invoice?.dueDate ?? null,
