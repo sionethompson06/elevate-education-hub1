@@ -8,6 +8,7 @@ import {
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { logAudit } from '../services/audit.service.js';
 import { recordPaymentReceived, allocatePayment } from '../services/accounting.service.js';
+import { sendPaymentReceiptEmail, sendPastDueReminderEmail } from '../services/billing-email.service.js';
 
 const router = Router();
 
@@ -403,6 +404,32 @@ router.post('/family-invoice/manual-pay', requireAuth, requireRole('admin'), asy
       ipAddress: req.ip,
     });
 
+    // Send receipt email to parent — non-blocking
+    try {
+      const [parentUser] = await db.select({ firstName: users.firstName, lastName: users.lastName, email: users.email })
+        .from(billingAccounts)
+        .leftJoin(users, eq(billingAccounts.parentUserId, users.id))
+        .where(eq(billingAccounts.id, fi.billingAccountId));
+      if (parentUser?.email) {
+        const lineItems = await enrichInvoicesWithEnrollmentInfo(childInvs);
+        sendPaymentReceiptEmail({
+          to: parentUser.email,
+          parentName: `${parentUser.firstName} ${parentUser.lastName}`.trim(),
+          amountDollars: parseFloat(fi.totalAmount || 0),
+          paidDate: new Date().toISOString().split('T')[0],
+          method: 'manual',
+          invoiceId: fi.id,
+          lineItems: lineItems.map(li => ({
+            programName: li.programName,
+            studentName: li.studentFirstName ? `${li.studentFirstName} ${li.studentLastName || ''}`.trim() : null,
+            amount: li.amount,
+          })),
+        }).catch(err => console.error('[billing-email] manual-pay receipt error:', err.message));
+      }
+    } catch (emailErr) {
+      console.error('[billing-email] manual-pay lookup error:', emailErr.message);
+    }
+
     res.json({ success: true });
   } catch (err) {
     console.error('[family-billing] manual-pay error:', err.message);
@@ -597,6 +624,83 @@ router.get('/family-statement', requireAuth, async (req, res) => {
     });
   } catch (err) {
     console.error('[billing/family-statement] error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ── POST /api/billing/send-past-due-reminder ──────────────────────────────────
+// Admin sends a past-due reminder email for a family invoice or billing account.
+// Body: { familyInvoiceId } OR { billingAccountId }
+router.post('/send-past-due-reminder', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const { familyInvoiceId, billingAccountId } = req.body;
+    if (!familyInvoiceId && !billingAccountId) {
+      return res.status(400).json({ success: false, error: 'familyInvoiceId or billingAccountId required' });
+    }
+
+    let fi = null;
+    let accountId = null;
+
+    if (familyInvoiceId) {
+      [fi] = await db.select().from(familyInvoices).where(eq(familyInvoices.id, Number(familyInvoiceId)));
+      if (!fi) return res.status(404).json({ success: false, error: 'Family invoice not found' });
+      accountId = fi.billingAccountId;
+    } else {
+      accountId = Number(billingAccountId);
+      // Find the most recent pending/past_due family invoice
+      [fi] = await db.select().from(familyInvoices)
+        .where(and(
+          eq(familyInvoices.billingAccountId, accountId),
+          inArray(familyInvoices.status, ['pending', 'past_due'])
+        ))
+        .orderBy(desc(familyInvoices.createdAt))
+        .limit(1);
+      if (!fi) return res.status(404).json({ success: false, error: 'No pending invoice found for this billing account' });
+    }
+
+    // Get parent contact info
+    const [parentUser] = await db.select({ firstName: users.firstName, lastName: users.lastName, email: users.email })
+      .from(billingAccounts)
+      .leftJoin(users, eq(billingAccounts.parentUserId, users.id))
+      .where(eq(billingAccounts.id, accountId));
+    if (!parentUser?.email) return res.status(400).json({ success: false, error: 'Parent email not found' });
+
+    // Compute days overdue
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    let daysOverdue = 0;
+    if (fi.dueDate) {
+      const due = new Date(fi.dueDate + 'T00:00:00');
+      daysOverdue = Math.max(0, Math.floor((today - due) / 86400000));
+    }
+
+    // Collect program names from child invoices
+    const childInvs = await db.select().from(invoices).where(eq(invoices.familyInvoiceId, fi.id));
+    const lineItems = await enrichInvoicesWithEnrollmentInfo(childInvs);
+    const programNames = [...new Set(lineItems.map(li => li.programName).filter(Boolean))];
+
+    const result = await sendPastDueReminderEmail({
+      to: parentUser.email,
+      parentName: `${parentUser.firstName} ${parentUser.lastName}`.trim(),
+      amountDollars: parseFloat(fi.totalAmount || 0),
+      dueDate: fi.dueDate,
+      daysOverdue,
+      invoiceId: fi.id,
+      programNames,
+    });
+
+    await logAudit({
+      userId: req.user.id,
+      action: 'send_reminder',
+      entityType: 'family_invoice',
+      entityId: String(fi.id),
+      details: { action: 'past_due_reminder', to: parentUser.email, daysOverdue },
+      ipAddress: req.ip,
+    });
+
+    res.json({ success: true, sent: result.sent, to: parentUser.email });
+  } catch (err) {
+    console.error('[family-billing] send-past-due-reminder error:', err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });

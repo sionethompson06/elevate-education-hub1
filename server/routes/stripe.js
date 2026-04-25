@@ -7,7 +7,8 @@ import {
   getStripe, getOrCreateCustomer, createCheckoutSession, createFamilyCheckoutSession,
   createPortalSession, constructWebhookEvent
 } from '../services/stripe.service.js';
-import { sendPaymentConfirmationEmail, sendPaymentFailedEmail } from '../services/email.service.js';
+import { sendPaymentConfirmationEmail } from '../services/email.service.js';
+import { sendPaymentReceiptEmail, sendPaymentFailedEmail as sendBillingPaymentFailedEmail } from '../services/billing-email.service.js';
 import { recordPaymentReceived, allocatePayment } from '../services/accounting.service.js';
 
 const router = Router();
@@ -592,15 +593,20 @@ export async function stripeWebhookHandler(req, res) {
             const [parentUser] = await db.select().from(users)
               .where(eq(users.id, Number(parentUserId)));
             if (parentUser) {
-              const programSummary = programNames.length > 0
-                ? programNames.join(', ')
-                : 'your programs';
-              await sendPaymentConfirmationEmail(
-                parentUser.email,
-                `${parentUser.firstName} ${parentUser.lastName}`,
-                session.amount_total,
-                programSummary
-              ).catch(err => console.error('[webhook] family confirmation email error:', err));
+              // Build line items for receipt
+              const receiptLineItems = childInvoices.map(inv => {
+                const progName = programNames.find(Boolean) || null;
+                return { programName: progName, studentName: null, amount: inv.amount };
+              });
+              await sendPaymentReceiptEmail({
+                to: parentUser.email,
+                parentName: `${parentUser.firstName} ${parentUser.lastName}`,
+                amountCents: session.amount_total,
+                paidDate: new Date().toISOString().split('T')[0],
+                method: 'stripe',
+                invoiceId: fi.id,
+                lineItems: receiptLineItems,
+              }).catch(err => console.error('[webhook] family receipt email error:', err));
             }
           }
           console.log(`[stripe] Family invoice ${familyInvoiceId} paid — ${childInvoices.length} enrollment(s) activated`);
@@ -777,11 +783,15 @@ export async function stripeWebhookHandler(req, res) {
               const [prog] = enrollment.programId
                 ? await db.select().from(programs).where(eq(programs.id, enrollment.programId))
                 : [null];
-              await sendPaymentFailedEmail(
-                parentUser.email,
-                `${parentUser.firstName} ${parentUser.lastName}`,
-                prog?.name || 'your program'
-              ).catch(err => console.error('[webhook] failure email error:', err));
+              await sendBillingPaymentFailedEmail({
+                to: parentUser.email,
+                parentName: `${parentUser.firstName} ${parentUser.lastName}`,
+                amountCents: stripeInvoice.amount_due,
+                programName: prog?.name || 'your program',
+                dueDate: stripeInvoice.due_date
+                  ? new Date(stripeInvoice.due_date * 1000).toISOString().split('T')[0]
+                  : null,
+              }).catch(err => console.error('[webhook] failure email error:', err));
             }
           }
           console.log(`[stripe] Payment failed, enrollment ${enrollmentId} marked payment_failed`);
@@ -815,11 +825,18 @@ export async function stripeWebhookHandler(req, res) {
             const [prog] = enrollment.programId
               ? await db.select().from(programs).where(eq(programs.id, enrollment.programId))
               : [null];
-            await sendPaymentFailedEmail(
-              parentUser.email,
-              `${parentUser.firstName} ${parentUser.lastName}`,
-              prog?.name || 'your program'
-            ).catch(err => console.error('[webhook] one-time failure email error:', err));
+            const [linkedInv] = await db.select({ amount: invoices.amount, dueDate: invoices.dueDate })
+              .from(invoices)
+              .where(eq(invoices.enrollmentId, Number(enrollmentId)))
+              .orderBy(desc(invoices.createdAt))
+              .limit(1);
+            await sendBillingPaymentFailedEmail({
+              to: parentUser.email,
+              parentName: `${parentUser.firstName} ${parentUser.lastName}`,
+              amountDollars: linkedInv ? parseFloat(linkedInv.amount || 0) : null,
+              programName: prog?.name || 'your program',
+              dueDate: linkedInv?.dueDate || null,
+            }).catch(err => console.error('[webhook] one-time failure email error:', err));
           }
         }
         console.log(`[stripe] One-time payment failed, enrollment ${enrollmentId} marked payment_failed`);
