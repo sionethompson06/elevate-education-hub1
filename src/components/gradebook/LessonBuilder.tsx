@@ -259,11 +259,17 @@ export default function LessonBuilder({ lessonSubject = "", initialPlan, savedLe
       )}
 
       {plan && (
-        <>
-          <LessonPlanPreview plan={plan} onChange={setPlan} onReset={handleReset} />
+        <LessonPlanPreview plan={plan} onChange={setPlan} onReset={handleReset} />
+      )}
 
-          {canSave && (
-            <div className="border border-slate-200 rounded-xl bg-white p-4 space-y-3">
+      {canSave && (
+        <div className="border border-slate-200 rounded-xl bg-white p-4 space-y-3">
+          {!plan ? (
+            <p className="text-sm text-slate-400 text-center py-3">
+              Generate a lesson plan above to save it to your library or assign it to students.
+            </p>
+          ) : (
+            <>
               {/* ── Save to Library ─────────────────────────────────────────── */}
               <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-100">
                 <div className="flex items-center gap-2 text-[#1a3c5e]">
@@ -399,9 +405,9 @@ export default function LessonBuilder({ lessonSubject = "", initialPlan, savedLe
                   )}
                 </button>
               </div>
-            </div>
+            </>
           )}
-        </>
+        </div>
       )}
     </div>
   );
