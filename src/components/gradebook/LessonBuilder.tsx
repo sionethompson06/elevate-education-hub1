@@ -54,7 +54,9 @@ function subjectForLesson(standardSubject: string): string {
 
 export default function LessonBuilder({ lessonSubject = "", initialPlan, savedLessonId }: Props) {
   const { user } = useAuth();
-  const canSave = user?.role === "admin" || user?.role === "academic_coach";
+  // Normalize: auth API returns "academic-coach" (hyphen); compare against underscore form
+  const role = user?.role?.replace(/-/g, '_');
+  const canSave = role === "admin" || role === "academic_coach";
 
   const [selectedCodes, setSelectedCodes] = useState<string[]>([]);
   const [plan, setPlan] = useState<LessonPlan | null>(initialPlan ?? null);
