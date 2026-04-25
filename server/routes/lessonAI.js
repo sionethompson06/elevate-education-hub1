@@ -299,7 +299,7 @@ const LESSON_ARRAY_FIELDS = [
 
 const LESSON_REQUIRED_STRINGS = [
   'objective', 'warmUp', 'directInstruction', 'guidedPractice',
-  'independentPractice', 'assessment', 'exitTicket', 'teacherNotes',
+  'independentPractice', 'differentiation', 'assessment', 'exitTicket', 'teacherNotes',
 ];
 
 router.post('/enhance-lesson', requireAuth, async (req, res) => {
@@ -377,6 +377,17 @@ router.post('/enhance-lesson', requireAuth, async (req, res) => {
 
     // resourceSuggestions is optional — default to empty array if missing
     if (!Array.isArray(enhanced.resourceSuggestions)) enhanced.resourceSuggestions = [];
+
+    // Fallback: restore original studentSupports sections if AI returned invalid/missing data
+    if (!enhanced.studentSupports || typeof enhanced.studentSupports !== 'object') {
+      enhanced.studentSupports = lessonPlan.studentSupports ?? undefined;
+    } else if (lessonPlan.studentSupports && typeof lessonPlan.studentSupports === 'object') {
+      for (const type of VALID_SUPPORT_TYPES) {
+        if (!enhanced.studentSupports[type] || typeof enhanced.studentSupports[type] !== 'object') {
+          enhanced.studentSupports[type] = lessonPlan.studentSupports[type];
+        }
+      }
+    }
 
     // Log missing keys as warnings
     const ALL_EXPECTED = [...LESSON_REQUIRED_STRINGS, ...LESSON_ARRAY_FIELDS, 'title', 'objective', 'differentiation', 'studentSupports', 'resourceSuggestions'];
