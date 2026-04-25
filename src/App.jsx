@@ -55,6 +55,7 @@ import ParentBilling from "./pages/parent/Billing";
 import ParentPrograms from "./pages/parent/Programs";
 import ProgramsEnroll from "./pages/parent/ProgramsEnroll";
 import PaymentsBilling from "./pages/parent/PaymentsBilling";
+import StatementsReceipts from "./pages/parent/StatementsReceipts";
 
 // Admin extended pages
 import AdminStudents from "./pages/admin/Students";
@@ -132,6 +133,7 @@ const AuthenticatedApp = () => {
           <Route path="/parent/billing" element={<ParentBilling />} />
           <Route path="/parent/programs" element={<ProgramsEnroll />} />
           <Route path="/parent/payments" element={<PaymentsBilling />} />
+          <Route path="/parent/statements" element={<StatementsReceipts />} />
         </Route>
 
         {/* Academic Coach portal */}

@@ -32,6 +32,7 @@ const ROLE_NAV = {
     { label: "My Dashboard", href: "/parent/dashboard" },
     { label: "Programs & Enroll", href: "/parent/programs" },
     { label: "Payments & Billing", href: "/parent/payments" },
+    { label: "Statements & Receipts", href: "/parent/statements" },
     { label: "Student Progress", href: "/parent/progress" },
     { label: "Schedule", href: "/parent/schedule" },
     { label: "Training Sessions", href: "/parent/attendance" },
