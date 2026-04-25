@@ -7,6 +7,7 @@ import { logAudit } from '../services/audit.service.js';
 import { createNotification } from '../services/notification.service.js';
 import { broadcastEvent } from '../services/sse.service.js';
 import { recordPaymentReceived, recordWaiver, allocatePayment } from '../services/accounting.service.js';
+import { getStripe } from '../services/stripe.service.js';
 
 const router = Router();
 
@@ -807,6 +808,270 @@ router.get('/audit', requireAuth, requireRole('admin'), async (req, res) => {
     res.json({ success: true, issues, counts, lastRecognitionDate });
   } catch (err) {
     console.error('[billing/audit] error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /billing/reconciliation — compare local records with Stripe (admin, read-only)
+router.get('/reconciliation', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit || '50', 10), 100);
+
+    // 1. Fetch recent family invoices (Stripe-involved payments)
+    const recentFamilyInvoices = await db.select({
+      id: familyInvoices.id,
+      billingAccountId: familyInvoices.billingAccountId,
+      totalAmount: familyInvoices.totalAmount,
+      status: familyInvoices.status,
+      stripeSessionId: familyInvoices.stripeSessionId,
+      stripePaymentId: familyInvoices.stripePaymentId,
+      createdAt: familyInvoices.createdAt,
+      parentUserId: billingAccounts.parentUserId,
+    }).from(familyInvoices)
+      .leftJoin(billingAccounts, eq(billingAccounts.id, familyInvoices.billingAccountId))
+      .orderBy(desc(familyInvoices.createdAt))
+      .limit(limit);
+
+    // 2. Fetch recent Stripe payments (exclude manual/credit — no Stripe to reconcile)
+    const recentPayments = await db.select({
+      id: payments.id,
+      billingAccountId: payments.billingAccountId,
+      invoiceId: payments.invoiceId,
+      amount: payments.amount,
+      method: payments.method,
+      status: payments.status,
+      stripePaymentIntentId: payments.stripePaymentIntentId,
+      createdAt: payments.createdAt,
+    }).from(payments)
+      .where(eq(payments.method, 'stripe'))
+      .orderBy(desc(payments.createdAt))
+      .limit(limit);
+
+    // 3. Fetch payment_allocations for the Stripe payments
+    const paymentIds = recentPayments.map(p => p.id);
+    const allocationsByPayment = {};
+    if (paymentIds.length > 0) {
+      const allocs = await db.select({
+        paymentId: paymentAllocations.paymentId,
+        invoiceId: paymentAllocations.invoiceId,
+        amount: paymentAllocations.amount,
+      }).from(paymentAllocations).where(inArray(paymentAllocations.paymentId, paymentIds));
+      for (const a of allocs) {
+        if (!allocationsByPayment[a.paymentId]) allocationsByPayment[a.paymentId] = [];
+        allocationsByPayment[a.paymentId].push(a);
+      }
+    }
+
+    // 4. Fetch child invoice statuses for family invoices
+    const fiIds = recentFamilyInvoices.map(fi => fi.id);
+    const childInvoicesByFI = {};
+    if (fiIds.length > 0) {
+      const children = await db.select({
+        familyInvoiceId: invoices.familyInvoiceId,
+        id: invoices.id,
+        status: invoices.status,
+        amount: invoices.amount,
+      }).from(invoices).where(inArray(invoices.familyInvoiceId, fiIds));
+      for (const c of children) {
+        if (!childInvoicesByFI[c.familyInvoiceId]) childInvoicesByFI[c.familyInvoiceId] = [];
+        childInvoicesByFI[c.familyInvoiceId].push(c);
+      }
+    }
+
+    // 5. Stripe lookups — run in parallel, cap total to limit
+    let stripeAvailable = true;
+    const stripeSessionCache = {};
+    const stripeIntentCache = {};
+
+    try {
+      const stripe = getStripe();
+      await Promise.all([
+        ...recentFamilyInvoices
+          .filter(fi => fi.stripeSessionId)
+          .map(async fi => {
+            try {
+              stripeSessionCache[fi.stripeSessionId] = await stripe.checkout.sessions.retrieve(fi.stripeSessionId);
+            } catch (e) {
+              stripeSessionCache[fi.stripeSessionId] = { _error: e.message };
+            }
+          }),
+        ...recentPayments
+          .filter(p => p.stripePaymentIntentId)
+          .map(async p => {
+            try {
+              stripeIntentCache[p.stripePaymentIntentId] = await stripe.paymentIntents.retrieve(p.stripePaymentIntentId);
+            } catch (e) {
+              stripeIntentCache[p.stripePaymentIntentId] = { _error: e.message };
+            }
+          }),
+      ]);
+    } catch (_initErr) {
+      // STRIPE_SECRET_KEY not set or Stripe unavailable — still return local data
+      stripeAvailable = false;
+    }
+
+    // 6. Build rows with issue detection
+    const SEV_ORDER = { critical: 0, high: 1, medium: 2, low: 3, none: 4 };
+    const rows = [];
+
+    // ── Family invoice rows ──────────────────────────────────────────────────
+    for (const fi of recentFamilyInvoices) {
+      const localAmount = parseFloat(fi.totalAmount || 0);
+      let stripeStatus = null;
+      let stripeAmount = null;
+      let stripePaid = null;
+      let issue = null;
+      let severity = 'none';
+
+      if (!stripeAvailable) {
+        stripeStatus = 'stripe_unavailable';
+      } else if (fi.stripeSessionId) {
+        const session = stripeSessionCache[fi.stripeSessionId];
+        if (session?._error) {
+          stripeStatus = 'lookup_failed';
+          issue = `Stripe lookup failed: ${session._error}`;
+          severity = 'medium';
+        } else if (session) {
+          stripeStatus = session.payment_status; // 'paid' | 'unpaid' | 'no_payment_required'
+          stripeAmount = session.amount_total != null ? session.amount_total / 100 : null;
+          stripePaid = session.payment_status === 'paid';
+
+          if (fi.status === 'paid' && !stripePaid) {
+            issue = 'Local marked paid but Stripe session is not paid';
+            severity = 'critical';
+          } else if (stripePaid && fi.status !== 'paid') {
+            issue = 'Stripe session is paid but local family invoice is not marked paid';
+            severity = 'critical';
+          } else if (stripePaid && stripeAmount != null && Math.abs(stripeAmount - localAmount) > 0.01) {
+            issue = `Amount mismatch: local $${localAmount.toFixed(2)} vs Stripe $${stripeAmount.toFixed(2)}`;
+            severity = 'high';
+          }
+        }
+      } else if (fi.status === 'paid' && !fi.stripePaymentId) {
+        // Paid without any Stripe involvement (manual/credit) — mark as not applicable
+        stripeStatus = 'not_applicable';
+      } else if (fi.status !== 'paid') {
+        stripeStatus = 'no_session';
+      }
+
+      // Child invoice consistency check
+      const children = childInvoicesByFI[fi.id] || [];
+      const allocationStatus = children.length === 0 ? 'none'
+        : children.every(c => ['paid', 'waived'].includes(c.status)) ? 'allocated'
+        : fi.status === 'paid' ? 'partial_allocation' : 'allocated';
+
+      if (fi.status === 'paid' && allocationStatus === 'partial_allocation') {
+        if (!issue) { issue = 'Family invoice paid but some child invoices are still unpaid'; severity = 'high'; }
+      }
+
+      rows.push({
+        type: 'family_invoice',
+        localId: fi.id,
+        billingAccountId: fi.billingAccountId,
+        parentUserId: fi.parentUserId,
+        localStatus: fi.status,
+        localAmount,
+        stripeSessionId: fi.stripeSessionId || null,
+        stripeStatus,
+        stripeAmount,
+        stripePaid,
+        allocationStatus,
+        issue,
+        severity,
+        createdAt: fi.createdAt?.toISOString?.() ?? null,
+      });
+    }
+
+    // ── Payment rows ─────────────────────────────────────────────────────────
+    for (const p of recentPayments) {
+      const localAmount = parseFloat(p.amount || 0);
+      let stripeStatus = null;
+      let stripeAmount = null;
+      let stripePaid = null;
+      let issue = null;
+      let severity = 'none';
+
+      if (!stripeAvailable) {
+        stripeStatus = 'stripe_unavailable';
+      } else if (p.stripePaymentIntentId) {
+        const intent = stripeIntentCache[p.stripePaymentIntentId];
+        if (intent?._error) {
+          stripeStatus = 'lookup_failed';
+          issue = `Stripe lookup failed: ${intent._error}`;
+          severity = 'medium';
+        } else if (intent) {
+          stripeStatus = intent.status; // 'succeeded' | 'processing' | 'requires_payment_method' | etc.
+          stripeAmount = intent.amount != null ? intent.amount / 100 : null;
+          stripePaid = intent.status === 'succeeded';
+
+          if (p.status === 'paid' && !stripePaid) {
+            issue = 'Local payment is paid but Stripe payment intent has not succeeded';
+            severity = 'critical';
+          } else if (stripePaid && p.status !== 'paid') {
+            issue = 'Stripe payment intent succeeded but local payment is not marked paid';
+            severity = 'critical';
+          } else if (stripePaid && stripeAmount != null && Math.abs(stripeAmount - localAmount) > 0.01) {
+            issue = `Amount mismatch: local $${localAmount.toFixed(2)} vs Stripe $${stripeAmount.toFixed(2)}`;
+            severity = 'high';
+          }
+        }
+      } else {
+        // Stripe payment without a payment intent ID
+        issue = 'Stripe payment is missing payment intent ID';
+        severity = 'medium';
+        stripeStatus = 'no_intent_id';
+      }
+
+      // Allocation check
+      const allocs = allocationsByPayment[p.id] || [];
+      let allocationStatus;
+      if (allocs.length === 0) {
+        allocationStatus = 'missing_allocation';
+        if (!issue) { issue = 'Payment has no allocation to any invoice'; severity = 'critical'; }
+      } else {
+        const totalAllocated = allocs.reduce((sum, a) => sum + parseFloat(a.amount || 0), 0);
+        if (Math.abs(totalAllocated - localAmount) > 0.01) {
+          allocationStatus = 'partial_allocation';
+          if (!issue) { issue = `Partially allocated: $${totalAllocated.toFixed(2)} of $${localAmount.toFixed(2)}`; severity = severity === 'none' ? 'high' : severity; }
+        } else {
+          allocationStatus = 'allocated';
+        }
+      }
+
+      rows.push({
+        type: 'payment',
+        localId: p.id,
+        billingAccountId: p.billingAccountId,
+        localStatus: p.status,
+        localAmount,
+        stripePaymentIntentId: p.stripePaymentIntentId || null,
+        stripeStatus,
+        stripeAmount,
+        stripePaid,
+        allocationStatus,
+        issue,
+        severity,
+        createdAt: p.createdAt?.toISOString?.() ?? null,
+      });
+    }
+
+    // Sort: issues first, then by date desc
+    rows.sort((a, b) =>
+      (SEV_ORDER[a.severity] ?? 5) - (SEV_ORDER[b.severity] ?? 5) ||
+      (b.createdAt || '').localeCompare(a.createdAt || '')
+    );
+
+    const counts = {
+      total: rows.length,
+      critical: rows.filter(r => r.severity === 'critical').length,
+      high:     rows.filter(r => r.severity === 'high').length,
+      medium:   rows.filter(r => r.severity === 'medium').length,
+      none:     rows.filter(r => r.severity === 'none').length,
+    };
+
+    res.json({ success: true, rows, counts, stripeAvailable });
+  } catch (err) {
+    console.error('[billing/reconciliation] error:', err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });

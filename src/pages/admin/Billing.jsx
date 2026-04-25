@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost, apiPatch } from "@/api/apiClient";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, Loader2, CreditCard, BookOpen, ChevronDown, ChevronRight, Search, Pencil, Check, X, CheckCircle, XCircle, RotateCcw, Tag, ShieldAlert, Calendar } from "lucide-react";
+import { RefreshCw, Loader2, CreditCard, BookOpen, ChevronDown, ChevronRight, Search, Pencil, Check, X, CheckCircle, XCircle, RotateCcw, Tag, ShieldAlert, Calendar, Scale } from "lucide-react";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function daysOverdue(dueDate) {
@@ -460,6 +460,181 @@ const SEVERITY_STYLES = {
   low:      { badge: "bg-slate-100 text-slate-600 border-slate-200", card: "border-slate-200 bg-slate-50", label: "Low" },
 };
 
+// ── Reconciliation helpers ────────────────────────────────────────────────────
+const RECON_SEV = {
+  critical: "bg-red-100 text-red-700 border border-red-200",
+  high:     "bg-orange-100 text-orange-700 border border-orange-200",
+  medium:   "bg-yellow-100 text-yellow-700 border border-yellow-200",
+  low:      "bg-slate-100 text-slate-600 border border-slate-200",
+  none:     "bg-green-50 text-green-700 border border-green-200",
+};
+
+const ALLOC_LABEL = {
+  allocated:           { text: "Allocated",    cls: "text-green-600" },
+  partial_allocation:  { text: "Partial",       cls: "text-orange-600" },
+  missing_allocation:  { text: "Missing",       cls: "text-red-600" },
+  none:                { text: "—",             cls: "text-slate-400" },
+};
+
+function fmt(n) {
+  if (n == null) return "—";
+  return "$" + parseFloat(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function ReconciliationPanel() {
+  const [hasRun, setHasRun] = useState(false);
+  const [sevFilter, setSevFilter] = useState("all");
+  const { data, isFetching, refetch } = useQuery({
+    queryKey: ["admin-billing-reconciliation"],
+    queryFn: () => apiGet("/billing/reconciliation?limit=50"),
+    enabled: false,
+    staleTime: 0,
+  });
+
+  const handleRun = () => { setHasRun(true); refetch(); };
+
+  const allRows = data?.rows || [];
+  const counts = data?.counts || {};
+
+  const visibleRows = allRows.filter(r => {
+    if (sevFilter === "all") return true;
+    if (sevFilter === "issues") return r.severity !== "none";
+    if (sevFilter === "critical_high") return r.severity === "critical" || r.severity === "high";
+    return true;
+  });
+
+  return (
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <p className="text-sm text-slate-600">
+            Compares local billing records against Stripe — read-only, no records are modified.
+          </p>
+          <p className="text-xs text-slate-400 mt-1">
+            Checks family invoices and payments against Stripe checkout sessions and payment intents. Stripe calls are made server-side only.
+          </p>
+        </div>
+        <Button size="sm" onClick={handleRun} disabled={isFetching} className="shrink-0">
+          {isFetching ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Scale className="w-4 h-4 mr-2" />}
+          {isFetching ? "Checking…" : hasRun ? "Recheck" : "Run Reconciliation"}
+        </Button>
+      </div>
+
+      {hasRun && isFetching && (
+        <div className="flex items-center gap-2 text-sm text-slate-500 py-4">
+          <Loader2 className="w-4 h-4 animate-spin" /> Looking up Stripe records…
+        </div>
+      )}
+
+      {hasRun && !isFetching && data && (
+        <>
+          {/* Summary badges */}
+          <div className="flex flex-wrap gap-2 items-center">
+            {counts.total === 0 ? (
+              <span className="px-3 py-1 bg-green-100 text-green-700 border border-green-200 rounded-full text-xs font-semibold">
+                ✓ No records found
+              </span>
+            ) : (
+              <>
+                <span className="text-xs text-slate-500">{counts.total} records</span>
+                {counts.critical > 0 && <span className={`px-3 py-1 border rounded-full text-xs font-semibold ${SEVERITY_STYLES.critical.badge}`}>{counts.critical} Critical</span>}
+                {counts.high     > 0 && <span className={`px-3 py-1 border rounded-full text-xs font-semibold ${SEVERITY_STYLES.high.badge}`}>{counts.high} High</span>}
+                {counts.medium   > 0 && <span className={`px-3 py-1 border rounded-full text-xs font-semibold ${SEVERITY_STYLES.medium.badge}`}>{counts.medium} Medium</span>}
+                {counts.none     > 0 && <span className="px-3 py-1 bg-green-50 text-green-700 border border-green-200 rounded-full text-xs font-semibold">{counts.none} OK</span>}
+              </>
+            )}
+            {!data.stripeAvailable && (
+              <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                Stripe unavailable — local data only
+              </span>
+            )}
+          </div>
+
+          {/* Filter bar */}
+          {counts.total > 0 && (
+            <div className="flex gap-1.5">
+              {[
+                { key: "all",           label: "All" },
+                { key: "issues",        label: "Issues Only" },
+                { key: "critical_high", label: "Critical / High" },
+              ].map(f => (
+                <button key={f.key} onClick={() => setSevFilter(f.key)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                    sevFilter === f.key
+                      ? "bg-[#1a3c5e] text-white border-[#1a3c5e]"
+                      : "bg-white text-slate-600 border-slate-200 hover:border-slate-400"
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Table */}
+          {visibleRows.length === 0 ? (
+            <p className="text-sm text-slate-400 py-4 text-center">No records match this filter.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-slate-200">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    {["Type", "ID", "Local Status", "Local Amt", "Stripe Status", "Stripe Amt", "Allocation", "Severity", "Issue"].map(h => (
+                      <th key={h} className="text-left px-3 py-2.5 font-semibold text-slate-600 whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {visibleRows.map((row, i) => {
+                    const sevCls = RECON_SEV[row.severity] || RECON_SEV.none;
+                    const allocInfo = ALLOC_LABEL[row.allocationStatus] || ALLOC_LABEL.none;
+                    const typeLabel = row.type === "family_invoice" ? "Family Inv." : "Payment";
+                    const typeColor = row.type === "family_invoice" ? "text-blue-700" : "text-purple-700";
+                    return (
+                      <tr key={i} className="hover:bg-slate-50 transition-colors">
+                        <td className={`px-3 py-2.5 font-semibold ${typeColor}`}>{typeLabel}</td>
+                        <td className="px-3 py-2.5 font-mono text-slate-500">#{row.localId}</td>
+                        <td className="px-3 py-2.5">
+                          <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-mono">{row.localStatus}</span>
+                        </td>
+                        <td className="px-3 py-2.5 font-medium text-slate-700">{fmt(row.localAmount)}</td>
+                        <td className="px-3 py-2.5">
+                          {row.stripeStatus ? (
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono ${
+                              row.stripeStatus === "paid" || row.stripeStatus === "succeeded"
+                                ? "bg-green-100 text-green-700"
+                                : row.stripeStatus === "lookup_failed" || row.stripeStatus === "no_intent_id"
+                                  ? "bg-red-100 text-red-600"
+                                  : row.stripeStatus === "not_applicable" || row.stripeStatus === "stripe_unavailable"
+                                    ? "bg-slate-100 text-slate-400"
+                                    : "bg-yellow-100 text-yellow-700"
+                            }`}>{row.stripeStatus}</span>
+                          ) : <span className="text-slate-300">—</span>}
+                        </td>
+                        <td className="px-3 py-2.5 font-medium text-slate-700">{fmt(row.stripeAmount)}</td>
+                        <td className={`px-3 py-2.5 font-medium ${allocInfo.cls}`}>{allocInfo.text}</td>
+                        <td className="px-3 py-2.5">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${sevCls}`}>
+                            {row.severity === "none" ? "OK" : row.severity}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 text-slate-500 max-w-xs truncate" title={row.issue || ""}>
+                          {row.issue || <span className="text-slate-300">—</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function BillingAuditPanel() {
   const [hasRun, setHasRun] = useState(false);
   const [recognizing, setRecognizing] = useState(false);
@@ -699,9 +874,10 @@ export default function AdminBilling() {
       {/* Tab bar */}
       <div className="flex gap-0 border-b border-slate-200">
         {[
-          { key: "accounting",   label: "Accounting",     icon: BookOpen },
-          { key: "transactions", label: "Transaction Log", icon: CreditCard },
-          { key: "audit",        label: "Billing Audit",   icon: ShieldAlert },
+          { key: "accounting",      label: "Accounting",      icon: BookOpen },
+          { key: "transactions",    label: "Transaction Log",  icon: CreditCard },
+          { key: "reconciliation",  label: "Reconciliation",   icon: Scale },
+          { key: "audit",           label: "Billing Audit",    icon: ShieldAlert },
         ].map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setTab(key)}
             className={`flex items-center gap-2 px-5 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
@@ -840,6 +1016,13 @@ export default function AdminBilling() {
               </div>
             </Card>
           )}
+        </div>
+      )}
+
+      {/* ── Reconciliation tab ───────────────────────────────────────────────── */}
+      {tab === "reconciliation" && (
+        <div className="space-y-4">
+          <ReconciliationPanel />
         </div>
       )}
 
