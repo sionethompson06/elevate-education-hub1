@@ -102,8 +102,9 @@ export default function FamilyInvoiceCard({
       }
     } catch (err) {
       if (err.message === "subscription_retry_required") {
+        // Don't auto-trigger portal here — just show the portal button.
+        // The auto-trigger silently fails if Stripe portal isn't configured.
         setNeedsPortal(true);
-        if (onNeedsPortal) onNeedsPortal();
       } else {
         setError(err.message || "Checkout failed. Please try again.");
       }
@@ -116,10 +117,14 @@ export default function FamilyInvoiceCard({
     setPaying(true);
     setError("");
     try {
-      const res = await apiPost("/stripe/portal", {});
-      if (res.url) window.location.href = res.url;
+      const res = await apiPost("/stripe/portal", { return_url: window.location.href });
+      if (res.url) {
+        window.location.href = res.url;
+      } else {
+        setError("Billing portal is not available. Please contact support.");
+      }
     } catch (err) {
-      setError(err.message || "Could not open billing portal.");
+      setError(err.message || "Could not open billing portal. The portal may not be configured yet.");
     } finally {
       setPaying(false);
     }

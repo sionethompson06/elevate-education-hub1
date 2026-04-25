@@ -229,33 +229,27 @@ router.post('/family-checkout', requireAuth, requireRole('parent', 'admin'), asy
       return res.status(400).json({ error: 'No unpaid items on this family invoice.' });
     }
 
-    // Risk 3: Detect subscription billing cycles in past_due invoices.
-    // A past_due invoice tied to a monthly/annual enrollment means Stripe already
-    // has an active subscription — creating a new checkout would double-charge the
-    // parent. The client must redirect to the Stripe billing portal to retry instead.
+    // Risk 3: Detect active Stripe subscription failures in past_due invoices.
+    // enrollment.status === 'payment_failed' is set ONLY by the Stripe
+    // invoice.payment_failed webhook, which only fires for real subscriptions.
+    // Checking billing cycle alone is wrong — a monthly-cycle enrollment may have
+    // been paid via a one-time family checkout with no Stripe subscription created.
     const pastDueInvoices = childInvoices.filter(i => i.status === 'past_due');
     if (pastDueInvoices.length > 0) {
       const pastDueEnrollmentIds = [...new Set(pastDueInvoices.filter(i => i.enrollmentId).map(i => i.enrollmentId))];
       if (pastDueEnrollmentIds.length > 0) {
-        // billingCycle lives on programs, not enrollments — must join to get base cycle
-        const enrollmentCycles = await db.select({
+        const enrollmentStatuses = await db.select({
           id: enrollments.id,
-          billingCycleOverride: enrollments.billingCycleOverride,
-          programBillingCycle: programs.billingCycle,
-        }).from(enrollments)
-          .leftJoin(programs, eq(enrollments.programId, programs.id))
-          .where(inArray(enrollments.id, pastDueEnrollmentIds));
+          status: enrollments.status,
+        }).from(enrollments).where(inArray(enrollments.id, pastDueEnrollmentIds));
 
-        const hasSubscriptionCycle = enrollmentCycles.some(e => {
-          const cycle = e.billingCycleOverride || e.programBillingCycle;
-          return cycle === 'monthly' || cycle === 'annual';
-        });
+        const hasSubscriptionFailure = enrollmentStatuses.some(e => e.status === 'payment_failed');
 
-        if (hasSubscriptionCycle) {
+        if (hasSubscriptionFailure) {
           return res.status(409).json({
             error: 'subscription_retry_required',
             requiresPortal: true,
-            message: 'One or more overdue items are on a subscription. Please update your payment method via the billing portal.',
+            message: 'One or more items have a failed subscription payment. Please update your payment method via the billing portal to retry.',
           });
         }
       }
