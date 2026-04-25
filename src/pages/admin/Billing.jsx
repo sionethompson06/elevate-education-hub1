@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost, apiPatch } from "@/api/apiClient";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, Loader2, CreditCard, BookOpen, ChevronDown, ChevronRight, Search, Pencil, Check, X, CheckCircle, XCircle, RotateCcw, Tag, ShieldAlert } from "lucide-react";
+import { RefreshCw, Loader2, CreditCard, BookOpen, ChevronDown, ChevronRight, Search, Pencil, Check, X, CheckCircle, XCircle, RotateCcw, Tag, ShieldAlert, Calendar } from "lucide-react";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function daysOverdue(dueDate) {
@@ -462,6 +462,8 @@ const SEVERITY_STYLES = {
 
 function BillingAuditPanel() {
   const [hasRun, setHasRun] = useState(false);
+  const [recognizing, setRecognizing] = useState(false);
+  const [recognizeResult, setRecognizeResult] = useState(null);
   const { data, isFetching, refetch } = useQuery({
     queryKey: ["admin-billing-audit"],
     queryFn: () => apiGet("/billing/audit"),
@@ -471,8 +473,27 @@ function BillingAuditPanel() {
 
   const handleRun = () => { setHasRun(true); refetch(); };
 
+  const handleRunRecognition = async () => {
+    setRecognizing(true);
+    setRecognizeResult(null);
+    try {
+      const now = new Date();
+      const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      const result = await apiPost("/accounting/recognize-revenue", { period });
+      setRecognizeResult({ success: true, period, recognized: result.recognized ?? 0, skipped: result.skipped ?? 0 });
+      refetch();
+    } catch (err) {
+      setRecognizeResult({ success: false, error: err.message });
+    } finally {
+      setRecognizing(false);
+    }
+  };
+
   const issues = data?.issues || [];
   const counts = data?.counts || {};
+  const lastRecognitionDate = data?.lastRecognitionDate
+    ? new Date(data.lastRecognitionDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    : null;
 
   return (
     <div className="space-y-5">
@@ -482,14 +503,37 @@ function BillingAuditPanel() {
             Read-only check for billing data inconsistencies. Does not modify any records.
           </p>
           <p className="text-xs text-slate-400 mt-1">
-            Checks: paid invoice/inactive enrollment · active enrollment/unpaid invoice · paid family invoice/unpaid child · missing payment allocations · credit balances · payment_failed enrollments
+            Checks: paid invoice/inactive enrollment · active enrollment/unpaid invoice · paid family invoice/unpaid child · missing payment allocations · credit balances · payment_failed enrollments · revenue recognition staleness
           </p>
         </div>
-        <Button size="sm" onClick={handleRun} disabled={isFetching} className="shrink-0">
-          {isFetching ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <ShieldAlert className="w-4 h-4 mr-2" />}
-          {isFetching ? "Running…" : "Run Audit"}
-        </Button>
+        <div className="flex items-center gap-2 flex-wrap shrink-0">
+          <Button size="sm" variant="outline" onClick={handleRunRecognition} disabled={recognizing} title="Recognize revenue for the current month">
+            {recognizing ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Calendar className="w-4 h-4 mr-2" />}
+            {recognizing ? "Running…" : "Run Recognition"}
+          </Button>
+          <Button size="sm" onClick={handleRun} disabled={isFetching} className="shrink-0">
+            {isFetching ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <ShieldAlert className="w-4 h-4 mr-2" />}
+            {isFetching ? "Running…" : "Run Audit"}
+          </Button>
+        </div>
       </div>
+
+      {/* Recognition result flash */}
+      {recognizeResult && (
+        <div className={`px-4 py-2 rounded-lg text-sm border ${recognizeResult.success ? "bg-green-50 border-green-200 text-green-700" : "bg-red-50 border-red-200 text-red-700"}`}>
+          {recognizeResult.success
+            ? `Revenue recognition ${recognizeResult.period}: ${recognizeResult.recognized} entries posted, ${recognizeResult.skipped} skipped.`
+            : `Recognition failed: ${recognizeResult.error}`}
+        </div>
+      )}
+
+      {/* Last recognition date */}
+      {hasRun && !isFetching && lastRecognitionDate && (
+        <p className="text-xs text-slate-400 flex items-center gap-1">
+          <Calendar className="w-3 h-3" />
+          Last revenue recognition: {lastRecognitionDate}
+        </p>
+      )}
 
       {hasRun && !isFetching && data && (
         <>

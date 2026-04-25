@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { eq, and, desc, inArray } from 'drizzle-orm';
+import { eq, and, desc, inArray, sql } from 'drizzle-orm';
 import db from '../db-postgres.js';
 import { enrollments, users, programs, billingAccounts, payments, invoices, students, familyInvoices, guardianStudents } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
@@ -229,6 +229,35 @@ router.post('/family-checkout', requireAuth, requireRole('parent', 'admin'), asy
       return res.status(400).json({ error: 'No unpaid items on this family invoice.' });
     }
 
+    // Risk 3: Detect subscription billing cycles in past_due invoices.
+    // A past_due invoice tied to a monthly/annual enrollment means Stripe already
+    // has an active subscription — creating a new checkout would double-charge the
+    // parent. The client must redirect to the Stripe billing portal to retry instead.
+    const pastDueInvoices = childInvoices.filter(i => i.status === 'past_due');
+    if (pastDueInvoices.length > 0) {
+      const pastDueEnrollmentIds = [...new Set(pastDueInvoices.filter(i => i.enrollmentId).map(i => i.enrollmentId))];
+      if (pastDueEnrollmentIds.length > 0) {
+        const enrollmentCycles = await db.select({
+          id: enrollments.id,
+          billingCycle: enrollments.billingCycle,
+          billingCycleOverride: enrollments.billingCycleOverride,
+        }).from(enrollments).where(inArray(enrollments.id, pastDueEnrollmentIds));
+
+        const hasSubscriptionCycle = enrollmentCycles.some(e => {
+          const cycle = e.billingCycleOverride || e.billingCycle;
+          return cycle === 'monthly' || cycle === 'annual';
+        });
+
+        if (hasSubscriptionCycle) {
+          return res.status(409).json({
+            error: 'subscription_retry_required',
+            requiresPortal: true,
+            message: 'One or more overdue items are on a subscription. Please update your payment method via the billing portal.',
+          });
+        }
+      }
+    }
+
     // Fetch enrollment/program/student info for each child invoice
     const enrollmentIds = [...new Set(childInvoices.filter(i => i.enrollmentId).map(i => i.enrollmentId))];
     let enrollmentMap = {};
@@ -245,17 +274,78 @@ router.post('/family-checkout', requireAuth, requireRole('parent', 'admin'), asy
       enrollmentMap = Object.fromEntries(rows.map(r => [r.id, r]));
     }
 
-    const lineItems = childInvoices.map(inv => {
-      const e = inv.enrollmentId ? enrollmentMap[inv.enrollmentId] : null;
-      const studentName = e?.studentFirstName
-        ? `${e.studentFirstName} ${e.studentLastName || ''}`.trim()
-        : null;
-      return {
-        programName: e?.programName || inv.description || 'Elevate Program',
-        studentName,
-        amountDollars: parseFloat(inv.amount || 0),
-      };
-    });
+    // Risk 1: Apply account credit balance before charging Stripe.
+    const familyTotal = childInvoices.reduce((sum, i) => sum + parseFloat(i.amount || 0), 0);
+    const availableCredit = parseFloat(billingAccount.balance || 0);
+    const creditToApply = Math.min(availableCredit, familyTotal);
+    const netCharge = Math.round((familyTotal - creditToApply) * 100) / 100; // round to cents
+
+    if (netCharge <= 0) {
+      // Credit covers the full balance — bypass Stripe entirely.
+      const today = new Date().toISOString().split('T')[0];
+
+      // Deduct credit from billing account
+      await db.update(billingAccounts)
+        .set({ balance: sql`balance - ${String(creditToApply)}` })
+        .where(eq(billingAccounts.id, billingAccount.id));
+
+      // Mark all child invoices paid
+      for (const inv of childInvoices) {
+        await db.update(invoices)
+          .set({ status: 'paid', paidDate: today })
+          .where(eq(invoices.id, inv.id));
+      }
+
+      // Mark family invoice paid
+      await db.update(familyInvoices)
+        .set({ status: 'paid', paidDate: today })
+        .where(eq(familyInvoices.id, fi.id));
+
+      // Activate all linked enrollments and students
+      for (const inv of childInvoices) {
+        if (inv.enrollmentId) {
+          await db.update(enrollments).set({ status: 'active' }).where(eq(enrollments.id, inv.enrollmentId));
+          const [enr] = await db.select({ studentId: enrollments.studentId }).from(enrollments).where(eq(enrollments.id, inv.enrollmentId));
+          if (enr?.studentId) {
+            await db.update(students).set({ status: 'active' }).where(eq(students.id, enr.studentId));
+          }
+        }
+      }
+
+      // Create a credit payment record
+      await db.insert(payments).values({
+        billingAccountId: billingAccount.id,
+        invoiceId: childInvoices[0].id,
+        amount: String(creditToApply),
+        method: 'credit',
+        status: 'paid',
+        processedAt: new Date(),
+      });
+
+      try {
+        const { recordPaymentReceived, allocatePayment } = await import('../services/accounting.service.js');
+        const [newPayment] = await db.select().from(payments)
+          .where(and(eq(payments.billingAccountId, billingAccount.id), eq(payments.method, 'credit')))
+          .orderBy(desc(payments.processedAt)).limit(1);
+        if (newPayment) {
+          await recordPaymentReceived(newPayment);
+          await allocatePayment(newPayment.id);
+        }
+      } catch (acctErr) {
+        console.error('[stripe/family-checkout] accounting error (non-fatal):', acctErr.message);
+      }
+
+      return res.json({ activated: true, creditApplied: creditToApply, familyInvoiceId: fi.id });
+    }
+
+    // Partial credit: reserve the credit amount first (deduct from balance),
+    // then create a Stripe session for the net charge only.
+    // On Stripe failure, restore the reserved credit.
+    if (creditToApply > 0) {
+      await db.update(billingAccounts)
+        .set({ balance: sql`balance - ${String(creditToApply)}` })
+        .where(eq(billingAccounts.id, billingAccount.id));
+    }
 
     // Get or create Stripe customer
     const [parentUser] = await db.select().from(users).where(eq(users.id, billingAccount.parentUserId));
@@ -271,22 +361,56 @@ router.post('/family-checkout', requireAuth, requireRole('parent', 'admin'), asy
     }
 
     const origin = req.headers.origin || process.env.APP_URL || 'http://localhost:5173';
-    const session = await createFamilyCheckoutSession({
-      familyInvoiceId: fi.id,
-      parentUserId: billingAccount.parentUserId,
-      billingAccountId: billingAccount.id,
-      stripeCustomerId,
-      lineItems,
-      successUrl: success_url || `${origin}/parent/payments?payment=success&family_invoice=${fi.id}&session_id={CHECKOUT_SESSION_ID}`,
-      cancelUrl: cancel_url || `${origin}/parent/payments`,
-    });
+
+    let session;
+    try {
+      // Use a single line item for the net charge to avoid Stripe rounding issues
+      // when a credit splits across multiple programs.
+      const netLineItems = creditToApply > 0
+        ? [{ programName: 'Tuition Payment', studentName: null, amountDollars: netCharge }]
+        : childInvoices.map(inv => {
+            const e = inv.enrollmentId ? enrollmentMap[inv.enrollmentId] : null;
+            const studentName = e?.studentFirstName
+              ? `${e.studentFirstName} ${e.studentLastName || ''}`.trim()
+              : null;
+            return {
+              programName: e?.programName || inv.description || 'Elevate Program',
+              studentName,
+              amountDollars: parseFloat(inv.amount || 0),
+            };
+          });
+
+      session = await createFamilyCheckoutSession({
+        familyInvoiceId: fi.id,
+        parentUserId: billingAccount.parentUserId,
+        billingAccountId: billingAccount.id,
+        stripeCustomerId,
+        lineItems: netLineItems,
+        successUrl: success_url || `${origin}/parent/payments?payment=success&family_invoice=${fi.id}&session_id={CHECKOUT_SESSION_ID}`,
+        cancelUrl: cancel_url || `${origin}/parent/payments`,
+      });
+    } catch (stripeErr) {
+      // Stripe session creation failed — restore any reserved credit so the
+      // parent's balance is not silently lost.
+      if (creditToApply > 0) {
+        await db.update(billingAccounts)
+          .set({ balance: sql`balance + ${String(creditToApply)}` })
+          .where(eq(billingAccounts.id, billingAccount.id));
+      }
+      throw stripeErr;
+    }
 
     // Store the session ID on the family invoice for webhook lookup
     await db.update(familyInvoices)
       .set({ stripeSessionId: session.id })
       .where(eq(familyInvoices.id, fi.id));
 
-    res.json({ url: session.url, sessionId: session.id, familyInvoiceId: fi.id });
+    res.json({
+      url: session.url,
+      sessionId: session.id,
+      familyInvoiceId: fi.id,
+      creditApplied: creditToApply > 0 ? creditToApply : undefined,
+    });
   } catch (err) {
     console.error('[stripe] family-checkout error:', err.message);
     res.status(500).json({ error: err.message });

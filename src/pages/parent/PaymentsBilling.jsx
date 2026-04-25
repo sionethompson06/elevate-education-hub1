@@ -311,7 +311,12 @@ export default function PaymentsBilling() {
           <FamilyInvoiceCard
             familyInvoice={pendingFamilyInvoice}
             variant="past_due"
-            onPaymentStarted={() => {}}
+            creditBalance={parseFloat(billingAccount?.balance || 0)}
+            onPaymentStarted={() => {
+              qc.invalidateQueries({ queryKey: ["parent-family-invoices"] });
+              qc.invalidateQueries({ queryKey: ["parent-my-data"] });
+            }}
+            onNeedsPortal={billingAccount?.stripeCustomerId ? openBillingPortal : undefined}
           />
         </div>
       )}
@@ -323,7 +328,12 @@ export default function PaymentsBilling() {
           <FamilyInvoiceCard
             familyInvoice={pendingFamilyInvoice}
             variant="pending"
-            onPaymentStarted={() => {}}
+            creditBalance={parseFloat(billingAccount?.balance || 0)}
+            onPaymentStarted={() => {
+              qc.invalidateQueries({ queryKey: ["parent-family-invoices"] });
+              qc.invalidateQueries({ queryKey: ["parent-my-data"] });
+            }}
+            onNeedsPortal={billingAccount?.stripeCustomerId ? openBillingPortal : undefined}
           />
         </div>
       )}

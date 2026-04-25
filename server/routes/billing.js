@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import { eq, desc, inArray, and, sql } from 'drizzle-orm';
+import { eq, desc, inArray, and, sql, lt } from 'drizzle-orm';
 import db from '../db-postgres.js';
-import { billingAccounts, invoices, familyInvoices, payments, enrollments, students, programs, guardianStudents, users, paymentAllocations, enrollmentOverrides } from '../schema.js';
+import { billingAccounts, invoices, familyInvoices, payments, enrollments, students, programs, guardianStudents, users, paymentAllocations, enrollmentOverrides, journalEntries } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { logAudit } from '../services/audit.service.js';
 import { createNotification } from '../services/notification.service.js';
@@ -764,6 +764,38 @@ router.get('/audit', requireAuth, requireRole('admin'), async (req, res) => {
       });
     }
 
+    // Check 8: Revenue recognition staleness (Vercel has no cron — admin must trigger manually)
+    let lastRecognitionDate = null;
+    try {
+      const [lastEntry] = await db.select({ createdAt: journalEntries.createdAt })
+        .from(journalEntries)
+        .where(eq(journalEntries.referenceType, 'recognition'))
+        .orderBy(desc(journalEntries.createdAt))
+        .limit(1);
+      if (lastEntry) {
+        lastRecognitionDate = lastEntry.createdAt?.toISOString?.() ?? null;
+        const daysSince = Math.floor((Date.now() - new Date(lastEntry.createdAt).getTime()) / 86400000);
+        if (daysSince > 35) {
+          issues.push({
+            type: 'recognition_stale',
+            severity: 'medium',
+            message: `Revenue recognition last ran ${daysSince} days ago (${new Date(lastEntry.createdAt).toLocaleDateString()}). Run recognition for the current period.`,
+            ids: { daysSince },
+          });
+        }
+      } else {
+        issues.push({
+          type: 'recognition_never_run',
+          severity: 'medium',
+          message: 'Revenue recognition has never been run. Deferred revenue has not been recognized.',
+          ids: {},
+        });
+      }
+    } catch (recErr) {
+      // journal_entries table may not exist yet on fresh deploy — non-fatal
+      console.error('[billing/audit] recognition check error (non-fatal):', recErr.message);
+    }
+
     const counts = {
       total: issues.length,
       critical: issues.filter(i => i.severity === 'critical').length,
@@ -772,7 +804,7 @@ router.get('/audit', requireAuth, requireRole('admin'), async (req, res) => {
       low:      issues.filter(i => i.severity === 'low').length,
     };
 
-    res.json({ success: true, issues, counts });
+    res.json({ success: true, issues, counts, lastRecognitionDate });
   } catch (err) {
     console.error('[billing/audit] error:', err.message);
     res.status(500).json({ success: false, error: err.message });

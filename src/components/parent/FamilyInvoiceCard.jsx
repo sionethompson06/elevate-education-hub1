@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CreditCard, CheckCircle, Clock, ChevronDown, ChevronUp, Loader2, AlertCircle } from "lucide-react";
+import { CreditCard, CheckCircle, Clock, ChevronDown, ChevronUp, Loader2, AlertCircle, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { apiPost } from "@/api/apiClient";
 
@@ -24,16 +24,28 @@ function formatDate(str) {
   });
 }
 
-export default function FamilyInvoiceCard({ familyInvoice, variant = "pending", onPaymentStarted }) {
+export default function FamilyInvoiceCard({
+  familyInvoice,
+  variant = "pending",
+  onPaymentStarted,
+  creditBalance = 0,
+  onNeedsPortal,
+}) {
   const [paying, setPaying] = useState(false);
   const [expanded, setExpanded] = useState(true);
   const [error, setError] = useState("");
+  const [needsPortal, setNeedsPortal] = useState(false);
+  const [paidWithCredit, setPaidWithCredit] = useState(false);
 
-  const isPaid = variant === "paid" || familyInvoice.status === "paid";
+  const isPaid = paidWithCredit || variant === "paid" || familyInvoice.status === "paid";
   const isOverdueProp = variant === "past_due";
   const totalAmount = parseFloat(familyInvoice.totalAmount || 0);
   const lineItems = familyInvoice.lineItems || [];
   const paymentHistory = familyInvoice.payments || [];
+
+  // Credit that can be applied — capped at the outstanding total
+  const credit = Math.min(parseFloat(creditBalance || 0), totalAmount);
+  const netCharge = Math.max(0, totalAmount - credit);
 
   const cardClass = isPaid
     ? "border-green-200 bg-green-50"
@@ -41,7 +53,11 @@ export default function FamilyInvoiceCard({ familyInvoice, variant = "pending", 
       ? "border-red-300 bg-red-50/60"
       : "border-[#1a3c5e]/20 bg-white";
 
-  const headerLabel = isPaid ? "Invoice Paid" : isOverdueProp ? "Overdue Balance" : "Outstanding Balance";
+  const headerLabel = isPaid
+    ? "Invoice Paid"
+    : isOverdueProp
+      ? "Overdue Balance"
+      : "Outstanding Balance";
   const HeaderIcon = isPaid ? CheckCircle : isOverdueProp ? AlertCircle : CreditCard;
   const iconColor = isPaid ? "text-green-600" : isOverdueProp ? "text-red-500" : "text-[#1a3c5e]";
   const amountColor = isPaid ? "text-green-700" : isOverdueProp ? "text-red-700" : "text-[#1a3c5e]";
@@ -65,10 +81,19 @@ export default function FamilyInvoiceCard({ familyInvoice, variant = "pending", 
   const handlePay = async () => {
     setPaying(true);
     setError("");
+    setNeedsPortal(false);
     try {
       const res = await apiPost("/stripe/family-checkout", {
         family_invoice_id: familyInvoice.id,
       });
+
+      if (res.activated) {
+        // Credit covered the full balance — no Stripe redirect needed
+        setPaidWithCredit(true);
+        if (onPaymentStarted) onPaymentStarted();
+        return;
+      }
+
       if (res.url) {
         if (onPaymentStarted) onPaymentStarted();
         window.location.href = res.url;
@@ -76,7 +101,25 @@ export default function FamilyInvoiceCard({ familyInvoice, variant = "pending", 
         setError("Failed to start checkout. Please try again.");
       }
     } catch (err) {
-      setError(err.message || "Checkout failed. Please try again.");
+      if (err.message === "subscription_retry_required") {
+        setNeedsPortal(true);
+        if (onNeedsPortal) onNeedsPortal();
+      } else {
+        setError(err.message || "Checkout failed. Please try again.");
+      }
+    } finally {
+      setPaying(false);
+    }
+  };
+
+  const handlePortal = async () => {
+    setPaying(true);
+    setError("");
+    try {
+      const res = await apiPost("/stripe/portal", {});
+      if (res.url) window.location.href = res.url;
+    } catch (err) {
+      setError(err.message || "Could not open billing portal.");
     } finally {
       setPaying(false);
     }
@@ -158,30 +201,77 @@ export default function FamilyInvoiceCard({ familyInvoice, variant = "pending", 
             );
           })}
 
+          {/* Credit line item */}
+          {!isPaid && credit > 0 && (
+            <div className="flex items-center justify-between px-5 py-3 bg-emerald-50">
+              <p className="text-sm text-emerald-700 font-medium">Account Credit Applied</p>
+              <p className="text-sm font-semibold text-emerald-700">
+                −${credit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </p>
+            </div>
+          )}
+
           {/* Total row */}
           <div className="flex items-center justify-between px-5 py-3 bg-slate-50">
-            <p className="text-sm font-semibold text-slate-700">Total</p>
+            <p className="text-sm font-semibold text-slate-700">
+              {credit > 0 && !isPaid ? "Total Due After Credit" : "Total"}
+            </p>
             <p className={`text-sm font-bold ${isPaid ? "text-green-700" : isOverdueProp ? "text-red-700" : "text-[#1a3c5e]"}`}>
-              ${totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              ${(isPaid ? totalAmount : netCharge).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
           </div>
 
-          {/* Pay button (unpaid only) */}
+          {/* Paid with credit notice */}
+          {paidWithCredit && (
+            <div className="px-5 py-3 flex items-center gap-2 text-emerald-700 bg-emerald-50">
+              <CheckCircle className="w-4 h-4 shrink-0" />
+              <p className="text-sm font-medium">Paid with account credit</p>
+            </div>
+          )}
+
+          {/* Pay button or portal redirect (unpaid only) */}
           {!isPaid && (
             <div className="px-5 py-4 flex flex-col gap-2">
               {error && (
                 <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</p>
               )}
-              <Button
-                onClick={handlePay}
-                disabled={paying}
-                className={`w-full text-white font-semibold ${isOverdueProp ? "bg-red-600 hover:bg-red-700" : "bg-[#1a3c5e] hover:bg-[#0d2540]"}`}
-              >
-                {paying
-                  ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Processing…</>
-                  : <><CreditCard className="w-4 h-4 mr-2" />{isOverdueProp ? "Pay Overdue Balance" : "Pay"} ${totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</>}
-              </Button>
-              <p className="text-xs text-center text-slate-400">Secure payment via Stripe · All programs paid in one transaction</p>
+
+              {needsPortal ? (
+                <>
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+                    This payment is managed through your Stripe subscription. Please update your payment method via the billing portal.
+                  </p>
+                  <Button
+                    onClick={handlePortal}
+                    disabled={paying}
+                    className="w-full bg-amber-600 hover:bg-amber-700 text-white font-semibold"
+                  >
+                    {paying
+                      ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Opening Portal…</>
+                      : <><ExternalLink className="w-4 h-4 mr-2" />Update Payment Method</>}
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    onClick={handlePay}
+                    disabled={paying}
+                    className={`w-full text-white font-semibold ${isOverdueProp ? "bg-red-600 hover:bg-red-700" : "bg-[#1a3c5e] hover:bg-[#0d2540]"}`}
+                  >
+                    {paying
+                      ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Processing…</>
+                      : <><CreditCard className="w-4 h-4 mr-2" />
+                          {isOverdueProp ? "Pay Overdue Balance" : "Pay"}{" "}
+                          ${netCharge.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </>}
+                  </Button>
+                  <p className="text-xs text-center text-slate-400">
+                    {credit > 0
+                      ? `$${credit.toLocaleString(undefined, { minimumFractionDigits: 2 })} account credit applied · Secure payment via Stripe`
+                      : "Secure payment via Stripe · All programs paid in one transaction"}
+                  </p>
+                </>
+              )}
             </div>
           )}
 
@@ -195,7 +285,7 @@ export default function FamilyInvoiceCard({ familyInvoice, variant = "pending", 
                     {p.processedAt
                       ? new Date(p.processedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
                       : "—"}
-                    &nbsp;·&nbsp;{p.method === "stripe" ? "Stripe" : "Manual"}
+                    &nbsp;·&nbsp;{p.method === "stripe" ? "Stripe" : p.method === "credit" ? "Account Credit" : "Manual"}
                   </span>
                   <span className="font-semibold text-green-700">${parseFloat(p.amount || 0).toLocaleString()}</span>
                 </div>
