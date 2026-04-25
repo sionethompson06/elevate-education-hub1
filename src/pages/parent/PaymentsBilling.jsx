@@ -563,83 +563,89 @@ export default function PaymentsBilling() {
       </div>
 
       {/* ── Statements & Receipts ───────────────────────────────────────────── */}
-      {(allFamilyInvoices.length > 0 || creditBalance > 0) && (
-        <div>
-          <div className="flex items-center gap-2 mb-3">
-            <FileText className="w-4 h-4 text-slate-500" />
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">Statements & Receipts</p>
-          </div>
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="flex items-center gap-2 px-5 py-4 border-b border-slate-100">
+          <FileText className="w-4 h-4 text-[#1a3c5e]" />
+          <h2 className="text-sm font-bold text-slate-800">Statements & Receipts</h2>
+        </div>
 
-          {/* Account summary strip */}
-          <div className="grid grid-cols-3 gap-3 mb-4">
-            <div className="bg-slate-50 rounded-xl border border-slate-200 px-4 py-3 text-center">
-              <p className="text-lg font-bold text-slate-700">
-                ${totalInvoiced.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </p>
-              <p className="text-[10px] text-slate-400 mt-0.5 uppercase tracking-wide">Total Invoiced</p>
-            </div>
-            <div className="bg-green-50 rounded-xl border border-green-200 px-4 py-3 text-center">
-              <p className="text-lg font-bold text-green-700">
-                ${totalPaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </p>
-              <p className="text-[10px] text-green-500 mt-0.5 uppercase tracking-wide">Total Paid</p>
-            </div>
-            <div className={`rounded-xl border px-4 py-3 text-center ${creditBalance > 0 ? "bg-emerald-50 border-emerald-200" : "bg-slate-50 border-slate-200"}`}>
-              <p className={`text-lg font-bold ${creditBalance > 0 ? "text-emerald-700" : "text-slate-500"}`}>
-                ${creditBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </p>
-              <p className={`text-[10px] mt-0.5 uppercase tracking-wide ${creditBalance > 0 ? "text-emerald-500" : "text-slate-400"}`}>Account Credit</p>
-            </div>
+        {/* Account summary strip */}
+        <div className="grid grid-cols-3 divide-x divide-slate-100 border-b border-slate-100">
+          <div className="px-5 py-4 text-center">
+            <p className="text-xl font-bold text-slate-700">
+              ${totalInvoiced.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
+            <p className="text-[10px] text-slate-400 mt-0.5 uppercase tracking-wide">Total Invoiced</p>
           </div>
+          <div className="px-5 py-4 text-center">
+            <p className="text-xl font-bold text-green-700">
+              ${totalPaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
+            <p className="text-[10px] text-green-500 mt-0.5 uppercase tracking-wide">Total Paid</p>
+          </div>
+          <div className="px-5 py-4 text-center">
+            <p className={`text-xl font-bold ${creditBalance > 0 ? "text-emerald-700" : "text-slate-400"}`}>
+              ${creditBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
+            <p className="text-[10px] text-slate-400 mt-0.5 uppercase tracking-wide">Account Credit</p>
+          </div>
+        </div>
 
-          {/* Invoice list with receipt buttons */}
-          {allFamilyInvoices.length > 0 && (
-            <div className="space-y-2">
-              {allFamilyInvoices.map(fi => {
-                const isPaid = fi.status === "paid";
-                const isOver = isOverdue(fi);
-                const date = fi.paidDate || fi.dueDate || fi.createdAt;
-                const displayDate = date
-                  ? new Date(date.includes("T") ? date : date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+        {/* Invoice list with receipt buttons */}
+        {fiLoading ? (
+          <div className="flex items-center justify-center py-8 gap-2 text-slate-400 text-sm">
+            <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+          </div>
+        ) : allFamilyInvoices.length === 0 ? (
+          <div className="px-5 py-8 text-center text-sm text-slate-400">No invoices on record yet.</div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {allFamilyInvoices.map(fi => {
+              const isPaid = fi.status === "paid";
+              const isOver = isOverdue(fi);
+              const rawDate = fi.paidDate || fi.dueDate;
+              const displayDate = rawDate
+                ? new Date(rawDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                : fi.createdAt
+                  ? new Date(fi.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
                   : "—";
-                const programs = (fi.lineItems || []).map(l => l.programName).filter(Boolean);
-                const programLabel = programs.length === 0
-                  ? "Invoice"
-                  : programs.length === 1
-                    ? programs[0]
-                    : `${programs[0]} +${programs.length - 1} more`;
+              const programs = (fi.lineItems || []).map(l => l.programName).filter(Boolean);
+              const programLabel = programs.length === 0
+                ? "Invoice"
+                : programs.length === 1
+                  ? programs[0]
+                  : `${programs[0]} +${programs.length - 1} more`;
 
-                return (
-                  <div key={fi.id} className="flex items-center justify-between gap-4 bg-white rounded-xl border border-slate-200 px-4 py-3">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className={`w-2 h-2 rounded-full shrink-0 ${isPaid ? "bg-green-500" : isOver ? "bg-red-500" : "bg-yellow-500"}`} />
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-slate-800 truncate">{programLabel}</p>
-                        <p className="text-xs text-slate-400 mt-0.5">
-                          {isPaid ? `Paid ${displayDate}` : isOver ? `Overdue — due ${displayDate}` : `Due ${displayDate}`}
-                          {(fi.lineItems?.length || 0) > 0 && ` · ${fi.lineItems.length} item${fi.lineItems.length !== 1 ? "s" : ""}`}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <span className={`text-sm font-bold ${isPaid ? "text-green-700" : isOver ? "text-red-700" : "text-slate-700"}`}>
-                        ${parseFloat(fi.totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                      <button
-                        onClick={() => setReceiptInvoice(fi)}
-                        className="flex items-center gap-1.5 text-xs font-semibold text-[#1a3c5e] border border-[#1a3c5e]/20 rounded-lg px-3 py-1.5 hover:bg-[#1a3c5e]/5 transition-colors"
-                      >
-                        <FileText className="w-3.5 h-3.5" />
-                        {isPaid ? "Receipt" : "Statement"}
-                      </button>
+              return (
+                <div key={fi.id} className="flex items-center justify-between gap-4 px-5 py-3.5">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className={`w-2 h-2 rounded-full shrink-0 ${isPaid ? "bg-green-500" : isOver ? "bg-red-500" : "bg-yellow-500"}`} />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-800 truncate">{programLabel}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {isPaid ? `Paid ${displayDate}` : isOver ? `Overdue — due ${displayDate}` : `Due ${displayDate}`}
+                        {(fi.lineItems?.length || 0) > 0 && ` · ${fi.lineItems.length} item${fi.lineItems.length !== 1 ? "s" : ""}`}
+                      </p>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className={`text-sm font-bold ${isPaid ? "text-green-700" : isOver ? "text-red-700" : "text-slate-700"}`}>
+                      ${parseFloat(fi.totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                    <button
+                      onClick={() => setReceiptInvoice(fi)}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-[#1a3c5e] border border-[#1a3c5e]/20 rounded-lg px-3 py-1.5 hover:bg-[#1a3c5e]/5 transition-colors"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      {isPaid ? "Receipt" : "Statement"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {/* Individual invoice history (for single-enrollment payments made before family billing) */}
       <PaymentHistory />
