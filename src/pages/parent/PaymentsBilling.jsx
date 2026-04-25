@@ -336,16 +336,32 @@ export default function PaymentsBilling() {
             <p className="text-sm font-semibold text-red-800">Payment Failed</p>
           </div>
           <p className="text-sm text-red-700 mb-3">
-            {failedEnrollments.length} enrollment{failedEnrollments.length > 1 ? "s have" : " has"} a failed payment. Please retry or update your billing method.
+            {failedEnrollments.length} enrollment{failedEnrollments.length > 1 ? "s have" : " has"} a failed payment.
           </p>
           <div className="flex flex-wrap gap-2">
-            {failedEnrollments.map(e => (
-              <Link key={e.id} to={`/parent/checkout?enrollment_id=${e.id}`}>
-                <button className="text-xs bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 transition-colors flex items-center gap-1">
-                  <CreditCard className="w-3.5 h-3.5" /> Retry — {e.programName || `Program #${e.programId}`}
-                </button>
-              </Link>
-            ))}
+            {failedEnrollments.map(e => {
+              const cycle = e.billingCycleOverride || e.programBillingCycle;
+              const isSubscription = cycle === "monthly" || cycle === "annual";
+              return isSubscription ? (
+                // Subscription failures: direct parent to Stripe portal to update payment method
+                billingAccount?.stripeCustomerId ? (
+                  <button
+                    key={e.id}
+                    onClick={openBillingPortal}
+                    className="text-xs bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 transition-colors flex items-center gap-1"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" /> Update Billing — {e.programName || `Program #${e.programId}`}
+                  </button>
+                ) : null
+              ) : (
+                // One-time payment failures: allow a new checkout
+                <Link key={e.id} to={`/parent/checkout?enrollment_id=${e.id}`}>
+                  <button className="text-xs bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 transition-colors flex items-center gap-1">
+                    <CreditCard className="w-3.5 h-3.5" /> Retry — {e.programName || `Program #${e.programId}`}
+                  </button>
+                </Link>
+              );
+            })}
             {billingAccount?.stripeCustomerId && (
               <button
                 onClick={openBillingPortal}
@@ -355,6 +371,11 @@ export default function PaymentsBilling() {
               </button>
             )}
           </div>
+          {failedEnrollments.some(e => ["monthly", "annual"].includes(e.billingCycleOverride || e.programBillingCycle)) && (
+            <p className="text-xs text-red-600 mt-2">
+              For subscription plans, update your payment method above. Stripe will automatically retry the charge.
+            </p>
+          )}
         </div>
       )}
 
@@ -497,13 +518,21 @@ export default function PaymentsBilling() {
                       )}
                     </div>
                     {/* Only show individual pay button for payment_failed; pending are handled by FamilyInvoiceCard */}
-                    {e.status === "payment_failed" && (
-                      <Link to={`/parent/checkout?enrollment_id=${e.id}`}>
-                        <Button size="sm" className="bg-red-600 hover:bg-red-700">
-                          <CreditCard className="w-3.5 h-3.5 mr-1" /> Retry Payment
+                    {e.status === "payment_failed" && (() => {
+                      const cycle = e.billingCycleOverride || e.programBillingCycle;
+                      const isSubscription = cycle === "monthly" || cycle === "annual";
+                      return isSubscription && billingAccount?.stripeCustomerId ? (
+                        <Button size="sm" className="bg-red-600 hover:bg-red-700" onClick={openBillingPortal}>
+                          <ExternalLink className="w-3.5 h-3.5 mr-1" /> Update Billing
                         </Button>
-                      </Link>
-                    )}
+                      ) : !isSubscription ? (
+                        <Link to={`/parent/checkout?enrollment_id=${e.id}`}>
+                          <Button size="sm" className="bg-red-600 hover:bg-red-700">
+                            <CreditCard className="w-3.5 h-3.5 mr-1" /> Retry Payment
+                          </Button>
+                        </Link>
+                      ) : null;
+                    })()}
                     {isPendingPayment && e.status !== "payment_failed" && (
                       <span className="text-xs text-slate-400 italic">See invoice above</span>
                     )}

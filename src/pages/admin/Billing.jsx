@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost, apiPatch } from "@/api/apiClient";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, Loader2, CreditCard, BookOpen, ChevronDown, ChevronRight, Search, Pencil, Check, X, CheckCircle, XCircle, RotateCcw, Tag } from "lucide-react";
+import { RefreshCw, Loader2, CreditCard, BookOpen, ChevronDown, ChevronRight, Search, Pencil, Check, X, CheckCircle, XCircle, RotateCcw, Tag, ShieldAlert } from "lucide-react";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function daysOverdue(dueDate) {
@@ -452,6 +452,95 @@ function RowDetail({ row, onRefetch }) {
   );
 }
 
+// ── Billing Audit Panel ───────────────────────────────────────────────────────
+const SEVERITY_STYLES = {
+  critical: { badge: "bg-red-100 text-red-700 border-red-200",    card: "border-red-200 bg-red-50",    label: "Critical" },
+  high:     { badge: "bg-orange-100 text-orange-700 border-orange-200", card: "border-orange-200 bg-orange-50", label: "High" },
+  medium:   { badge: "bg-yellow-100 text-yellow-700 border-yellow-200", card: "border-yellow-200 bg-yellow-50", label: "Medium" },
+  low:      { badge: "bg-slate-100 text-slate-600 border-slate-200", card: "border-slate-200 bg-slate-50", label: "Low" },
+};
+
+function BillingAuditPanel() {
+  const [hasRun, setHasRun] = useState(false);
+  const { data, isFetching, refetch } = useQuery({
+    queryKey: ["admin-billing-audit"],
+    queryFn: () => apiGet("/billing/audit"),
+    enabled: false,
+    staleTime: 0,
+  });
+
+  const handleRun = () => { setHasRun(true); refetch(); };
+
+  const issues = data?.issues || [];
+  const counts = data?.counts || {};
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <p className="text-sm text-slate-600">
+            Read-only check for billing data inconsistencies. Does not modify any records.
+          </p>
+          <p className="text-xs text-slate-400 mt-1">
+            Checks: paid invoice/inactive enrollment · active enrollment/unpaid invoice · paid family invoice/unpaid child · missing payment allocations · credit balances · payment_failed enrollments
+          </p>
+        </div>
+        <Button size="sm" onClick={handleRun} disabled={isFetching} className="shrink-0">
+          {isFetching ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <ShieldAlert className="w-4 h-4 mr-2" />}
+          {isFetching ? "Running…" : "Run Audit"}
+        </Button>
+      </div>
+
+      {hasRun && !isFetching && data && (
+        <>
+          {/* Summary badges */}
+          <div className="flex flex-wrap gap-2">
+            {counts.total === 0 ? (
+              <span className="px-3 py-1 bg-green-100 text-green-700 border border-green-200 rounded-full text-xs font-semibold">
+                ✓ No issues found
+              </span>
+            ) : (
+              <>
+                {counts.critical > 0 && <span className={`px-3 py-1 border rounded-full text-xs font-semibold ${SEVERITY_STYLES.critical.badge}`}>{counts.critical} Critical</span>}
+                {counts.high     > 0 && <span className={`px-3 py-1 border rounded-full text-xs font-semibold ${SEVERITY_STYLES.high.badge}`}>{counts.high} High</span>}
+                {counts.medium   > 0 && <span className={`px-3 py-1 border rounded-full text-xs font-semibold ${SEVERITY_STYLES.medium.badge}`}>{counts.medium} Medium</span>}
+                {counts.low      > 0 && <span className={`px-3 py-1 border rounded-full text-xs font-semibold ${SEVERITY_STYLES.low.badge}`}>{counts.low} Low</span>}
+              </>
+            )}
+          </div>
+
+          {/* Issues grouped by severity */}
+          {["critical", "high", "medium", "low"].map(sev => {
+            const group = issues.filter(i => i.severity === sev);
+            if (!group.length) return null;
+            const s = SEVERITY_STYLES[sev];
+            return (
+              <div key={sev} className={`rounded-xl border p-4 ${s.card}`}>
+                <p className="text-sm font-semibold text-slate-700 mb-3">{s.label} ({group.length})</p>
+                <div className="space-y-2">
+                  {group.map((issue, i) => (
+                    <div key={i} className="bg-white rounded-lg border border-slate-200 p-3 space-y-1">
+                      <p className="text-[10px] font-mono text-slate-400 uppercase tracking-wide">{issue.type}</p>
+                      <p className="text-sm text-slate-700">{issue.message}</p>
+                      <p className="text-[10px] font-mono text-slate-400">{JSON.stringify(issue.ids)}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </>
+      )}
+
+      {hasRun && isFetching && (
+        <div className="flex items-center gap-2 text-sm text-slate-500 py-4">
+          <Loader2 className="w-4 h-4 animate-spin" /> Running audit checks…
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 export default function AdminBilling() {
   const qc = useQueryClient();
@@ -566,8 +655,9 @@ export default function AdminBilling() {
       {/* Tab bar */}
       <div className="flex gap-0 border-b border-slate-200">
         {[
-          { key: "accounting",   label: "Accounting",      icon: BookOpen },
-          { key: "transactions", label: "Transaction Log",  icon: CreditCard },
+          { key: "accounting",   label: "Accounting",     icon: BookOpen },
+          { key: "transactions", label: "Transaction Log", icon: CreditCard },
+          { key: "audit",        label: "Billing Audit",   icon: ShieldAlert },
         ].map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setTab(key)}
             className={`flex items-center gap-2 px-5 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
@@ -706,6 +796,13 @@ export default function AdminBilling() {
               </div>
             </Card>
           )}
+        </div>
+      )}
+
+      {/* ── Billing Audit tab ────────────────────────────────────────────────── */}
+      {tab === "audit" && (
+        <div>
+          <BillingAuditPanel />
         </div>
       )}
 

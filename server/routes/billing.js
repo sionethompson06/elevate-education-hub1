@@ -599,4 +599,184 @@ router.post('/invoices/:invoiceId/admin-action', requireAuth, requireRole('admin
   }
 });
 
+// GET /billing/audit — read-only billing consistency check (admin only)
+router.get('/audit', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const issues = [];
+
+    // 1. Paid invoice but enrollment is not active / active_override / cancelled
+    const paidInvoiceCheck = await db.select({
+      invoiceId: invoices.id,
+      invoiceAmount: invoices.amount,
+      enrollmentId: invoices.enrollmentId,
+      enrollmentStatus: enrollments.status,
+    }).from(invoices)
+      .innerJoin(enrollments, eq(invoices.enrollmentId, enrollments.id))
+      .where(and(
+        eq(invoices.status, 'paid'),
+        inArray(enrollments.status, ['pending_payment', 'pending', 'payment_failed'])
+      ));
+
+    for (const r of paidInvoiceCheck) {
+      issues.push({
+        type: 'paid_invoice_inactive_enrollment',
+        severity: 'critical',
+        message: `Invoice #${r.invoiceId} ($${r.invoiceAmount}) is paid but enrollment #${r.enrollmentId} has status "${r.enrollmentStatus}"`,
+        ids: { invoiceId: r.invoiceId, enrollmentId: r.enrollmentId },
+      });
+    }
+
+    // 2. Active enrollment whose latest invoice is still pending or past_due
+    const activeEnrs = await db.select({ id: enrollments.id, status: enrollments.status })
+      .from(enrollments)
+      .where(inArray(enrollments.status, ['active', 'active_override']));
+
+    if (activeEnrs.length > 0) {
+      const activeIds = activeEnrs.map(e => e.id);
+      const recentInvoices = await db.select()
+        .from(invoices)
+        .where(inArray(invoices.enrollmentId, activeIds))
+        .orderBy(desc(invoices.createdAt));
+
+      const latestByEnrollment = {};
+      for (const inv of recentInvoices) {
+        if (!latestByEnrollment[inv.enrollmentId]) latestByEnrollment[inv.enrollmentId] = inv;
+      }
+      for (const enr of activeEnrs) {
+        const inv = latestByEnrollment[enr.id];
+        if (inv && ['pending', 'past_due'].includes(inv.status)) {
+          issues.push({
+            type: 'active_enrollment_unpaid_invoice',
+            severity: 'high',
+            message: `Enrollment #${enr.id} is "${enr.status}" but its latest invoice #${inv.id} is "${inv.status}"`,
+            ids: { enrollmentId: enr.id, invoiceId: inv.id },
+          });
+        }
+      }
+    }
+
+    // 3. Paid family invoice with at least one unpaid child invoice
+    const paidFamilies = await db.select({ id: familyInvoices.id })
+      .from(familyInvoices)
+      .where(eq(familyInvoices.status, 'paid'));
+
+    if (paidFamilies.length > 0) {
+      const paidFiIds = paidFamilies.map(f => f.id);
+      const unpaidChildren = await db.select({
+        invoiceId: invoices.id,
+        familyInvoiceId: invoices.familyInvoiceId,
+        status: invoices.status,
+        enrollmentId: invoices.enrollmentId,
+      }).from(invoices)
+        .where(and(
+          inArray(invoices.familyInvoiceId, paidFiIds),
+          inArray(invoices.status, ['pending', 'past_due'])
+        ));
+
+      for (const child of unpaidChildren) {
+        issues.push({
+          type: 'paid_family_invoice_unpaid_child',
+          severity: 'critical',
+          message: `Family invoice #${child.familyInvoiceId} is paid but child invoice #${child.invoiceId} is "${child.status}"`,
+          ids: { familyInvoiceId: child.familyInvoiceId, invoiceId: child.invoiceId, enrollmentId: child.enrollmentId },
+        });
+      }
+    }
+
+    // 4. Paid invoice with no payment allocation record
+    const paidInvList = await db.select({ id: invoices.id })
+      .from(invoices)
+      .where(eq(invoices.status, 'paid'));
+
+    if (paidInvList.length > 0) {
+      const paidInvIds2 = paidInvList.map(i => i.id);
+      const allocatedInvoiceIds = new Set(
+        (await db.select({ invoiceId: paymentAllocations.invoiceId })
+          .from(paymentAllocations)
+          .where(inArray(paymentAllocations.invoiceId, paidInvIds2)))
+          .map(r => r.invoiceId)
+      );
+      for (const { id } of paidInvList) {
+        if (!allocatedInvoiceIds.has(id)) {
+          issues.push({
+            type: 'paid_invoice_no_allocation',
+            severity: 'medium',
+            message: `Paid invoice #${id} has no payment allocation record (GL ledger may be incomplete)`,
+            ids: { invoiceId: id },
+          });
+        }
+      }
+    }
+
+    // 5. Successful payment record with no allocation
+    const successPayments = await db.select({ id: payments.id, invoiceId: payments.invoiceId, amount: payments.amount })
+      .from(payments)
+      .where(inArray(payments.status, ['paid', 'completed']));
+
+    if (successPayments.length > 0) {
+      const pmtIds = successPayments.map(p => p.id);
+      const allocatedPaymentIds = new Set(
+        (await db.select({ paymentId: paymentAllocations.paymentId })
+          .from(paymentAllocations)
+          .where(inArray(paymentAllocations.paymentId, pmtIds)))
+          .map(r => r.paymentId)
+      );
+      for (const pmt of successPayments) {
+        if (!allocatedPaymentIds.has(pmt.id)) {
+          issues.push({
+            type: 'payment_no_allocation',
+            severity: 'medium',
+            message: `Payment #${pmt.id} ($${pmt.amount}) has no allocation record`,
+            ids: { paymentId: pmt.id, invoiceId: pmt.invoiceId },
+          });
+        }
+      }
+    }
+
+    // 6. Billing accounts with an unspent credit balance
+    const creditAccts = await db.select({
+      id: billingAccounts.id,
+      parentUserId: billingAccounts.parentUserId,
+      balance: billingAccounts.balance,
+    }).from(billingAccounts)
+      .where(sql`${billingAccounts.balance}::numeric > 0`);
+
+    for (const acct of creditAccts) {
+      issues.push({
+        type: 'unspent_credit_balance',
+        severity: 'low',
+        message: `Billing account #${acct.id} (parent #${acct.parentUserId}) has unused credit balance $${acct.balance} — not yet applied to any invoice`,
+        ids: { billingAccountId: acct.id, parentUserId: acct.parentUserId },
+      });
+    }
+
+    // 7. Enrollments stuck in payment_failed
+    const failedEnrs = await db.select({ id: enrollments.id, studentId: enrollments.studentId })
+      .from(enrollments)
+      .where(eq(enrollments.status, 'payment_failed'));
+
+    for (const enr of failedEnrs) {
+      issues.push({
+        type: 'payment_failed_enrollment',
+        severity: 'high',
+        message: `Enrollment #${enr.id} is in payment_failed status — parent must retry or update their billing method`,
+        ids: { enrollmentId: enr.id, studentId: enr.studentId },
+      });
+    }
+
+    const counts = {
+      total: issues.length,
+      critical: issues.filter(i => i.severity === 'critical').length,
+      high:     issues.filter(i => i.severity === 'high').length,
+      medium:   issues.filter(i => i.severity === 'medium').length,
+      low:      issues.filter(i => i.severity === 'low').length,
+    };
+
+    res.json({ success: true, issues, counts });
+  } catch (err) {
+    console.error('[billing/audit] error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 export default router;

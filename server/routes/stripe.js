@@ -372,11 +372,17 @@ router.post('/verify-family-payment', requireAuth, async (req, res) => {
 export async function stripeWebhookHandler(req, res) {
   let event;
 
+  const isProd = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+
   if (!process.env.STRIPE_WEBHOOK_SECRET) {
-    // Secret not configured — parse body directly (acceptable for test mode)
+    if (isProd) {
+      console.error('[stripe] CRITICAL: STRIPE_WEBHOOK_SECRET not set in production — rejecting unsigned webhook');
+      return res.status(500).send('Webhook secret not configured. Set STRIPE_WEBHOOK_SECRET in environment variables.');
+    }
+    // Dev/local only: parse directly with a loud warning
     try {
       event = JSON.parse(req.body.toString());
-      console.warn('[stripe] Webhook signature verification SKIPPED — set STRIPE_WEBHOOK_SECRET in env for production');
+      console.warn('[stripe] WARNING: Webhook signature verification SKIPPED — STRIPE_WEBHOOK_SECRET not set (OK for local dev only, NEVER in production)');
     } catch (err) {
       return res.status(400).send('Invalid webhook body');
     }
