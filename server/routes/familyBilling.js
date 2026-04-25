@@ -3,7 +3,7 @@ import { eq, desc, inArray, and, lt } from 'drizzle-orm';
 import db from '../db-postgres.js';
 import {
   familyInvoices, invoices, enrollments, programs, students,
-  billingAccounts, users, payments, enrollmentOverrides,
+  billingAccounts, users, payments, enrollmentOverrides, paymentAllocations,
 } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { logAudit } from '../services/audit.service.js';
@@ -426,6 +426,177 @@ router.post('/sync-past-due', requireAuth, requireRole('admin'), async (req, res
     res.json({ success: true, updated: updatedInvoices.length + updatedFamilyInvoices.length });
   } catch (err) {
     console.error('[family-billing] sync-past-due error:', err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /billing/family-statement — full billing statement for a family (read-only)
+// Parent: own account only. Admin: any account via ?billingAccountId=N
+router.get('/family-statement', requireAuth, async (req, res) => {
+  try {
+    // Resolve billing account
+    let billingAccount;
+    if (req.user.role === 'admin' && req.query.billingAccountId) {
+      [billingAccount] = await db.select().from(billingAccounts)
+        .where(eq(billingAccounts.id, parseInt(req.query.billingAccountId, 10)));
+    } else {
+      [billingAccount] = await db.select().from(billingAccounts)
+        .where(eq(billingAccounts.parentUserId, req.user.id));
+    }
+    if (!billingAccount) return res.status(404).json({ success: false, error: 'Billing account not found' });
+    // Parent cannot access other families
+    if (req.user.role !== 'admin' && billingAccount.parentUserId !== req.user.id) {
+      return res.status(403).json({ success: false, error: 'Not authorized' });
+    }
+
+    // Parent name for receipt header
+    const [parentUser] = await db.select({
+      firstName: users.firstName, lastName: users.lastName, email: users.email,
+    }).from(users).where(eq(users.id, billingAccount.parentUserId));
+
+    // All family invoices for this account
+    const fiList = await db.select().from(familyInvoices)
+      .where(eq(familyInvoices.billingAccountId, billingAccount.id))
+      .orderBy(desc(familyInvoices.createdAt));
+
+    if (fiList.length === 0) {
+      return res.json({
+        success: true,
+        billingAccount: { id: billingAccount.id, parentUserId: billingAccount.parentUserId, balance: billingAccount.balance },
+        parentName: parentUser ? `${parentUser.firstName} ${parentUser.lastName}` : null,
+        parentEmail: parentUser?.email ?? null,
+        summary: { totalInvoiced: 0, totalPaid: 0, totalWaived: 0, currentBalance: 0, pastDueBalance: 0, creditBalance: parseFloat(billingAccount.balance || 0) },
+        familyInvoices: [],
+      });
+    }
+
+    const fiIds = fiList.map(fi => fi.id);
+
+    // Child invoices
+    const childInvoices = await db.select().from(invoices)
+      .where(inArray(invoices.familyInvoiceId, fiIds));
+
+    // Enrollment enrichment (program + student names)
+    const enrollmentIds = [...new Set(childInvoices.filter(i => i.enrollmentId).map(i => i.enrollmentId))];
+    let enrollmentMap = {};
+    if (enrollmentIds.length > 0) {
+      const rows = await db.select({
+        id: enrollments.id,
+        programName: programs.name,
+        studentFirstName: students.firstName,
+        studentLastName: students.lastName,
+      }).from(enrollments)
+        .leftJoin(programs, eq(enrollments.programId, programs.id))
+        .leftJoin(students, eq(enrollments.studentId, students.id))
+        .where(inArray(enrollments.id, enrollmentIds));
+      enrollmentMap = Object.fromEntries(rows.map(r => [r.id, r]));
+    }
+
+    // Active scholarship/waiver overrides
+    let overrideMap = {};
+    if (enrollmentIds.length > 0) {
+      const overrides = await db.select().from(enrollmentOverrides)
+        .where(and(inArray(enrollmentOverrides.enrollmentId, enrollmentIds), eq(enrollmentOverrides.isActive, true)));
+      overrideMap = Object.fromEntries(overrides.map(ov => [ov.enrollmentId, ov]));
+    }
+
+    // Payments for all child invoices
+    const invoiceIds = childInvoices.map(i => i.id);
+    let paymentList = [];
+    if (invoiceIds.length > 0) {
+      paymentList = await db.select().from(payments)
+        .where(inArray(payments.invoiceId, invoiceIds))
+        .orderBy(desc(payments.processedAt));
+    }
+    // Group payments by invoiceId
+    const paymentsByInvoice = {};
+    for (const p of paymentList) {
+      if (!paymentsByInvoice[p.invoiceId]) paymentsByInvoice[p.invoiceId] = [];
+      paymentsByInvoice[p.invoiceId].push(p);
+    }
+
+    // Group child invoices by familyInvoiceId
+    const childByFI = {};
+    for (const inv of childInvoices) {
+      if (!childByFI[inv.familyInvoiceId]) childByFI[inv.familyInvoiceId] = [];
+      childByFI[inv.familyInvoiceId].push(inv);
+    }
+
+    // Build enriched family invoices
+    const enrichedFIs = fiList.map(fi => {
+      const children = childByFI[fi.id] || [];
+
+      const lineItems = children.map(inv => {
+        const e = inv.enrollmentId ? enrollmentMap[inv.enrollmentId] : null;
+        const ov = inv.enrollmentId ? overrideMap[inv.enrollmentId] : null;
+        return {
+          invoiceId: inv.id,
+          enrollmentId: inv.enrollmentId,
+          description: inv.description,
+          amount: inv.amount,
+          status: inv.status,
+          discountPercent: inv.discountPercent,
+          programName: e?.programName ?? null,
+          studentFirstName: e?.studentFirstName ?? null,
+          studentLastName: e?.studentLastName ?? null,
+          waiver: ov ? { type: ov.overrideType, amountWaived: (ov.amountWaivedCents || 0) / 100, approvedByName: ov.approvedByName } : null,
+        };
+      });
+
+      // Deduplicated payments across all child invoices of this family invoice
+      const fiPayments = [];
+      const seen = new Set();
+      for (const inv of children) {
+        for (const p of paymentsByInvoice[inv.id] || []) {
+          if (!seen.has(p.id)) {
+            seen.add(p.id);
+            fiPayments.push({
+              id: p.id,
+              amount: p.amount,
+              method: p.method,
+              status: p.status,
+              paidAt: p.processedAt?.toISOString?.() ?? null,
+              stripePaymentIntentId: p.stripePaymentIntentId ?? null,
+            });
+          }
+        }
+      }
+
+      return {
+        id: fi.id,
+        status: fi.status,
+        totalAmount: fi.totalAmount,
+        dueDate: fi.dueDate,
+        paidDate: fi.paidDate,
+        stripeSessionId: fi.stripeSessionId ?? null,
+        stripePaymentId: fi.stripePaymentId ?? null,
+        createdAt: fi.createdAt?.toISOString?.() ?? null,
+        lineItems,
+        payments: fiPayments,
+      };
+    });
+
+    // Summary
+    const totalPaid = paymentList
+      .filter(p => p.status === 'paid')
+      .reduce((sum, p) => sum + parseFloat(p.amount || 0), 0);
+    const totalWaived = childInvoices
+      .filter(i => i.status === 'waived')
+      .reduce((sum, i) => sum + parseFloat(i.amount || 0), 0);
+    const totalInvoiced = enrichedFIs.reduce((sum, fi) => sum + parseFloat(fi.totalAmount || 0), 0);
+    const currentBalance = fiList.filter(fi => fi.status === 'pending').reduce((sum, fi) => sum + parseFloat(fi.totalAmount || 0), 0);
+    const pastDueBalance = fiList.filter(fi => fi.status === 'past_due').reduce((sum, fi) => sum + parseFloat(fi.totalAmount || 0), 0);
+
+    res.json({
+      success: true,
+      billingAccount: { id: billingAccount.id, parentUserId: billingAccount.parentUserId, balance: billingAccount.balance },
+      parentName: parentUser ? `${parentUser.firstName} ${parentUser.lastName}`.trim() : null,
+      parentEmail: parentUser?.email ?? null,
+      summary: { totalInvoiced, totalPaid, totalWaived, currentBalance, pastDueBalance, creditBalance: parseFloat(billingAccount.balance || 0) },
+      familyInvoices: enrichedFIs,
+    });
+  } catch (err) {
+    console.error('[billing/family-statement] error:', err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
