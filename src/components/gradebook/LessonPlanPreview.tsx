@@ -418,6 +418,7 @@ export default function LessonPlanPreview({ plan, onChange, onReset }: Props) {
   const [lessonAiLoading, setLessonAiLoading] = useState(false);
   const [lessonAiError, setLessonAiError] = useState<string | null>(null);
   const [lessonAiSuccess, setLessonAiSuccess] = useState(false);
+  const [previousPlan, setPreviousPlan] = useState<LessonPlan | null>(null);
 
   const update = <K extends keyof LessonPlan>(key: K, value: LessonPlan[K]) => {
     onChange({ ...plan, [key]: value });
@@ -463,6 +464,7 @@ export default function LessonPlanPreview({ plan, onChange, onReset }: Props) {
     setLessonAiLoading(true);
     setLessonAiError(null);
     setLessonAiSuccess(false);
+    setPreviousPlan(plan);
     try {
       const selectedStandard = {
         standard_code: plan.standardCode,
@@ -590,9 +592,20 @@ export default function LessonPlanPreview({ plan, onChange, onReset }: Props) {
         </div>
       )}
       {lessonAiSuccess && (
-        <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-xl px-4 py-2.5 text-sm text-green-800">
-          <Check className="w-4 h-4 shrink-0" />
-          <span><strong>Lesson enhanced!</strong> Review every section, then save when ready. Changes are not saved automatically.</span>
+        <div className="flex items-center justify-between gap-2 bg-green-50 border border-green-200 rounded-xl px-4 py-2.5 text-sm text-green-800">
+          <span className="flex items-center gap-2">
+            <Check className="w-4 h-4 shrink-0" />
+            <span><strong>Lesson enhanced!</strong> Review every section, then save when ready. Changes are not saved automatically.</span>
+          </span>
+          {previousPlan && (
+            <button
+              type="button"
+              onClick={() => { onChange(previousPlan); setPreviousPlan(null); setLessonAiSuccess(false); }}
+              className="shrink-0 text-xs font-semibold text-green-700 underline hover:text-green-900"
+            >
+              Revert
+            </button>
+          )}
         </div>
       )}
       {lessonAiError && (
