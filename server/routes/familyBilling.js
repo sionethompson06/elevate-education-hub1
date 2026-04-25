@@ -310,10 +310,13 @@ router.get('/family-invoices', requireAuth, async (req, res) => {
         );
         effectiveTotal = String(computedTotal);
 
-        // If all children are now paid/waived, lazily promote family invoice to paid
+        // Lazily promote to paid when:
+        // (a) all children are paid/waived, OR
+        // (b) no child invoices exist (orphaned family invoice), OR
+        // (c) computed outstanding total is 0 (all balances cleared)
         const allChildrenClosed = lineItems.length > 0 &&
           lineItems.every(item => ['paid', 'waived'].includes(item.invoiceStatus));
-        if (allChildrenClosed) {
+        if (allChildrenClosed || lineItems.length === 0 || computedTotal <= 0) {
           effectiveStatus = 'paid';
           lazyPaidFiIds.push(fi.id);
         }

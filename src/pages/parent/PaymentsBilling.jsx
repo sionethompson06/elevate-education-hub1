@@ -129,9 +129,13 @@ export default function PaymentsBilling() {
   const billingAccount = accountData?.account || null;
   const allFamilyInvoices = fiData?.familyInvoices || [];
 
-  // Pending/overdue family invoice (needs payment — either pending or past_due)
+  // Pending/overdue family invoice (needs payment — either pending or past_due).
+  // Guard: must have a positive balance AND at least one line item to be actionable.
+  // A zero-total or empty family invoice is stale/orphaned and should be ignored.
   const pendingFamilyInvoice = allFamilyInvoices.find(fi =>
-    fi.status === "pending" || fi.status === "past_due"
+    (fi.status === "pending" || fi.status === "past_due") &&
+    parseFloat(fi.totalAmount || 0) > 0 &&
+    (fi.lineItems?.length ?? 0) > 0
   ) || null;
 
   // Paid family invoices for history
