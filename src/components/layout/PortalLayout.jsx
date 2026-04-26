@@ -66,6 +66,7 @@ const ROLE_NAV = {
     { label: "Parents", href: "/admin/parents" },
     { label: "Admissions", href: "/admin/admissions" },
     { label: "Enrollments", href: "/admin/enrollments" },
+    { label: "Class Schedule", href: "/admin/sections" },
     { label: "Payments & Billing", href: "/admin/billing" },
     { label: "Training Sessions", href: "/admin/attendance" },
     { label: "Rewards", href: "/admin/rewards" },
