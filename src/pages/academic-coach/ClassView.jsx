@@ -556,29 +556,50 @@ export default function ClassView() {
             </div>
           ) : (
             <div className="space-y-1.5">
-              {sections.map(s => (
-                <button
-                  key={s.id}
-                  onClick={() => { setSelectedSectionId(s.id); setTab("roster"); }}
-                  className={`w-full text-left px-3 py-2.5 rounded-xl border transition-all text-sm ${
-                    selectedSectionId === s.id
-                      ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
-                      : "bg-white border-slate-200 text-slate-700 hover:border-emerald-300 hover:bg-emerald-50"
-                  }`}>
-                  <p className="font-semibold truncate">{s.name}</p>
-                  <p className={`text-xs mt-0.5 truncate ${selectedSectionId === s.id ? "text-emerald-100" : "text-slate-400"}`}>
-                    {s.programName}
-                  </p>
-                  {scheduleText(s) && (
-                    <p className={`text-xs truncate ${selectedSectionId === s.id ? "text-emerald-100" : "text-slate-400"}`}>
-                      {scheduleText(s)}
+              {sections.map(s => {
+                const active = selectedSectionId === s.id;
+                const muted = active ? "text-emerald-100" : "text-slate-400";
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => { setSelectedSectionId(s.id); setTab("roster"); }}
+                    className={`w-full text-left px-3 py-2.5 rounded-xl border transition-all text-sm ${
+                      active
+                        ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                        : "bg-white border-slate-200 text-slate-700 hover:border-emerald-300 hover:bg-emerald-50"
+                    }`}>
+                    {/* Title + draft badge */}
+                    <div className="flex items-start justify-between gap-1">
+                      <p className="font-semibold truncate leading-snug">{s.name}</p>
+                      {!s.isPublished && (
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 mt-0.5 ${active ? "bg-white/20 text-white" : "bg-amber-100 text-amber-700"}`}>
+                          Draft
+                        </span>
+                      )}
+                    </div>
+                    {/* Program */}
+                    <p className={`text-xs mt-0.5 truncate ${muted}`}>{s.programName}</p>
+                    {/* Subject · Grade */}
+                    {(s.subject || s.gradeLevel) && (
+                      <p className={`text-xs truncate ${muted}`}>
+                        {[s.subject, s.gradeLevel].filter(Boolean).join(" · ")}
+                      </p>
+                    )}
+                    {/* Roster count */}
+                    <p className={`text-xs mt-1 ${muted}`}>
+                      {s.rosterCount ?? 0} student{s.rosterCount !== 1 ? "s" : ""}
                     </p>
-                  )}
-                  <p className={`text-xs mt-0.5 ${selectedSectionId === s.id ? "text-emerald-100" : "text-slate-400"}`}>
-                    {s.rosterCount ?? 0} student{s.rosterCount !== 1 ? "s" : ""}
-                  </p>
-                </button>
-              ))}
+                    {/* Next session */}
+                    {s.nextSession ? (
+                      <p className={`text-xs mt-0.5 truncate ${muted}`}>
+                        Next: {fmtDate(s.nextSession.sessionDate)}{s.nextSession.startAt ? ` · ${fmtTime(s.nextSession.startAt)}` : ""}
+                      </p>
+                    ) : scheduleText(s) ? (
+                      <p className={`text-xs mt-0.5 truncate ${muted}`}>{scheduleText(s)}</p>
+                    ) : null}
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
