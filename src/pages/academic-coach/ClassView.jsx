@@ -358,13 +358,22 @@ function AssignmentsTab({ sectionId, onAssignmentChange }) {
 }
 
 // ── Roster tab ───────────────────────────────────────────────────────────────
+const PLACEMENT_STATUS_CLS = {
+  active:  "bg-emerald-100 text-emerald-700",
+  dropped: "bg-red-100 text-red-700",
+  paused:  "bg-amber-100 text-amber-700",
+};
+
 function RosterTab({ sectionId }) {
   const { data, isLoading } = useQuery({
     queryKey: ["section-detail", sectionId],
     queryFn: () => apiGet(`/sections/${sectionId}`),
     enabled: !!sectionId,
   });
-  const students = data?.students || [];
+
+  // Only show active (or no-status-set) placements — filter out dropped/removed
+  const allStudents = data?.students || [];
+  const students = allStudents.filter(s => !s.placementStatus || s.placementStatus === "active");
 
   if (isLoading) return <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-slate-400" /></div>;
 
@@ -379,10 +388,20 @@ function RosterTab({ sectionId }) {
               <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-semibold text-sm shrink-0">
                 {s.firstName?.[0]}{s.lastName?.[0]}
               </div>
-              <div>
+              <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-slate-800">{s.firstName} {s.lastName}</p>
-                {s.grade && <p className="text-xs text-slate-400">Grade {s.grade}</p>}
+                <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                  {s.grade && <span className="text-xs text-slate-400">Grade {s.grade}</span>}
+                  {s.guardianName && (
+                    <span className="text-xs text-slate-400">· Parent: {s.guardianName}</span>
+                  )}
+                </div>
               </div>
+              {s.placementStatus && s.placementStatus !== "active" && (
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold capitalize shrink-0 ${PLACEMENT_STATUS_CLS[s.placementStatus] || "bg-slate-100 text-slate-500"}`}>
+                  {s.placementStatus}
+                </span>
+              )}
             </div>
           ))}
           <div className="px-4 py-2 bg-slate-50 text-xs text-slate-500">
