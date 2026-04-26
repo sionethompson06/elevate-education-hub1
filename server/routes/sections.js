@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { eq, desc, and, inArray, gte, lte } from 'drizzle-orm';
 import db from '../db-postgres.js';
-import { sections, programs, sectionStudents, students, enrollments, assignments, assignmentSubmissions, classSessions, users, guardianStudents } from '../schema.js';
+import { sections, programs, sectionStudents, students, enrollments, assignments, assignmentSubmissions, classSessions, users, guardianStudents, lessonAssignments, savedLessonPlans } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { getCoachSectionIds } from '../middleware/scope.js';
 import { logAudit } from '../services/audit.service.js';
@@ -649,6 +649,64 @@ router.delete('/sessions/:id', requireAuth, requireRole('admin'), async (req, re
       ipAddress: req.ip,
     });
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ── Assign lesson from library to all active roster students ──────────────────
+router.post('/:sectionId/assign-lesson', requireAuth, async (req, res) => {
+  try {
+    const sectionId = parseInt(req.params.sectionId);
+
+    if (req.user.role !== 'admin') {
+      const allowed = await getCoachSectionIds(req.user.id);
+      if (!allowed.includes(sectionId)) {
+        return res.status(403).json({ success: false, error: 'Access denied' });
+      }
+    }
+
+    const { savedLessonPlanId, dueAt, pointsPossible } = req.body;
+    if (!savedLessonPlanId) {
+      return res.status(400).json({ success: false, error: 'savedLessonPlanId is required' });
+    }
+
+    const [plan] = await db.select().from(savedLessonPlans)
+      .where(eq(savedLessonPlans.id, parseInt(savedLessonPlanId)));
+    if (!plan) return res.status(404).json({ success: false, error: 'Lesson plan not found' });
+
+    // Active roster students only
+    const rosterRows = await db.select({ studentId: sectionStudents.studentId })
+      .from(sectionStudents)
+      .where(and(eq(sectionStudents.sectionId, sectionId), eq(sectionStudents.status, 'active')));
+
+    if (rosterRows.length === 0) {
+      return res.status(400).json({ success: false, error: 'No active students on roster' });
+    }
+
+    const insertValues = rosterRows.map(r => ({
+      studentId: r.studentId,
+      academicCoachUserId: req.user.id,
+      title: plan.title,
+      subject: plan.subject || 'General',
+      instructions: plan.planData || null,
+      dueAt: dueAt ? new Date(dueAt) : null,
+      pointsPossible: pointsPossible ? parseInt(pointsPossible) : 10,
+      status: 'incomplete',
+    }));
+
+    const created = await db.insert(lessonAssignments).values(insertValues).returning({ id: lessonAssignments.id });
+
+    await logAudit({
+      userId: req.user.id,
+      action: 'create',
+      entityType: 'lesson_assignment_batch',
+      entityId: sectionId,
+      details: { sectionId, count: created.length, title: plan.title },
+      ipAddress: req.ip,
+    });
+
+    res.json({ success: true, count: created.length });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

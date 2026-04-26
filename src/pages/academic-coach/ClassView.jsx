@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useAuth } from "@/lib/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost, apiPatch, apiDelete } from "@/api/apiClient";
-import { BookOpen, Users, ClipboardList, BarChart2, Plus, X, Loader2, ChevronDown, ChevronRight, CheckCircle, AlertCircle, Clock, MinusCircle, CalendarDays, MapPin } from "lucide-react";
+import { BookOpen, Users, ClipboardList, BarChart2, Plus, X, Loader2, ChevronDown, ChevronRight, CheckCircle, AlertCircle, Clock, MinusCircle, CalendarDays, MapPin, BookMarked } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
@@ -413,6 +413,132 @@ function RosterTab({ sectionId }) {
   );
 }
 
+// ── Assign Lesson modal ───────────────────────────────────────────────────────
+function AssignLessonModal({ sectionId, sectionName, onClose, onAssigned }) {
+  const { toast } = useToast();
+  const [search, setSearch] = useState("");
+  const [selectedId, setSelectedId] = useState(null);
+  const [dueAt, setDueAt] = useState("");
+  const [assigning, setAssigning] = useState(false);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["saved-lessons"],
+    queryFn: () => apiGet("/saved-lessons"),
+  });
+  const lessons = data?.lessons || [];
+  const filtered = lessons.filter(l =>
+    !search ||
+    l.title.toLowerCase().includes(search.toLowerCase()) ||
+    (l.subject || "").toLowerCase().includes(search.toLowerCase())
+  );
+
+  const handleAssign = async () => {
+    if (!selectedId) return;
+    setAssigning(true);
+    try {
+      const result = await apiPost(`/sections/${sectionId}/assign-lesson`, {
+        savedLessonPlanId: selectedId,
+        dueAt: dueAt || undefined,
+      });
+      toast({ title: `Lesson assigned to ${result.count} student${result.count !== 1 ? "s" : ""}` });
+      onAssigned();
+      onClose();
+    } catch (err) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setAssigning(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col" style={{ maxHeight: "85vh" }}>
+        {/* Header */}
+        <div className="px-6 pt-5 pb-4 border-b flex items-start justify-between gap-3 shrink-0">
+          <div>
+            <h3 className="font-bold text-[#1a3c5e] text-lg">Assign Lesson</h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Assigns to all active students in <span className="font-medium">{sectionName}</span>
+            </p>
+          </div>
+          <button onClick={onClose} className="p-1 rounded hover:bg-slate-100 shrink-0">
+            <X className="w-4 h-4 text-slate-500" />
+          </button>
+        </div>
+
+        {/* Search */}
+        <div className="px-6 py-3 border-b shrink-0">
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search lessons by title or subject…"
+            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+          />
+        </div>
+
+        {/* Lesson list */}
+        <div className="flex-1 overflow-y-auto px-6 py-3 space-y-1.5 min-h-0">
+          {isLoading ? (
+            <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-slate-400" /></div>
+          ) : filtered.length === 0 ? (
+            <div className="text-center py-8 text-slate-400 text-sm">
+              <BookMarked className="w-8 h-8 mx-auto mb-2 text-slate-200" />
+              {lessons.length === 0
+                ? "No saved lessons yet. Create lessons in the Lesson Library first."
+                : "No lessons match your search."}
+            </div>
+          ) : filtered.map(l => (
+            <button
+              key={l.id}
+              onClick={() => setSelectedId(l.id === selectedId ? null : l.id)}
+              className={`w-full text-left rounded-xl border px-4 py-3 transition-all ${
+                selectedId === l.id
+                  ? "border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500"
+                  : "border-slate-200 bg-white hover:border-emerald-300 hover:bg-emerald-50/50"
+              }`}>
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-sm font-semibold text-slate-800 leading-snug">{l.title}</p>
+                {selectedId === l.id && <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />}
+              </div>
+              <div className="flex items-center gap-2 mt-1 text-xs text-slate-400 flex-wrap">
+                {l.subject && <span>{l.subject}</span>}
+                {l.grade && <span>· Grade {l.grade}</span>}
+                {l.standardCode && <span>· {l.standardCode}</span>}
+              </div>
+            </button>
+          ))}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t bg-slate-50 rounded-b-2xl space-y-3 shrink-0">
+          <div className="flex items-center gap-3">
+            <label className="text-sm font-medium text-slate-600 shrink-0">
+              Due date <span className="text-slate-400 font-normal">(optional)</span>
+            </label>
+            <input
+              type="date"
+              value={dueAt}
+              onChange={e => setDueAt(e.target.value)}
+              className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={onClose} className="flex-1">Cancel</Button>
+            <Button
+              onClick={handleAssign}
+              disabled={!selectedId || assigning}
+              className="flex-1 bg-emerald-600 hover:bg-emerald-700">
+              {assigning
+                ? <><Loader2 className="w-4 h-4 animate-spin mr-1.5" />Assigning…</>
+                : <><BookMarked className="w-4 h-4 mr-1.5" />Assign to Class</>}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Sessions tab (read-only) ─────────────────────────────────────────────────
 const SESSION_STATUS_CLS = {
   scheduled: "bg-blue-100 text-blue-700",
@@ -506,6 +632,7 @@ export default function ClassView() {
   const { user } = useAuth();
   const [selectedSectionId, setSelectedSectionId] = useState(null);
   const [tab, setTab] = useState("roster");
+  const [showAssignLesson, setShowAssignLesson] = useState(false);
   const qc = useQueryClient();
 
   const { data: sectionsData, isLoading: loadingSections } = useQuery({
@@ -619,6 +746,7 @@ export default function ClassView() {
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <h2 className="text-xl font-bold text-[#1a3c5e]">{selectedSection.name}</h2>
+
                     <p className="text-sm text-slate-500 mt-0.5">{selectedSection.programName}</p>
                     <div className="flex items-center gap-3 mt-1 text-xs text-slate-400 flex-wrap">
                       {selectedSection.subject && <span>Subject: {selectedSection.subject}</span>}
@@ -630,6 +758,13 @@ export default function ClassView() {
                       <p className="text-xs text-slate-500 mt-1">{selectedSection.description}</p>
                     )}
                   </div>
+                  <Button
+                    size="sm"
+                    onClick={() => setShowAssignLesson(true)}
+                    className="bg-emerald-600 hover:bg-emerald-700 shrink-0">
+                    <BookMarked className="w-4 h-4 mr-1.5" />
+                    Assign Lesson
+                  </Button>
                 </div>
 
                 {/* Tabs */}
@@ -663,6 +798,15 @@ export default function ClassView() {
           )}
         </div>
       </div>
+
+      {showAssignLesson && selectedSection && (
+        <AssignLessonModal
+          sectionId={selectedSection.id}
+          sectionName={selectedSection.name}
+          onClose={() => setShowAssignLesson(false)}
+          onAssigned={() => qc.invalidateQueries({ queryKey: ["section-gradebook", selectedSection.id] })}
+        />
+      )}
     </div>
   );
 }
