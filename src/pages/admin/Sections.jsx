@@ -1,11 +1,29 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost, apiPatch, apiDelete } from "@/api/apiClient";
-import { Users, Plus, X, Pencil, Loader2, Trash2, ChevronRight, UserPlus, UserMinus, Eye, EyeOff } from "lucide-react";
+import { Users, Plus, X, Pencil, Loader2, Trash2, ChevronRight, UserPlus, UserMinus, Eye, EyeOff, CalendarDays, List, Clock, MapPin } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+
+function fmtTime(t) {
+  if (!t) return "";
+  const [h, m] = t.split(":").map(Number);
+  const ampm = h >= 12 ? "PM" : "AM";
+  return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${ampm}`;
+}
+
+function fmtDate(d) {
+  if (!d) return "";
+  return new Date(d + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+}
+
+const SESSION_STATUS_CLS = {
+  scheduled: "bg-blue-100 text-blue-700",
+  completed: "bg-green-100 text-green-700",
+  canceled:  "bg-red-100 text-red-600",
+};
 
 const EMPTY_FORM = { programId: "", name: "", subject: "", gradeLevel: "", description: "", termId: "", capacity: "20", schedule: "", room: "", status: "active", coachUserId: "" };
 
@@ -413,9 +431,134 @@ function SectionDetail({ section, allStudents, enrollments, coaches, onEdit, onC
   );
 }
 
+// ── Schedule Board ────────────────────────────────────────────────────────────
+
+function ScheduleBoard() {
+  const today = new Date().toISOString().split("T")[0];
+  const twoWeeksOut = new Date(Date.now() + 14 * 86400000).toISOString().split("T")[0];
+  const [from, setFrom] = useState(today);
+  const [to, setTo] = useState(twoWeeksOut);
+  const [statusFilter, setStatusFilter] = useState("all");
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["schedule-board", from, to],
+    queryFn: () => apiGet(`/sections/sessions-board?from=${from}&to=${to}`),
+  });
+  const allSessions = data?.sessions || [];
+
+  const sessions = useMemo(() =>
+    statusFilter === "all" ? allSessions : allSessions.filter(s => s.status === statusFilter),
+    [allSessions, statusFilter]
+  );
+
+  const grouped = useMemo(() => {
+    const map = {};
+    for (const s of sessions) {
+      if (!map[s.sessionDate]) map[s.sessionDate] = [];
+      map[s.sessionDate].push(s);
+    }
+    return Object.entries(map).sort(([a], [b]) => a.localeCompare(b));
+  }, [sessions]);
+
+  return (
+    <div className="space-y-5">
+      {/* Filters */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2 text-sm text-slate-600">
+          <span className="font-medium">From</span>
+          <input type="date" value={from} onChange={e => setFrom(e.target.value)}
+            className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/20" />
+        </div>
+        <div className="flex items-center gap-2 text-sm text-slate-600">
+          <span className="font-medium">To</span>
+          <input type="date" value={to} onChange={e => setTo(e.target.value)}
+            className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/20" />
+        </div>
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+          className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none ml-auto">
+          <option value="all">All statuses</option>
+          <option value="scheduled">Scheduled</option>
+          <option value="completed">Completed</option>
+          <option value="canceled">Canceled</option>
+        </select>
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-16">
+          <div className="w-6 h-6 border-4 border-slate-200 border-t-[#1a3c5e] rounded-full animate-spin" />
+        </div>
+      ) : grouped.length === 0 ? (
+        <div className="py-16 text-center">
+          <CalendarDays className="w-10 h-10 text-slate-200 mx-auto mb-3" />
+          <p className="text-slate-400 text-sm">No sessions in this date range.</p>
+          <p className="text-xs text-slate-400 mt-1">Open a section and add sessions using the Sessions tab.</p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {grouped.map(([date, daySessions]) => (
+            <div key={date}>
+              <div className="flex items-center gap-3 mb-3">
+                <p className="text-sm font-bold text-[#1a3c5e]">{fmtDate(date)}</p>
+                <div className="flex-1 h-px bg-slate-200" />
+                <span className="text-xs text-slate-400">{daySessions.length} session{daySessions.length !== 1 ? "s" : ""}</span>
+              </div>
+              <div className="space-y-2">
+                {daySessions.map(s => {
+                  const coach = s.coachFirstName ? `${s.coachFirstName} ${s.coachLastName}` : null;
+                  const location = s.locationSnapshot || s.room || null;
+                  return (
+                    <div key={s.id} className={`flex items-center gap-4 rounded-xl border px-4 py-3 ${
+                      s.status === "canceled"  ? "bg-red-50/60 border-red-100" :
+                      s.status === "completed" ? "bg-green-50/60 border-green-100" :
+                      "bg-white border-slate-200"
+                    }`}>
+                      {/* Time column */}
+                      <div className="w-24 shrink-0">
+                        {s.startAt ? (
+                          <p className="text-sm font-semibold text-slate-700 flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-slate-400" />{fmtTime(s.startAt)}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-slate-300 italic">No time set</p>
+                        )}
+                        {s.endAt && <p className="text-xs text-slate-400 ml-4">{fmtTime(s.endAt)}</p>}
+                      </div>
+                      {/* Details */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-slate-800 truncate">{s.sectionName}</p>
+                        <div className="flex items-center gap-3 mt-0.5 text-xs text-slate-500 flex-wrap">
+                          {s.programName && <span>{s.programName}</span>}
+                          {coach && <span className="text-emerald-700 font-medium">{coach}</span>}
+                          {location && (
+                            <span className="flex items-center gap-1">
+                              <MapPin className="w-3 h-3" />{location}
+                            </span>
+                          )}
+                        </div>
+                        {s.canceledReason && (
+                          <p className="text-xs text-red-500 mt-0.5">Reason: {s.canceledReason}</p>
+                        )}
+                      </div>
+                      {/* Status badge */}
+                      <span className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${SESSION_STATUS_CLS[s.status] || "bg-slate-100 text-slate-500"}`}>
+                        {s.status}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminSections() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const [view, setView] = useState("sections");
   const [programFilter, setProgramFilter] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -503,11 +646,33 @@ export default function AdminSections() {
           <h1 className="text-3xl font-bold text-[#1a3c5e] flex items-center gap-3"><Users className="w-8 h-8" /> Sections</h1>
           <p className="text-slate-500 mt-1">Create sections, manage rosters, and assign coaches.</p>
         </div>
-        <Button className="bg-[#1a3c5e] hover:bg-[#0d2540]" onClick={() => setShowModal(true)}>
-          <Plus className="w-4 h-4 mr-2" /> Create Section
-        </Button>
+        <div className="flex items-center gap-2">
+          {view === "sections" && (
+            <Button className="bg-[#1a3c5e] hover:bg-[#0d2540]" onClick={() => setShowModal(true)}>
+              <Plus className="w-4 h-4 mr-2" /> Create Section
+            </Button>
+          )}
+        </div>
       </div>
 
+      {/* View toggle */}
+      <div className="flex items-center gap-1 mb-5 border border-slate-200 rounded-lg p-1 w-fit">
+        <button
+          onClick={() => setView("sections")}
+          className={`flex items-center gap-1.5 px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${view === "sections" ? "bg-[#1a3c5e] text-white" : "text-slate-500 hover:text-slate-700"}`}>
+          <List className="w-4 h-4" /> Sections
+        </button>
+        <button
+          onClick={() => setView("board")}
+          className={`flex items-center gap-1.5 px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${view === "board" ? "bg-[#1a3c5e] text-white" : "text-slate-500 hover:text-slate-700"}`}>
+          <CalendarDays className="w-4 h-4" /> Schedule Board
+        </button>
+      </div>
+
+      {view === "board" ? (
+        <Card><CardContent className="p-6"><ScheduleBoard /></CardContent></Card>
+      ) : (
+      <>
       <div className="mb-4">
         <select className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none w-56"
           value={programFilter} onChange={e => setProgramFilter(e.target.value)}>
@@ -576,6 +741,8 @@ export default function AdminSections() {
           )}
         </CardContent>
       </Card>
+      </>
+      )}
 
       {(showModal || editing) && (
         <SectionModal
