@@ -482,6 +482,20 @@ async function ensureLessonStandardsColumn() {
   }
 }
 
+async function ensureScheduleColumns() {
+  try {
+    await rawSql`ALTER TABLE sections ADD COLUMN IF NOT EXISTS subject VARCHAR(100)`;
+    await rawSql`ALTER TABLE sections ADD COLUMN IF NOT EXISTS grade_level VARCHAR(20)`;
+    await rawSql`ALTER TABLE sections ADD COLUMN IF NOT EXISTS description TEXT`;
+    await rawSql`ALTER TABLE sections ADD COLUMN IF NOT EXISTS is_published BOOLEAN NOT NULL DEFAULT FALSE`;
+    await rawSql`ALTER TABLE section_students ADD COLUMN IF NOT EXISTS enrollment_id INTEGER REFERENCES enrollments(id)`;
+    await rawSql`ALTER TABLE assignment_submissions ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'assigned'`;
+    console.log('[migration] Schedule/classes columns ready');
+  } catch (err) {
+    console.error('[migration] ensureScheduleColumns error:', err.message);
+  }
+}
+
 async function ensureSavedLessonPlansTable() {
   try {
     await rawSql`
@@ -562,6 +576,7 @@ ensureInvoiceDiscountColumn();
 ensureFamilyInvoicesTable();
 ensureInvoiceManualOverrideColumn();
 ensureAccountingTables();
+ensureScheduleColumns();
 ensureLessonStandardsColumn();
 ensureSavedLessonPlansTable();
 seedProgramTuitions().then(() => syncPendingInvoicesToProgramTuitions());

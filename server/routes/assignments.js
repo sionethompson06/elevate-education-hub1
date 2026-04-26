@@ -287,6 +287,54 @@ router.get('/:id/submissions', requireAuth, async (req, res) => {
   }
 });
 
+// Coach/admin: update a submission (score, feedback, status, isMissing, isLate)
+router.patch('/submissions/:id', requireAuth, async (req, res) => {
+  try {
+    const submissionId = parseInt(req.params.id);
+    const [existing] = await db.select({
+      id: assignmentSubmissions.id,
+      assignmentId: assignmentSubmissions.assignmentId,
+    }).from(assignmentSubmissions).where(eq(assignmentSubmissions.id, submissionId));
+    if (!existing) return res.status(404).json({ success: false, error: 'Submission not found' });
+
+    if (req.user.role !== 'admin') {
+      const [asgn] = await db.select({ sectionId: assignments.sectionId })
+        .from(assignments).where(eq(assignments.id, existing.assignmentId));
+      if (!asgn) return res.status(404).json({ success: false, error: 'Assignment not found' });
+      const sectionIds = await getCoachSectionIds(req.user.id);
+      if (!sectionIds.includes(asgn.sectionId)) {
+        return res.status(403).json({ success: false, error: 'Not assigned to this section' });
+      }
+    }
+
+    const { score, feedback, status, isMissing, isLate } = req.body;
+    const updateData = { gradedBy: req.user.id, gradedAt: new Date() };
+    if (score !== undefined) updateData.score = score !== null ? parseInt(score) : null;
+    if (feedback !== undefined) updateData.feedback = feedback;
+    if (status !== undefined) updateData.status = status;
+    if (isMissing !== undefined) updateData.isMissing = isMissing;
+    if (isLate !== undefined) updateData.isLate = isLate;
+
+    const [updated] = await db.update(assignmentSubmissions)
+      .set(updateData)
+      .where(eq(assignmentSubmissions.id, submissionId))
+      .returning();
+
+    await logAudit({
+      userId: req.user.id,
+      action: 'update',
+      entityType: 'assignment_submission',
+      entityId: submissionId,
+      details: updateData,
+      ipAddress: req.ip,
+    });
+
+    res.json({ success: true, submission: updated });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Admin grade override for a specific submission by ID
 router.patch('/submissions/:id/grade', requireAuth, requireRole('admin'), async (req, res) => {
   try {

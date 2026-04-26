@@ -41,6 +41,7 @@ const ROLE_NAV = {
   ],
   academic_coach: [
     { label: "My Dashboard", href: "/academic-coach/dashboard" },
+    { label: "My Classes", href: "/academic-coach/classes" },
     { label: "Gradebook", href: "/academic-coach/gradebook" },
     { label: "Lesson Library", href: "/academic-coach/lessons" },
     { label: "Schedule", href: "/academic-coach/schedule" },

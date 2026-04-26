@@ -30,11 +30,9 @@ function AttendancePanel({ coachId }) {
 
   const { data: sectionsData } = useQuery({
     queryKey: ["coach-sections", coachId],
-    queryFn: () => apiGet("/sections"),
+    queryFn: () => apiGet("/sections/my-sections"),
     enabled: !!coachId,
   });
-  // The /sections endpoint returns all sections; scope is enforced server-side for attendance
-  // but for display we just show them all and let the server reject if unauthorized
   const sections = sectionsData?.sections || [];
 
   const { data: rosterData, isLoading: rosterLoading } = useQuery({

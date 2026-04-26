@@ -1,18 +1,21 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost, apiPatch, apiDelete } from "@/api/apiClient";
-import { Users, Plus, X, Pencil, Loader2, Trash2, ChevronRight, UserPlus, UserMinus } from "lucide-react";
+import { Users, Plus, X, Pencil, Loader2, Trash2, ChevronRight, UserPlus, UserMinus, Eye, EyeOff } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 
-const EMPTY_FORM = { programId: "", name: "", termId: "", capacity: "20", schedule: "", room: "", status: "active" };
+const EMPTY_FORM = { programId: "", name: "", subject: "", gradeLevel: "", description: "", termId: "", capacity: "20", schedule: "", room: "", status: "active" };
 
 function SectionModal({ initial, programs, onClose, onSaved }) {
   const [form, setForm] = useState(initial ? {
     programId: String(initial.programId || ""),
     name: initial.name || "",
+    subject: initial.subject || "",
+    gradeLevel: initial.gradeLevel || "",
+    description: initial.description || "",
     termId: String(initial.termId || ""),
     capacity: String(initial.capacity || "20"),
     schedule: typeof initial.schedule === "string" ? initial.schedule : (initial.schedule?.text || ""),
@@ -29,6 +32,9 @@ function SectionModal({ initial, programs, onClose, onSaved }) {
       const payload = {
         programId: parseInt(form.programId),
         name: form.name.trim(),
+        subject: form.subject.trim() || null,
+        gradeLevel: form.gradeLevel.trim() || null,
+        description: form.description.trim() || null,
         termId: form.termId ? parseInt(form.termId) : null,
         capacity: form.capacity ? parseInt(form.capacity) : 20,
         schedule: form.schedule.trim() || null,
@@ -72,6 +78,23 @@ function SectionModal({ initial, programs, onClose, onSaved }) {
             <label className="block text-sm font-medium text-slate-700 mb-1">Section Name *</label>
             <input className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30"
               value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Morning Group A" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Subject</label>
+              <input className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30"
+                value={form.subject} onChange={e => setForm(f => ({ ...f, subject: e.target.value }))} placeholder="e.g. Math" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Grade Level</label>
+              <input className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30"
+                value={form.gradeLevel} onChange={e => setForm(f => ({ ...f, gradeLevel: e.target.value }))} placeholder="e.g. 9th–10th" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
+            <textarea rows={2} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none resize-none"
+              value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Optional class description…" />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -387,6 +410,21 @@ export default function AdminSections() {
   const [selectedSection, setSelectedSection] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [publishing, setPublishing] = useState(null);
+
+  const togglePublish = async (s, e) => {
+    e.stopPropagation();
+    setPublishing(s.id);
+    try {
+      await apiPatch(`/sections/${s.id}/publish`, {});
+      qc.invalidateQueries({ queryKey: ["admin-sections"] });
+      toast({ title: s.isPublished ? "Section unpublished" : "Section published" });
+    } catch (err) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setPublishing(null);
+    }
+  };
 
   const { data: programsData } = useQuery({
     queryKey: ["admin-programs-page"],
@@ -491,8 +529,13 @@ export default function AdminSections() {
                         <span className={`px-2 py-0.5 rounded-full text-xs font-semibold capitalize ${s.status === "active" ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}>
                           {s.status}
                         </span>
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${s.isPublished ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-400"}`}>
+                          {s.isPublished ? "Published" : "Draft"}
+                        </span>
                       </div>
-                      <p className="text-xs text-slate-500">{s.programName}</p>
+                      <p className="text-xs text-slate-500">
+                        {s.programName}{s.subject ? ` · ${s.subject}` : ""}{s.gradeLevel ? ` · Grade ${s.gradeLevel}` : ""}
+                      </p>
                       <div className="flex items-center gap-3 mt-1 flex-wrap text-xs text-slate-400">
                         <span>{rosterCount} / {s.capacity} students</span>
                         {scheduleText && <span>{scheduleText}</span>}
@@ -500,6 +543,12 @@ export default function AdminSections() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                      <button onClick={(e) => togglePublish(s, e)}
+                        disabled={publishing === s.id}
+                        className={`p-1.5 rounded transition-colors ${s.isPublished ? "text-blue-500 hover:bg-slate-100" : "text-slate-400 hover:text-blue-600 hover:bg-blue-50"}`}
+                        title={s.isPublished ? "Unpublish" : "Publish"}>
+                        {publishing === s.id ? <Loader2 className="w-4 h-4 animate-spin" /> : s.isPublished ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
                       <button onClick={() => openEdit(s)} className="p-1.5 rounded hover:bg-slate-200 text-slate-500 hover:text-slate-700 transition-colors">
                         <Pencil className="w-4 h-4" />
                       </button>

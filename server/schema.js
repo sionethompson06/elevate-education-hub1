@@ -130,6 +130,10 @@ export const sections = pgTable('sections', {
   programId: integer('program_id').notNull().references(() => programs.id),
   termId: integer('term_id').references(() => terms.id),
   name: varchar('name', { length: 200 }).notNull(),
+  subject: varchar('subject', { length: 100 }),
+  gradeLevel: varchar('grade_level', { length: 20 }),
+  description: text('description'),
+  isPublished: boolean('is_published').notNull().default(false),
   schedule: jsonb('schedule'),
   capacity: integer('capacity').notNull().default(20),
   room: varchar('room', { length: 50 }),
@@ -253,6 +257,7 @@ export const sectionStudents = pgTable('section_students', {
   id: serial('id').primaryKey(),
   sectionId: integer('section_id').notNull().references(() => sections.id),
   studentId: integer('student_id').notNull().references(() => students.id),
+  enrollmentId: integer('enrollment_id').references(() => enrollments.id),
   enrolledDate: date('enrolled_date').defaultNow(),
 });
 
@@ -274,6 +279,7 @@ export const assignmentSubmissions = pgTable('assignment_submissions', {
   assignmentId: integer('assignment_id').notNull().references(() => assignments.id),
   studentId: integer('student_id').notNull().references(() => students.id),
   score: integer('score'),
+  status: varchar('status', { length: 20 }).notNull().default('assigned'),
   isMissing: boolean('is_missing').notNull().default(false),
   isLate: boolean('is_late').notNull().default(false),
   feedback: text('feedback'),
