@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import { eq, desc, and, inArray } from 'drizzle-orm';
+import { eq, desc, and, inArray, gte, lte } from 'drizzle-orm';
 import db from '../db-postgres.js';
-import { sections, programs, sectionStudents, students, enrollments, assignments, assignmentSubmissions, classSessions } from '../schema.js';
+import { sections, programs, sectionStudents, students, enrollments, assignments, assignmentSubmissions, classSessions, users } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { getCoachSectionIds } from '../middleware/scope.js';
 import { logAudit } from '../services/audit.service.js';
@@ -18,6 +18,7 @@ router.get('/my-sections', requireAuth, async (req, res) => {
       id: sections.id,
       programId: sections.programId,
       termId: sections.termId,
+      coachUserId: sections.coachUserId,
       name: sections.name,
       subject: sections.subject,
       gradeLevel: sections.gradeLevel,
@@ -29,8 +30,11 @@ router.get('/my-sections', requireAuth, async (req, res) => {
       status: sections.status,
       createdAt: sections.createdAt,
       programName: programs.name,
+      coachFirstName: users.firstName,
+      coachLastName: users.lastName,
     }).from(sections)
       .leftJoin(programs, eq(sections.programId, programs.id))
+      .leftJoin(users, eq(sections.coachUserId, users.id))
       .where(inArray(sections.id, sectionIds));
 
     // Add roster counts
@@ -46,6 +50,41 @@ router.get('/my-sections', requireAuth, async (req, res) => {
   }
 });
 
+// ── Schedule board: all sessions across sections (admin) ─────────────────────
+router.get('/sessions-board', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const { from, to } = req.query;
+    const conditions = [];
+    if (from) conditions.push(gte(classSessions.sessionDate, from));
+    if (to)   conditions.push(lte(classSessions.sessionDate, to));
+
+    const rows = await db.select({
+      id: classSessions.id,
+      sectionId: classSessions.sectionId,
+      sessionDate: classSessions.sessionDate,
+      startAt: classSessions.startAt,
+      endAt: classSessions.endAt,
+      locationSnapshot: classSessions.locationSnapshot,
+      status: classSessions.status,
+      canceledReason: classSessions.canceledReason,
+      sectionName: sections.name,
+      room: sections.room,
+      programName: programs.name,
+      coachFirstName: users.firstName,
+      coachLastName: users.lastName,
+    }).from(classSessions)
+      .innerJoin(sections, eq(classSessions.sectionId, sections.id))
+      .leftJoin(programs, eq(sections.programId, programs.id))
+      .leftJoin(users, eq(sections.coachUserId, users.id))
+      .where(conditions.length ? and(...conditions) : undefined)
+      .orderBy(classSessions.sessionDate, classSessions.startAt);
+
+    res.json({ success: true, sessions: rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ── Admin: list all sections ─────────────────────────────────────────────────
 router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
   try {
@@ -54,6 +93,7 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
       id: sections.id,
       programId: sections.programId,
       termId: sections.termId,
+      coachUserId: sections.coachUserId,
       name: sections.name,
       subject: sections.subject,
       gradeLevel: sections.gradeLevel,
@@ -65,8 +105,11 @@ router.get('/', requireAuth, requireRole('admin'), async (req, res) => {
       status: sections.status,
       createdAt: sections.createdAt,
       programName: programs.name,
+      coachFirstName: users.firstName,
+      coachLastName: users.lastName,
     }).from(sections)
       .leftJoin(programs, eq(sections.programId, programs.id))
+      .leftJoin(users, eq(sections.coachUserId, users.id))
       .orderBy(desc(sections.createdAt));
 
     if (programId) result = result.filter(s => s.programId === parseInt(programId));
@@ -92,6 +135,7 @@ router.get('/:id', requireAuth, async (req, res) => {
       id: sections.id,
       programId: sections.programId,
       termId: sections.termId,
+      coachUserId: sections.coachUserId,
       name: sections.name,
       subject: sections.subject,
       gradeLevel: sections.gradeLevel,
@@ -103,8 +147,11 @@ router.get('/:id', requireAuth, async (req, res) => {
       status: sections.status,
       createdAt: sections.createdAt,
       programName: programs.name,
+      coachFirstName: users.firstName,
+      coachLastName: users.lastName,
     }).from(sections)
       .leftJoin(programs, eq(sections.programId, programs.id))
+      .leftJoin(users, eq(sections.coachUserId, users.id))
       .where(eq(sections.id, id));
 
     if (!section) return res.status(404).json({ success: false, error: 'Section not found' });
@@ -255,13 +302,14 @@ router.get('/:id/gradebook', requireAuth, async (req, res) => {
 // ── Create section (admin) ────────────────────────────────────────────────────
 router.post('/', requireAuth, requireRole('admin'), async (req, res) => {
   try {
-    const { programId, termId, name, subject, gradeLevel, description, schedule, capacity, room, status } = req.body;
+    const { programId, termId, coachUserId, name, subject, gradeLevel, description, schedule, capacity, room, status } = req.body;
     if (!programId || !name) {
       return res.status(400).json({ success: false, error: 'Program and name are required' });
     }
     const [section] = await db.insert(sections).values({
       programId: parseInt(programId),
       termId: termId ? parseInt(termId) : null,
+      coachUserId: coachUserId ? parseInt(coachUserId) : null,
       name: name.trim(),
       subject: subject || null,
       gradeLevel: gradeLevel || null,
@@ -292,7 +340,7 @@ router.post('/', requireAuth, requireRole('admin'), async (req, res) => {
 router.patch('/:id', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const { name, subject, gradeLevel, description, schedule, capacity, room, status, termId } = req.body;
+    const { name, subject, gradeLevel, description, schedule, capacity, room, status, termId, coachUserId } = req.body;
     const updateData = {};
     if (name !== undefined) updateData.name = name.trim();
     if (subject !== undefined) updateData.subject = subject || null;
@@ -303,6 +351,7 @@ router.patch('/:id', requireAuth, requireRole('admin'), async (req, res) => {
     if (room !== undefined) updateData.room = room || null;
     if (status !== undefined) updateData.status = status;
     if (termId !== undefined) updateData.termId = termId ? parseInt(termId) : null;
+    if (coachUserId !== undefined) updateData.coachUserId = coachUserId ? parseInt(coachUserId) : null;
 
     if (Object.keys(updateData).length === 0) {
       return res.status(400).json({ success: false, error: 'No fields to update' });
