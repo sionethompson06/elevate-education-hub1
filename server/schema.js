@@ -89,6 +89,7 @@ export const terms = pgTable('terms', {
   name: varchar('name', { length: 100 }).notNull(),
   startDate: date('start_date').notNull(),
   endDate: date('end_date').notNull(),
+  status: varchar('status', { length: 20 }).notNull().default('draft'),
 });
 
 export const applications = pgTable('applications', {
@@ -129,6 +130,7 @@ export const sections = pgTable('sections', {
   id: serial('id').primaryKey(),
   programId: integer('program_id').notNull().references(() => programs.id),
   termId: integer('term_id').references(() => terms.id),
+  coachUserId: integer('coach_user_id').references(() => users.id),
   name: varchar('name', { length: 200 }).notNull(),
   subject: varchar('subject', { length: 100 }),
   gradeLevel: varchar('grade_level', { length: 20 }),
@@ -253,12 +255,28 @@ export const paymentAllocations = pgTable('payment_allocations', {
   uniqPaymentInvoice: unique().on(t.paymentId, t.invoiceId),
 }));
 
+export const classSessions = pgTable('class_sessions', {
+  id: serial('id').primaryKey(),
+  sectionId: integer('section_id').notNull().references(() => sections.id),
+  sessionDate: date('session_date').notNull(),
+  startAt: varchar('start_at', { length: 10 }),
+  endAt: varchar('end_at', { length: 10 }),
+  locationSnapshot: varchar('location_snapshot', { length: 200 }),
+  status: varchar('status', { length: 20 }).notNull().default('scheduled'),
+  canceledReason: text('canceled_reason'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
 export const sectionStudents = pgTable('section_students', {
   id: serial('id').primaryKey(),
   sectionId: integer('section_id').notNull().references(() => sections.id),
   studentId: integer('student_id').notNull().references(() => students.id),
   enrollmentId: integer('enrollment_id').references(() => enrollments.id),
   enrolledDate: date('enrolled_date').defaultNow(),
+  status: varchar('status', { length: 20 }).notNull().default('active'),
+  placedAt: timestamp('placed_at').defaultNow(),
+  removedAt: timestamp('removed_at'),
+  removedReason: text('removed_reason'),
 });
 
 export const assignments = pgTable('assignments', {
@@ -278,14 +296,18 @@ export const assignmentSubmissions = pgTable('assignment_submissions', {
   id: serial('id').primaryKey(),
   assignmentId: integer('assignment_id').notNull().references(() => assignments.id),
   studentId: integer('student_id').notNull().references(() => students.id),
+  sectionId: integer('section_id').references(() => sections.id),
   score: integer('score'),
   status: varchar('status', { length: 20 }).notNull().default('assigned'),
   isMissing: boolean('is_missing').notNull().default(false),
   isLate: boolean('is_late').notNull().default(false),
   feedback: text('feedback'),
+  teacherFeedback: text('teacher_feedback'),
+  reviewedAt: timestamp('reviewed_at'),
   gradedBy: integer('graded_by').references(() => users.id),
   gradedAt: timestamp('graded_at'),
   submissionContent: text('submission_content'),
+  response: text('response'),
   submittedAt: timestamp('submitted_at'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });

@@ -484,13 +484,44 @@ async function ensureLessonStandardsColumn() {
 
 async function ensureScheduleColumns() {
   try {
+    // Phase 1 columns (idempotent)
     await rawSql`ALTER TABLE sections ADD COLUMN IF NOT EXISTS subject VARCHAR(100)`;
     await rawSql`ALTER TABLE sections ADD COLUMN IF NOT EXISTS grade_level VARCHAR(20)`;
     await rawSql`ALTER TABLE sections ADD COLUMN IF NOT EXISTS description TEXT`;
     await rawSql`ALTER TABLE sections ADD COLUMN IF NOT EXISTS is_published BOOLEAN NOT NULL DEFAULT FALSE`;
     await rawSql`ALTER TABLE section_students ADD COLUMN IF NOT EXISTS enrollment_id INTEGER REFERENCES enrollments(id)`;
     await rawSql`ALTER TABLE assignment_submissions ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'assigned'`;
-    console.log('[migration] Schedule/classes columns ready');
+
+    // Phase 2 columns
+    await rawSql`ALTER TABLE terms ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'draft'`;
+    await rawSql`ALTER TABLE sections ADD COLUMN IF NOT EXISTS coach_user_id INTEGER REFERENCES users(id)`;
+
+    await rawSql`
+      CREATE TABLE IF NOT EXISTS class_sessions (
+        id               SERIAL PRIMARY KEY,
+        section_id       INTEGER NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
+        session_date     DATE NOT NULL,
+        start_at         VARCHAR(10),
+        end_at           VARCHAR(10),
+        location_snapshot VARCHAR(200),
+        status           VARCHAR(20) NOT NULL DEFAULT 'scheduled',
+        canceled_reason  TEXT,
+        created_at       TIMESTAMP NOT NULL DEFAULT NOW()
+      )`;
+    await rawSql`CREATE INDEX IF NOT EXISTS idx_class_sessions_section ON class_sessions(section_id)`;
+    await rawSql`CREATE INDEX IF NOT EXISTS idx_class_sessions_date   ON class_sessions(session_date)`;
+
+    await rawSql`ALTER TABLE section_students ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active'`;
+    await rawSql`ALTER TABLE section_students ADD COLUMN IF NOT EXISTS placed_at TIMESTAMP DEFAULT NOW()`;
+    await rawSql`ALTER TABLE section_students ADD COLUMN IF NOT EXISTS removed_at TIMESTAMP`;
+    await rawSql`ALTER TABLE section_students ADD COLUMN IF NOT EXISTS removed_reason TEXT`;
+
+    await rawSql`ALTER TABLE assignment_submissions ADD COLUMN IF NOT EXISTS section_id INTEGER REFERENCES sections(id)`;
+    await rawSql`ALTER TABLE assignment_submissions ADD COLUMN IF NOT EXISTS response TEXT`;
+    await rawSql`ALTER TABLE assignment_submissions ADD COLUMN IF NOT EXISTS teacher_feedback TEXT`;
+    await rawSql`ALTER TABLE assignment_submissions ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMP`;
+
+    console.log('[migration] Schedule/classes columns ready (Phase 2)');
   } catch (err) {
     console.error('[migration] ensureScheduleColumns error:', err.message);
   }

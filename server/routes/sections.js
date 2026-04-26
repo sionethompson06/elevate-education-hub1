@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { eq, desc, and, inArray } from 'drizzle-orm';
 import db from '../db-postgres.js';
-import { sections, programs, sectionStudents, students, enrollments, assignments, assignmentSubmissions } from '../schema.js';
+import { sections, programs, sectionStudents, students, enrollments, assignments, assignmentSubmissions, classSessions } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { getCoachSectionIds } from '../middleware/scope.js';
 import { logAudit } from '../services/audit.service.js';
@@ -457,6 +457,121 @@ router.delete('/:sectionId/students/:studentId', requireAuth, requireRole('admin
       ipAddress: req.ip,
     });
 
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ── Class Sessions ────────────────────────────────────────────────────────────
+
+// GET /sections/:sectionId/sessions — list sessions for a section
+router.get('/:sectionId/sessions', requireAuth, async (req, res) => {
+  try {
+    const sectionId = parseInt(req.params.sectionId);
+    const role = req.user.role;
+
+    if (role !== 'admin') {
+      const allowed = await getCoachSectionIds(req.user.id);
+      if (!allowed.includes(sectionId)) {
+        return res.status(403).json({ success: false, error: 'Access denied' });
+      }
+    }
+
+    const rows = await db.select().from(classSessions)
+      .where(eq(classSessions.sectionId, sectionId))
+      .orderBy(classSessions.sessionDate, classSessions.startAt);
+
+    res.json({ success: true, sessions: rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /sections/:sectionId/sessions — create a session
+router.post('/:sectionId/sessions', requireAuth, async (req, res) => {
+  try {
+    const sectionId = parseInt(req.params.sectionId);
+    const role = req.user.role;
+
+    if (role !== 'admin') {
+      const allowed = await getCoachSectionIds(req.user.id);
+      if (!allowed.includes(sectionId)) {
+        return res.status(403).json({ success: false, error: 'Access denied' });
+      }
+    }
+
+    const { sessionDate, startAt, endAt, locationSnapshot } = req.body;
+    if (!sessionDate) return res.status(400).json({ success: false, error: 'sessionDate is required' });
+
+    const [session] = await db.insert(classSessions).values({
+      sectionId,
+      sessionDate,
+      startAt: startAt || null,
+      endAt: endAt || null,
+      locationSnapshot: locationSnapshot || null,
+      status: 'scheduled',
+    }).returning();
+
+    await logAudit({
+      userId: req.user.id,
+      action: 'create',
+      entityType: 'class_session',
+      entityId: session.id,
+      details: { sectionId, sessionDate },
+      ipAddress: req.ip,
+    });
+
+    res.json({ success: true, session });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// PATCH /sections/sessions/:id — update a session (status, cancel, reschedule)
+router.patch('/sessions/:id', requireAuth, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const [existing] = await db.select().from(classSessions).where(eq(classSessions.id, id));
+    if (!existing) return res.status(404).json({ success: false, error: 'Session not found' });
+
+    const role = req.user.role;
+    if (role !== 'admin') {
+      const allowed = await getCoachSectionIds(req.user.id);
+      if (!allowed.includes(existing.sectionId)) {
+        return res.status(403).json({ success: false, error: 'Access denied' });
+      }
+    }
+
+    const { sessionDate, startAt, endAt, locationSnapshot, status, canceledReason } = req.body;
+    const [updated] = await db.update(classSessions).set({
+      ...(sessionDate !== undefined && { sessionDate }),
+      ...(startAt !== undefined && { startAt }),
+      ...(endAt !== undefined && { endAt }),
+      ...(locationSnapshot !== undefined && { locationSnapshot }),
+      ...(status !== undefined && { status }),
+      ...(canceledReason !== undefined && { canceledReason }),
+    }).where(eq(classSessions.id, id)).returning();
+
+    res.json({ success: true, session: updated });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// DELETE /sections/sessions/:id — delete a session (admin only)
+router.delete('/sessions/:id', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    await db.delete(classSessions).where(eq(classSessions.id, id));
+    await logAudit({
+      userId: req.user.id,
+      action: 'delete',
+      entityType: 'class_session',
+      entityId: id,
+      details: {},
+      ipAddress: req.ip,
+    });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
