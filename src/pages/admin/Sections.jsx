@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost, apiPatch, apiDelete } from "@/api/apiClient";
-import { Users, Plus, X, Pencil, Loader2, Trash2, ChevronRight, UserPlus, UserMinus, Eye, EyeOff, CalendarDays, List, Clock, MapPin } from "lucide-react";
+import { Users, Plus, X, Pencil, Loader2, Trash2, ChevronRight, UserPlus, UserMinus, Eye, EyeOff, CalendarDays, List, Clock, MapPin, Ban, CheckCircle } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
@@ -372,6 +372,264 @@ function CoachesTab({ section, coaches }) {
   );
 }
 
+// ── Sessions Tab ──────────────────────────────────────────────────────────────
+
+function SessionsTab({ section }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [showCreate, setShowCreate] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState({ sessionDate: "", startAt: "", endAt: "", locationSnapshot: "" });
+  const [cancelTarget, setCancelTarget] = useState(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [canceling, setCanceling] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const { data, refetch } = useQuery({
+    queryKey: ["section-sessions", section.id],
+    queryFn: () => apiGet(`/sections/${section.id}/sessions`),
+  });
+  const sessions = data?.sessions || [];
+
+  const invalidate = () => {
+    refetch();
+    qc.invalidateQueries({ queryKey: ["schedule-board"] });
+  };
+
+  const createSession = async () => {
+    if (!form.sessionDate) return;
+    setCreating(true);
+    try {
+      await apiPost(`/sections/${section.id}/sessions`, {
+        sessionDate: form.sessionDate,
+        startAt: form.startAt || null,
+        endAt: form.endAt || null,
+        locationSnapshot: form.locationSnapshot.trim() || null,
+      });
+      setForm({ sessionDate: "", startAt: "", endAt: "", locationSnapshot: "" });
+      setShowCreate(false);
+      invalidate();
+      toast({ title: "Session created" });
+    } catch (err) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const markComplete = async (s) => {
+    try {
+      await apiPatch(`/sections/sessions/${s.id}`, { status: "completed" });
+      invalidate();
+      toast({ title: "Marked complete" });
+    } catch (err) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const restoreSession = async (s) => {
+    try {
+      await apiPatch(`/sections/sessions/${s.id}`, { status: "scheduled", canceledReason: null });
+      invalidate();
+      toast({ title: "Session restored" });
+    } catch (err) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const confirmCancel = async () => {
+    if (!cancelTarget) return;
+    setCanceling(true);
+    try {
+      await apiPatch(`/sections/sessions/${cancelTarget.id}`, {
+        status: "canceled",
+        canceledReason: cancelReason.trim() || null,
+      });
+      setCancelTarget(null);
+      setCancelReason("");
+      invalidate();
+      toast({ title: "Session canceled" });
+    } catch (err) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setCanceling(false);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await apiDelete(`/sections/sessions/${deleteTarget.id}`);
+      setDeleteTarget(null);
+      invalidate();
+      toast({ title: "Session deleted" });
+    } catch (err) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const sf = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  return (
+    <div className="space-y-4">
+      {/* Add session button / form */}
+      {!showCreate ? (
+        <button
+          onClick={() => setShowCreate(true)}
+          className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-slate-200 rounded-xl py-3 text-sm font-medium text-slate-400 hover:border-[#1a3c5e]/40 hover:text-[#1a3c5e] transition-colors">
+          <Plus className="w-4 h-4" /> Add Session
+        </button>
+      ) : (
+        <div className="border border-[#1a3c5e]/20 rounded-xl p-4 space-y-3 bg-slate-50">
+          <p className="text-sm font-semibold text-[#1a3c5e]">New Session</p>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Date *</label>
+            <input type="date" value={form.sessionDate} onChange={e => sf("sessionDate", e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/20" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Start Time</label>
+              <input type="time" value={form.startAt} onChange={e => sf("startAt", e.target.value)}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/20" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">End Time</label>
+              <input type="time" value={form.endAt} onChange={e => sf("endAt", e.target.value)}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/20" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Location</label>
+            <input value={form.locationSnapshot} onChange={e => sf("locationSnapshot", e.target.value)}
+              placeholder={section.room || "e.g. Room 204"}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/20" />
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" className="flex-1" onClick={() => setShowCreate(false)}>Cancel</Button>
+            <Button size="sm" disabled={!form.sessionDate || creating} onClick={createSession}
+              className="flex-1 bg-[#1a3c5e] hover:bg-[#0d2540]">
+              {creating && <Loader2 className="w-4 h-4 animate-spin mr-1.5" />}
+              Save Session
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Sessions list */}
+      {sessions.length === 0 && !showCreate && (
+        <div className="text-center py-8">
+          <CalendarDays className="w-8 h-8 text-slate-200 mx-auto mb-2" />
+          <p className="text-xs text-slate-400">No sessions yet. Add the first one above.</p>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        {sessions.map(s => (
+          <div key={s.id} className={`rounded-xl border px-3 py-3 ${
+            s.status === "canceled"  ? "bg-red-50 border-red-100" :
+            s.status === "completed" ? "bg-green-50 border-green-100" :
+            "bg-white border-slate-200"
+          }`}>
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-sm font-semibold text-slate-800">{fmtDate(s.sessionDate)}</p>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${SESSION_STATUS_CLS[s.status] || "bg-slate-100 text-slate-500"}`}>
+                    {s.status}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 mt-0.5 text-xs text-slate-500 flex-wrap">
+                  {(s.startAt || s.endAt) && (
+                    <span className="flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      {fmtTime(s.startAt)}{s.endAt ? ` – ${fmtTime(s.endAt)}` : ""}
+                    </span>
+                  )}
+                  {s.locationSnapshot && (
+                    <span className="flex items-center gap-1">
+                      <MapPin className="w-3 h-3" />{s.locationSnapshot}
+                    </span>
+                  )}
+                </div>
+                {s.canceledReason && (
+                  <p className="text-xs text-red-600 mt-1">Reason: {s.canceledReason}</p>
+                )}
+              </div>
+              {/* Actions */}
+              <div className="flex items-center gap-0.5 shrink-0">
+                {s.status === "scheduled" && (<>
+                  <button onClick={() => markComplete(s)} title="Mark complete"
+                    className="p-1.5 rounded hover:bg-green-50 text-slate-400 hover:text-green-600 transition-colors">
+                    <CheckCircle className="w-3.5 h-3.5" />
+                  </button>
+                  <button onClick={() => { setCancelTarget(s); setCancelReason(""); }} title="Cancel session"
+                    className="p-1.5 rounded hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors">
+                    <Ban className="w-3.5 h-3.5" />
+                  </button>
+                </>)}
+                {s.status === "canceled" && (
+                  <button onClick={() => restoreSession(s)}
+                    className="px-2 py-1 rounded text-xs font-medium text-blue-600 hover:bg-blue-50 transition-colors">
+                    Restore
+                  </button>
+                )}
+                <button onClick={() => setDeleteTarget(s)} title="Delete"
+                  className="p-1.5 rounded hover:bg-red-50 text-slate-400 hover:text-red-600 transition-colors">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Cancel dialog */}
+      <AlertDialog open={!!cancelTarget} onOpenChange={open => !open && setCancelTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel session on {fmtDate(cancelTarget?.sessionDate)}?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mt-3 mb-1">Reason (optional)</label>
+                <input value={cancelReason} onChange={e => setCancelReason(e.target.value)}
+                  placeholder="e.g. Coach unavailable"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none" />
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Back</AlertDialogCancel>
+            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={confirmCancel} disabled={canceling}>
+              {canceling ? "Canceling…" : "Cancel Session"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete dialog */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={open => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete session on {fmtDate(deleteTarget?.sessionDate)}?</AlertDialogTitle>
+            <AlertDialogDescription>This permanently removes the session. This cannot be undone.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Back</AlertDialogCancel>
+            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={confirmDelete} disabled={deleting}>
+              {deleting ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
 function SectionDetail({ section, allStudents, enrollments, coaches, onEdit, onClose }) {
   const [tab, setTab] = useState("roster");
   const qc = useQueryClient();
@@ -411,7 +669,7 @@ function SectionDetail({ section, allStudents, enrollments, coaches, onEdit, onC
         </div>
 
         <div className="flex border-b">
-          {["roster", "coaches"].map(t => (
+          {["roster", "sessions", "coaches"].map(t => (
             <button key={t} onClick={() => setTab(t)}
               className={`flex-1 py-2.5 text-sm font-medium capitalize transition-colors ${tab === t ? "text-[#1a3c5e] border-b-2 border-[#1a3c5e]" : "text-slate-500 hover:text-slate-700"}`}>
               {t}
@@ -422,6 +680,8 @@ function SectionDetail({ section, allStudents, enrollments, coaches, onEdit, onC
         <div className="flex-1 overflow-y-auto p-5">
           {tab === "roster" ? (
             <RosterTab section={section} allStudents={allStudents} enrollments={enrollments} onRefresh={onRefresh} />
+          ) : tab === "sessions" ? (
+            <SessionsTab section={section} />
           ) : (
             <CoachesTab section={section} coaches={coaches} />
           )}
