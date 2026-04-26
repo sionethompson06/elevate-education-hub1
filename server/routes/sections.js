@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { eq, desc, and, inArray, gte, lte } from 'drizzle-orm';
 import db from '../db-postgres.js';
-import { sections, programs, sectionStudents, students, enrollments, assignments, assignmentSubmissions, classSessions, users } from '../schema.js';
+import { sections, programs, sectionStudents, students, enrollments, assignments, assignmentSubmissions, classSessions, users, guardianStudents } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { getCoachSectionIds } from '../middleware/scope.js';
 import { logAudit } from '../services/audit.service.js';
@@ -37,11 +37,24 @@ router.get('/my-sections', requireAuth, async (req, res) => {
       .leftJoin(users, eq(sections.coachUserId, users.id))
       .where(inArray(sections.id, sectionIds));
 
-    // Add roster counts
+    const today = new Date().toISOString().split('T')[0];
     const enriched = await Promise.all(result.map(async (s) => {
       const roster = await db.select({ id: sectionStudents.id })
         .from(sectionStudents).where(eq(sectionStudents.sectionId, s.id));
-      return { ...s, rosterCount: roster.length };
+      const [nextSession] = await db.select({
+        sessionDate: classSessions.sessionDate,
+        startAt: classSessions.startAt,
+        endAt: classSessions.endAt,
+        status: classSessions.status,
+      }).from(classSessions)
+        .where(and(
+          eq(classSessions.sectionId, s.id),
+          eq(classSessions.status, 'scheduled'),
+          gte(classSessions.sessionDate, today),
+        ))
+        .orderBy(classSessions.sessionDate, classSessions.startAt)
+        .limit(1);
+      return { ...s, rosterCount: roster.length, nextSession: nextSession || null };
     }));
 
     res.json({ success: true, sections: enriched });
@@ -161,6 +174,7 @@ router.get('/:id', requireAuth, async (req, res) => {
       studentId: sectionStudents.studentId,
       enrollmentId: sectionStudents.enrollmentId,
       enrolledDate: sectionStudents.enrolledDate,
+      placementStatus: sectionStudents.status,
       firstName: students.firstName,
       lastName: students.lastName,
       grade: students.grade,
@@ -168,7 +182,20 @@ router.get('/:id', requireAuth, async (req, res) => {
       .innerJoin(students, eq(sectionStudents.studentId, students.id))
       .where(eq(sectionStudents.sectionId, id));
 
-    res.json({ success: true, section, students: enrolled });
+    // Enrich with guardian name
+    const enrichedStudents = await Promise.all(enrolled.map(async (s) => {
+      const [guardianLink] = await db.select({ guardianUserId: guardianStudents.guardianUserId })
+        .from(guardianStudents).where(eq(guardianStudents.studentId, s.studentId));
+      let guardianName = null;
+      if (guardianLink) {
+        const [guardian] = await db.select({ firstName: users.firstName, lastName: users.lastName })
+          .from(users).where(eq(users.id, guardianLink.guardianUserId));
+        if (guardian) guardianName = `${guardian.firstName} ${guardian.lastName}`.trim();
+      }
+      return { ...s, guardianName };
+    }));
+
+    res.json({ success: true, section, students: enrichedStudents });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

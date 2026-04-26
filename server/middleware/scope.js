@@ -23,6 +23,10 @@ export async function getCoachSectionIds(userId) {
     const progSections = await db.select().from(sections).where(eq(sections.programId, pa.assignmentId));
     sectionIds.push(...progSections.map(s => s.id));
   }
+  // Also include sections directly assigned via the coachUserId column
+  const coachUserSections = await db.select({ id: sections.id }).from(sections)
+    .where(eq(sections.coachUserId, userId));
+  coachUserSections.forEach(s => sectionIds.push(s.id));
   return [...new Set(sectionIds)];
 }
 
