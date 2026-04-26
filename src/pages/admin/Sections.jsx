@@ -7,9 +7,9 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 
-const EMPTY_FORM = { programId: "", name: "", subject: "", gradeLevel: "", description: "", termId: "", capacity: "20", schedule: "", room: "", status: "active" };
+const EMPTY_FORM = { programId: "", name: "", subject: "", gradeLevel: "", description: "", termId: "", capacity: "20", schedule: "", room: "", status: "active", coachUserId: "" };
 
-function SectionModal({ initial, programs, onClose, onSaved }) {
+function SectionModal({ initial, programs, coaches, onClose, onSaved }) {
   const [form, setForm] = useState(initial ? {
     programId: String(initial.programId || ""),
     name: initial.name || "",
@@ -21,6 +21,7 @@ function SectionModal({ initial, programs, onClose, onSaved }) {
     schedule: typeof initial.schedule === "string" ? initial.schedule : (initial.schedule?.text || ""),
     room: initial.room || "",
     status: initial.status || "active",
+    coachUserId: String(initial.coachUserId || ""),
   } : EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const { toast } = useToast();
@@ -40,6 +41,7 @@ function SectionModal({ initial, programs, onClose, onSaved }) {
         schedule: form.schedule.trim() || null,
         room: form.room.trim() || null,
         status: form.status,
+        coachUserId: form.coachUserId ? parseInt(form.coachUserId) : null,
       };
       if (initial?.id) {
         await apiPatch(`/sections/${initial.id}`, payload);
@@ -78,6 +80,16 @@ function SectionModal({ initial, programs, onClose, onSaved }) {
             <label className="block text-sm font-medium text-slate-700 mb-1">Section Name *</label>
             <input className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#1a3c5e]/30"
               value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Morning Group A" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Assigned Coach</label>
+            <select className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+              value={form.coachUserId} onChange={e => setForm(f => ({ ...f, coachUserId: e.target.value }))}>
+              <option value="">— None —</option>
+              {coaches.map(c => (
+                <option key={c.id} value={c.id}>{c.firstName} {c.lastName} ({c.role?.replace(/_/g, " ")})</option>
+              ))}
+            </select>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -534,7 +546,7 @@ export default function AdminSections() {
                         </span>
                       </div>
                       <p className="text-xs text-slate-500">
-                        {s.programName}{s.subject ? ` · ${s.subject}` : ""}{s.gradeLevel ? ` · Grade ${s.gradeLevel}` : ""}
+                        {s.programName}{s.subject ? ` · ${s.subject}` : ""}{s.gradeLevel ? ` · Grade ${s.gradeLevel}` : ""}{(s.coachFirstName || s.coachLastName) ? ` · ${s.coachFirstName ?? ""} ${s.coachLastName ?? ""}`.trim() : ""}
                       </p>
                       <div className="flex items-center gap-3 mt-1 flex-wrap text-xs text-slate-400">
                         <span>{rosterCount} / {s.capacity} students</span>
@@ -569,6 +581,7 @@ export default function AdminSections() {
         <SectionModal
           initial={editing}
           programs={programs}
+          coaches={coaches}
           onClose={() => { setShowModal(false); setEditing(null); }}
           onSaved={invalidate}
         />
