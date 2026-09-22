@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { eq, desc, and, inArray } from 'drizzle-orm';
 import db, { rawSql } from '../db-postgres.js';
-import { assignments, assignmentSubmissions, sectionStudents, sections, students } from '../schema.js';
+import { assignments, assignmentSubmissions, sectionStudents, sections, students, lessonAssignments } from '../schema.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { getCoachSectionIds, isStudentInSection } from '../middleware/scope.js';
 import { logAudit } from '../services/audit.service.js';
@@ -214,6 +214,49 @@ router.post('/:id/submit', requireAuth, async (req, res) => {
     });
 
     res.json({ success: true, submission });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Student: class/section-linked lesson assignments
+router.get('/my-work', requireAuth, async (req, res) => {
+  try {
+    if (req.user.role !== 'student') {
+      return res.status(403).json({ success: false, error: 'Students only' });
+    }
+    const [studentRec] = await db.select().from(students).where(eq(students.userId, req.user.id));
+    if (!studentRec) return res.json({ success: true, work: [] });
+
+    // Only class-linked lesson assignments for this student where they're an active section member
+    const rows = await db.select({
+      id: lessonAssignments.id,
+      title: lessonAssignments.title,
+      subject: lessonAssignments.subject,
+      instructions: lessonAssignments.instructions,
+      status: lessonAssignments.status,
+      dueAt: lessonAssignments.dueAt,
+      assignedAt: lessonAssignments.assignedAt,
+      pointsPossible: lessonAssignments.pointsPossible,
+      pointsEarned: lessonAssignments.pointsEarned,
+      sectionId: lessonAssignments.sectionId,
+      sectionName: sections.name,
+      sectionSubject: sections.subject,
+      sectionGrade: sections.grade,
+      placementStatus: sectionStudents.status,
+    }).from(lessonAssignments)
+      .innerJoin(sections, eq(lessonAssignments.sectionId, sections.id))
+      .innerJoin(sectionStudents, and(
+        eq(sectionStudents.sectionId, lessonAssignments.sectionId),
+        eq(sectionStudents.studentId, lessonAssignments.studentId),
+      ))
+      .where(and(
+        eq(lessonAssignments.studentId, studentRec.id),
+        eq(sectionStudents.status, 'active'),
+      ))
+      .orderBy(desc(lessonAssignments.assignedAt));
+
+    res.json({ success: true, work: rows });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

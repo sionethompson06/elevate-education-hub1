@@ -482,6 +482,15 @@ async function ensureLessonStandardsColumn() {
   }
 }
 
+async function ensureLessonSectionColumn() {
+  try {
+    await rawSql`ALTER TABLE lesson_assignments ADD COLUMN IF NOT EXISTS section_id INTEGER REFERENCES sections(id)`;
+    console.log('[migration] lesson_assignments.section_id column ready');
+  } catch (err) {
+    console.error('[migration] ensureLessonSectionColumn error:', err.message);
+  }
+}
+
 async function ensureScheduleColumns() {
   try {
     // Phase 1 columns (idempotent)
@@ -609,6 +618,7 @@ ensureInvoiceManualOverrideColumn();
 ensureAccountingTables();
 ensureScheduleColumns();
 ensureLessonStandardsColumn();
+ensureLessonSectionColumn();
 ensureSavedLessonPlansTable();
 seedProgramTuitions().then(() => syncPendingInvoicesToProgramTuitions());
 seedChartOfAccounts();

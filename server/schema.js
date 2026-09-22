@@ -471,6 +471,7 @@ export const lessonAssignments = pgTable('lesson_assignments', {
   id: serial('id').primaryKey(),
   studentId: integer('student_id').notNull().references(() => students.id),
   academicCoachUserId: integer('academic_coach_user_id').references(() => users.id),
+  sectionId: integer('section_id').references(() => sections.id),
   subject: varchar('subject', { length: 100 }).notNull().default('General'),
   title: varchar('title', { length: 255 }).notNull(),
   instructions: text('instructions'),

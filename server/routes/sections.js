@@ -687,6 +687,7 @@ router.post('/:sectionId/assign-lesson', requireAuth, async (req, res) => {
     const insertValues = rosterRows.map(r => ({
       studentId: r.studentId,
       academicCoachUserId: req.user.id,
+      sectionId,
       title: plan.title,
       subject: plan.subject || 'General',
       instructions: plan.planData || null,

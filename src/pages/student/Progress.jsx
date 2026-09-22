@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useAuth } from "@/lib/AuthContext";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost } from "@/api/apiClient";
-import { BookOpen, CheckCircle, AlertCircle, Send, Loader2, ArrowUpDown } from "lucide-react";
+import { BookOpen, CheckCircle, AlertCircle, Send, Loader2, ArrowUpDown, GraduationCap, Calendar } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import KPIBar from "@/components/gradebook/KPIBar";
@@ -12,7 +12,7 @@ import { format, isPast, isWithinInterval, addDays } from "date-fns";
 
 const SUBJECTS = ["all", "Math", "English", "Science", "History", "Reading", "Writing", "PE", "General"];
 const STATUS_TABS = ["all", "incomplete", "complete"];
-const PAGE_TABS = ["lessons", "assignments"];
+const PAGE_TABS = ["lessons", "classwork", "assignments"];
 const SORT_OPTS = ["due_date", "subject"];
 
 function sortLessons(lessons) {
@@ -62,6 +62,13 @@ export default function StudentProgress() {
     enabled: !!user && pageTab === "assignments",
   });
 
+  const { data: classWorkData, isLoading: classWorkLoading } = useQuery({
+    queryKey: ["my-class-work", user?.id],
+    queryFn: () => apiGet("/assignments/my-work"),
+    enabled: !!user && pageTab === "classwork",
+  });
+  const classWork = classWorkData?.work || [];
+
   const allLessons = data?.lessons || [];
   const kpis = data?.kpis;
   const baseFiltered = allLessons.filter(l => statusTab === "all" || l.status === statusTab);
@@ -97,7 +104,7 @@ export default function StudentProgress() {
         {PAGE_TABS.map(t => (
           <button key={t} onClick={() => setPageTab(t)}
             className={`px-4 py-2 text-sm font-medium capitalize border-b-2 transition-colors ${pageTab === t ? "border-[#1a3c5e] text-[#1a3c5e]" : "border-transparent text-slate-500 hover:text-slate-700"}`}>
-            {t === "lessons" ? "Lessons" : "Assignment Submissions"}
+            {t === "lessons" ? "Lessons" : t === "classwork" ? "Class Work" : "Assignment Submissions"}
           </button>
         ))}
       </div>
@@ -175,6 +182,10 @@ export default function StudentProgress() {
         </>
       )}
 
+      {pageTab === "classwork" && (
+        <ClassWorkList lessons={classWork} loading={classWorkLoading} />
+      )}
+
       {pageTab === "assignments" && (
         <div className="space-y-4">
           {mySubmissions.length === 0 ? (
@@ -233,6 +244,94 @@ export default function StudentProgress() {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function statusBadgeCls(status) {
+  if (status === "complete") return "bg-green-100 text-green-700 border-green-200";
+  if (status === "in_progress") return "bg-blue-100 text-blue-700 border-blue-200";
+  return "bg-slate-100 text-slate-600 border-slate-200";
+}
+
+function ClassWorkList({ lessons, loading }) {
+  if (loading) {
+    return (
+      <div className="flex justify-center py-10">
+        <div className="w-5 h-5 border-4 border-slate-200 border-t-[#1a3c5e] rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (lessons.length === 0) {
+    return (
+      <Card>
+        <CardContent className="py-12 text-center">
+          <GraduationCap className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+          <p className="text-slate-400">No class work assigned yet.</p>
+          <p className="text-xs text-slate-300 mt-1">Assignments from your classes will show up here.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Group by section for readability
+  const bySection = lessons.reduce((acc, l) => {
+    const key = l.sectionId || 0;
+    if (!acc[key]) acc[key] = { name: l.sectionName || "Class", subject: l.sectionSubject, grade: l.sectionGrade, items: [] };
+    acc[key].items.push(l);
+    return acc;
+  }, {});
+
+  return (
+    <div className="space-y-6">
+      {Object.entries(bySection).map(([sectionId, group]) => (
+        <div key={sectionId}>
+          <div className="flex items-baseline gap-2 mb-2">
+            <h2 className="text-sm font-semibold text-slate-700">{group.name}</h2>
+            {(group.subject || group.grade) && (
+              <span className="text-xs text-slate-400">
+                {[group.subject, group.grade].filter(Boolean).join(" · ")}
+              </span>
+            )}
+            <span className="text-xs text-slate-400 ml-auto">{group.items.length} assigned</span>
+          </div>
+          <div className="space-y-2">
+            {group.items.map(l => (
+              <Card key={l.id} className="border border-slate-100">
+                <CardContent className="py-3 px-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-slate-800">{l.title}</p>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-slate-500">
+                        <span className="inline-flex items-center gap-1">
+                          <GraduationCap className="w-3 h-3 text-slate-400" />
+                          {l.sectionName}
+                        </span>
+                        {l.assignedAt && (
+                          <span className="inline-flex items-center gap-1">
+                            <Calendar className="w-3 h-3 text-slate-400" />
+                            Assigned {format(new Date(l.assignedAt), "MMM d, yyyy")}
+                          </span>
+                        )}
+                        {l.dueAt && (
+                          <span className={`inline-flex items-center gap-1 ${isPast(new Date(l.dueAt)) && l.status !== "complete" ? "text-red-600 font-medium" : ""}`}>
+                            <AlertCircle className="w-3 h-3" />
+                            Due {format(new Date(l.dueAt), "MMM d, yyyy")}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <span className={`shrink-0 text-[11px] font-medium px-2 py-0.5 rounded-full border capitalize ${statusBadgeCls(l.status)}`}>
+                      {(l.status || "incomplete").replace("_", " ")}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
